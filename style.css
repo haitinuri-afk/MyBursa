@@ -1,0 +1,396 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: #0b0e11;
+    color: #ffffff;
+    font-family: 'Assistant', 'Inter', 'Segoe UI', sans-serif;
+    direction: rtl;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+}
+
+.container {
+    width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+header { 
+    padding-bottom: 12px; 
+    border-bottom: 1px solid #363c4e;
+    margin-bottom: 4px;
+}
+
+header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #87ceeb; /* Light Blue */
+}
+
+/* עיצוב השורה הרצה */
+.ticker-wrap {
+    width: 100%;
+    overflow: hidden;
+    background: #1e2329;
+    margin: 8px 0;
+    padding: 12px 0;
+    white-space: nowrap;
+    border-radius: 8px;
+    border: 1px solid #363c4e;
+}
+
+.ticker {
+    display: inline-block;
+    animation: ticker-move 60s linear infinite;
+}
+
+.ticker-item {
+    display: inline-block;
+    padding: 0 30px;
+    font-family: 'Roboto Mono', monospace;
+    color: #ffffff;
+    font-weight: 500;
+}
+
+@keyframes ticker-move {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+}
+
+/* New 3-Column Dashboard Grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr 320px;
+    gap: 16px;
+    width: 100%;
+}
+
+.column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.center-col {
+    min-width: 0; /* Prevents grid items from overflowing */
+}
+
+/* Card General Styling */
+.card {
+    background: #161a1e;
+    border: 1px solid #363c4e;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+    transition: transform 0.2s ease;
+}
+
+.card h3 {
+    margin-bottom: 8px;
+    font-size: 1.1rem;
+    color: #87ceeb; /* Light Blue */
+}
+
+/* Glassmorphism for TA-35 and Global Indices cards */
+.index-chart-card, .indices-card {
+    background: rgba(255, 255, 255, 0.03) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.chart-header h3 {
+    font-size: 1.1em;
+    color: #87ceeb; /* Light Blue */
+    font-weight: 600;
+}
+
+.timeframe-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.timeframe-buttons button {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.timeframe-buttons button:hover { 
+    background: #f0b90b; 
+    color: #0b0e11;
+    border-color: #f0b90b;
+}
+
+.mini-chart-container {
+    height: 140px;
+    position: relative;
+}
+
+.main-chart-header {
+    padding: 10px 20px;
+    border-bottom: 1px solid #363c4e;
+    margin-bottom: 10px;
+}
+
+.main-chart-header h2 {
+    font-size: 1.4rem;
+    color: #f0b90b;
+    margin: 0;
+}
+
+.main-chart-container {
+    flex-grow: 1;
+    position: relative;
+    width: 100%;
+    min-height: 400px;
+}
+
+.chart-card {
+    height: 100%;
+}
+
+canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Lists and Tables */
+#stock-list-container, #indices-list-container, #portfolio-list-container {
+    margin-top: 10px;
+    overflow-y: auto;
+    max-height: 400px;
+}
+
+#stock-table, #indices-table, #portfolio-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#stock-table th, #indices-table th, #portfolio-table th {
+    text-align: right;
+    padding: 12px 8px;
+    border-bottom: 1px solid #363c4e;
+    color: #848e9c;
+    font-size: 0.85em;
+    font-weight: 500;
+}
+
+.indices-card th, .simulator-card th, .portfolio-card th {
+    text-align: left !important;
+}
+
+.stock-row {
+    height: 52px;
+    border-bottom: 1px solid #1e2329;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.stock-row td {
+    padding: 0 8px;
+    font-size: 0.95rem;
+}
+
+.pct-col {
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+}
+
+.stock-row:hover { background: #2b3139; }
+
+/* Portfolio Specific */
+.portfolio-card {
+    min-height: 300px;
+}
+
+.portfolio-footer {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid #363c4e;
+    display: flex;
+    justify-content: space-between;
+    font-weight: 600;
+    color: #f0b90b;
+    font-size: 1.1rem;
+}
+
+/* Simulator Specific */
+.input-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.input-group input {
+    background: #1e2329;
+    border: 1px solid #363c4e;
+    color: #ffffff;
+    padding: 10px;
+    border-radius: 8px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.input-group input:focus {
+    border-color: #f0b90b;
+}
+
+.sim-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.sim-actions button {
+    flex: 1;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: background 0.2s;
+}
+
+#buy-btn { background: #0ecb81; color: #0b0e11; }
+#buy-btn:hover { background: #0ba368; }
+#sell-btn-sim { background: #f6465d; color: #ffffff; }
+#sell-btn-sim:hover { background: #d03d50; }
+
+.sell-btn {
+    background: rgba(246, 70, 93, 0.1);
+    color: #f6465d;
+    border: 1px solid rgba(246, 70, 93, 0.2);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8em;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#refresh-btn {
+    margin-top: 12px;
+    background: #2b3139;
+    color: #eaecef;
+    border: 1px solid #474d57;
+    padding: 10px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* Bottom Insights Section */
+.insights-card {
+    margin-top: 16px;
+    width: 100%;
+}
+
+.insights-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.trend-badge {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.trend-bullish { background: rgba(14, 203, 129, 0.15); color: #0ecb81; border: 1px solid rgba(14, 203, 129, 0.3); }
+.trend-bearish { background: rgba(246, 70, 93, 0.15); color: #f6465d; border: 1px solid rgba(246, 70, 93, 0.3); }
+
+.insights-content { font-size: 1.05rem; line-height: 1.6; color: #eaecef; }
+.summary-value { font-weight: 700; color: #f0b90b; }
+
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+.modal-content {
+    background-color: #1e2329;
+    position: absolute;
+    top: 15%;
+    left: 35%;
+    width: 380px;
+    border-radius: 12px;
+    border: 1px solid #474d57;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+    color: white;
+    overflow: hidden;
+}
+
+.modal-header {
+    background: #2b3139;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-body { padding: 20px; }
+.close-modal { color: #848e9c; font-size: 22px; font-weight: bold; cursor: pointer; }
+
+/* Critical Alerts Animation */
+@keyframes glow-red {
+    0% { background-color: rgba(255, 77, 77, 0.1); }
+    50% { background-color: rgba(255, 77, 77, 0.3); }
+    100% { background-color: rgba(255, 77, 77, 0.1); }
+}
+
+.critical-drop {
+    animation: glow-red 2s infinite !important;
+    border-left: 4px solid #f6465d !important;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: #474d57; border-radius: 10px; }
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    .right-col { grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 800px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    .right-col { grid-template-columns: 1fr; }
+}

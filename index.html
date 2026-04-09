@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Station Pro</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>בורסת תל אביב <span id="market-status" style="color: #f6465d">● שוק סגור - מצב דמו</span></h1>
+        </header>
+
+        <div class="ticker-wrap">
+            <div id="ticker-content" class="ticker"></div>
+        </div>
+
+        <div class="dashboard-grid">
+            <!-- Left Column: Portfolio & Simulator -->
+            <div class="column left-col">
+                <div class="card portfolio-card" dir="ltr">
+                    <h3>My Portfolio</h3>
+                    <div id="portfolio-list-container">
+                        <table id="portfolio-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th class="pct-col">P/L%</th>
+                                    <th class="pct-col">Day%</th>
+                                    <th>Value</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="portfolio-list">
+                                <!-- Portfolio items will be injected here -->
+                            </tbody>
+                        </table>    
+                    </div>
+                    <div class="portfolio-footer">
+                        <span>Total Value:</span>
+                        <span id="total-portfolio-value">$0.00</span>
+                    </div>
+                </div>
+
+                <div class="card simulator-card" dir="ltr">
+                    <h3>Stock Simulator</h3>
+                    <div class="input-group">
+                        <input type="text" id="sim-symbol" placeholder="Symbol (e.g. AAPL)">
+                        <input type="number" id="sim-qty" placeholder="Qty" min="1">
+                    </div>
+                    <div class="sim-actions">
+                        <button id="buy-btn">Buy</button>
+                        <button id="sell-btn-sim">Sell</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Column: Main Chart -->
+            <div class="column center-col">
+                <div class="card chart-card">
+                    <div class="main-chart-header">
+                        <h2 id="main-chart-title">לאומי</h2>
+                    </div>
+                    <div class="main-chart-container">
+                        <canvas id="stockChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: TA-35 Index & Market Leaders -->
+            <div class="column right-col">
+                <div class="card index-chart-card" dir="ltr">
+                    <div class="chart-header">
+                        <h3>TA-35 Index</h3>
+                        <div class="timeframe-buttons">
+                            <button onclick="updateTimeframe('daily')">D</button>
+                            <button onclick="updateTimeframe('weekly')">W</button>
+                            <button onclick="updateTimeframe('monthly')">M</button>
+                            <button onclick="updateTimeframe('3months')">3M</button>
+                        </div>
+                    </div>
+                    <div class="mini-chart-container">
+                        <canvas id="indexChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card watchlist">
+                    <h3>מניות מובילות</h3>
+                    <div id="stock-list-container">
+                        <table id="stock-table">
+                            <thead>
+                                <tr>
+                                    <th>סימול</th>
+                                    <th class="pct-col">שינוי%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stock-list">
+                                <!-- Rows will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <button id="refresh-btn">רענן</button>
+                </div>
+
+                <div class="card indices-card" dir="ltr">
+                    <h3>Global Indices & ETFs</h3>
+                    <div id="indices-list-container">
+                        <table id="indices-table">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th class="pct-col">Chg%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="indices-list">
+                                <!-- Indices will be injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Row: Market Insights -->
+        <div id="market-insights" class="card insights-card full-width">
+            <div class="insights-header">
+                <h3>Market Insights</h3>
+                <div id="trend-indicator" class="trend-badge">Calculating...</div>
+            </div>
+            <div id="insights-content" class="insights-content">
+                <p id="performance-summary">Add stocks to your portfolio to see market analysis.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="stock-modal" class="modal">
+        <div class="modal-content">
+            <div id="modal-header" class="modal-header">
+                <h2 id="modal-stock-name">Stock Name</h2>
+                <span class="close-modal" onclick="closeModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <span id="modal-current-price">₪0.00</span>
+                <span id="modal-price-change" class="pct-col">0.00%</span>
+            </div>
+            <div class="timeframe-stats">
+                <div id="modal-stat-day" class="stat-item active-tf" onclick="updateModalChartTf('day')">
+                    <label>Day</label>
+                    <span id="stat-day">0.00%</span>
+                </div>
+                <div id="modal-stat-week" class="stat-item" onclick="updateModalChartTf('week')">
+                    <label>Week</label>
+                    <span id="stat-week">0.00%</span>
+                </div>
+                <div id="modal-stat-month" class="stat-item" onclick="updateModalChartTf('month')">
+                    <label>Month</label>
+                    <span id="stat-month">0.00%</span>
+                </div>
+                <div id="modal-stat-3months" class="stat-item" onclick="updateModalChartTf('3months')">
+                    <label>3 Months</label>
+                    <span id="stat-3months">0.00%</span>
+                </div>
+            </div>
+            <div class="modal-chart-container">
+                <canvas id="modalChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
