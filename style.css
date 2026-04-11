@@ -350,3 +350,20 @@ canvas { width: 100% !important; height: 100% !important; }
     background: rgba(240, 185, 11, 0.1);
     border-radius: 8px;
 }
+/* עיצוב משודרג ובטוח שלא פוגע בביצועים */
+.widget {
+    background: #1e1e1e !important; /* רקע כהה נקי */
+    border-radius: 12px !important; /* פינות מעוגלות */
+    border: 1px solid #333 !important; /* גבול עדין */
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important; /* צללית שנותנת עומק */
+    overflow: hidden; /* שומר שהתוכן לא יצא מהפינות המעוגלות */
+}
+
+/* שדרוג הכותרות של החלונות */
+.widget-header {
+    background: #252525 !important;
+    padding: 10px !important;
+    border-bottom: 1px solid #333;
+    font-weight: bold;
+    color: #e0e0e0;
+}
