@@ -8,169 +8,200 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <div class="container">
-        <header>
-            <h1>בורסת תל אביב <span id="market-status" style="color: #f6465d">● שוק סגור - מצב דמו</span></h1>
+<body class="bg-black text-white">
+    <div class="main-wrapper">
+        <!-- Thin Header Bar -->
+        <header class="top-bar px-2">
+            <h1 class="text-xs font-bold text-[#87ceeb] flex items-center gap-2">
+                בורסת תל אביב <span id="market-status" class="text-[#f6465d] text-[8px]">●</span>
+            </h1>
         </header>
 
-        <div class="ticker-wrap">
-            <div id="ticker-content" class="ticker"></div>
+        <!-- Slim Ticker -->
+        <div class="ticker-row">
+            <div class="flex-grow overflow-hidden h-full flex items-center">
+                <div id="ticker-content" class="flex whitespace-nowrap animate-[marquee_60s_linear_infinite]"></div>
+            </div>
         </div>
 
-        <div class="dashboard-grid">
-            <!-- Left Column: Portfolio & Simulator -->
-            <div class="column left-col">
-                <div class="card portfolio-card" dir="ltr">
-                    <h3>My Portfolio</h3>
-                    <div id="portfolio-list-container">
-                        <table id="portfolio-table">
-                            <thead>
-                                <tr>
-                                    <th>Symbol</th>
-                                    <th class="pct-col">P/L%</th>
-                                    <th class="pct-col">Day%</th>
-                                    <th>Value</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="portfolio-list">
-                                <!-- Portfolio items will be injected here -->
-                            </tbody>
-                        </table>    
-                    </div>
-                    <div class="portfolio-footer">
-                        <span>Total Value:</span>
-                        <span id="total-portfolio-value">$0.00</span>
+        <!-- Dashboard Area -->
+        <div id="dashboard" class="dashboard-grid">
+            <!-- Reset Layout Button at Top Left -->
+            <button onclick="resetWindows()" class="reset-layout-btn" dir="ltr">
+                <span>↺</span> Reset Layout
+            </button>
+
+            <!-- Indices Window -->
+            <div id="win-indices-tase" class="card">
+                <div class="window-header">
+                    <h3>TA-35 Index</h3>
+                    <div class="window-controls">
+                        <div class="timeframe-buttons">
+                            <button class="active" onclick="updateTimeframe('daily')">D</button>
+                            <button onclick="updateTimeframe('weekly')">W</button>
+                            <button onclick="updateTimeframe('monthly')">M</button>
+                        </div>
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-indices-tase')">[ ]</button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
                     </div>
                 </div>
-
-                <div class="card simulator-card" dir="ltr">
-                    <h3>Stock Simulator</h3>
-                    <div class="input-group">
-                        <input type="text" id="sim-symbol" placeholder="Symbol (e.g. AAPL)">
-                        <input type="number" id="sim-qty" placeholder="Qty" min="1">
-                    </div>
-                    <div class="sim-actions">
-                        <button id="buy-btn">Buy</button>
-                        <button id="sell-btn-sim">Sell</button>
+                <div class="card-body" dir="ltr">
+                    <div class="h-full w-full overflow-hidden relative">
+                        <canvas id="indexChart"></canvas>
                     </div>
                 </div>
             </div>
 
-            <!-- Center Column: Main Chart -->
-            <div class="column center-col">
-                <div class="card chart-card">
-                    <div class="main-chart-header">
-                        <h2 id="main-chart-title">לאומי</h2>
+            <!-- Leading Stocks Window -->
+            <div id="win-stocks" class="card">
+                <div class="window-header">
+                    <h3>מניות מובילות</h3>
+                    <div class="window-controls">
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-stocks')">[ ]</button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
                     </div>
-                    <div class="main-chart-container">
+                </div>
+                <div class="card-body">
+                    <div class="scroll-container">
+                        <table id="stock-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-right">סימול</th>
+                                    <th class="pct-col text-center">שינוי%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stock-list"></tbody>
+                        </table>
+                    </div>
+                    <button id="refresh-btn" class="mt-1 text-[10px] py-1 bg-[#2b3139] border border-[#474d57] rounded">רענן</button>
+                </div>
+            </div>
+
+            <!-- Global Indices Window -->
+            <div id="win-indices-global" class="card">
+                <div class="window-header">
+                    <h3 dir="ltr">Global Indices</h3>
+                    <div class="window-controls">
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-indices-global')">[ ]</button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
+                    </div>
+                </div>
+                <div class="card-body" dir="ltr">
+                    <div class="scroll-container">
+                        <table id="indices-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-left">Symbol</th>
+                                    <th class="pct-col text-center">Chg%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="indices-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Chart Window -->
+            <div id="win-main-chart" class="card">
+                <div class="window-header">
+                    <h2 id="main-chart-title">לאומי</h2>
+                    <div class="window-controls">
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-main-chart')">[ ]</button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="flex-1 w-full overflow-hidden relative bg-[#0b0e11] rounded">
                         <canvas id="stockChart"></canvas>
                     </div>
                 </div>
             </div>
 
-            <!-- Right Column: TA-35 Index & Market Leaders -->
-            <div class="column right-col">
-                <div class="card index-chart-card" dir="ltr">
-                    <div class="chart-header">
-                        <h3>TA-35 Index</h3>
-                        <div class="timeframe-buttons">
-                            <button onclick="updateTimeframe('daily')">D</button>
-                            <button onclick="updateTimeframe('weekly')">W</button>
-                            <button onclick="updateTimeframe('monthly')">M</button>
-                            <button onclick="updateTimeframe('3months')">3M</button>
-                        </div>
-                    </div>
-                    <div class="mini-chart-container">
-                        <canvas id="indexChart"></canvas>
+            <!-- Portfolio Window -->
+            <div id="win-portfolio" class="card">
+                <div class="window-header">
+                    <h3>My Portfolio</h3>
+                    <div class="window-controls">
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-portfolio')">[ ]</button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
                     </div>
                 </div>
-
-                <div class="card watchlist">
-                    <h3>מניות מובילות</h3>
-                    <div id="stock-list-container">
-                        <table id="stock-table">
+                <div class="card-body" dir="ltr">
+                    <div class="scroll-container">
+                        <table id="portfolio-table">
                             <thead>
                                 <tr>
-                                    <th>סימול</th>
-                                    <th class="pct-col">שינוי%</th>
+                                    <th class="whitespace-nowrap text-left">Sym</th>
+                                    <th class="pct-col text-center">P/L%</th>
+                                    <th class="pct-col text-center">Day%</th>
+                                    <th class="text-right">Value</th>
+                                    <th class="text-center">Act</th>
                                 </tr>
                             </thead>
-                            <tbody id="stock-list">
-                                <!-- Rows will be injected here -->
-                            </tbody>
-                        </table>
+                            <tbody id="portfolio-list"></tbody>
+                        </table>    
                     </div>
-                    <button id="refresh-btn">רענן</button>
-                </div>
-
-                <div class="card indices-card" dir="ltr">
-                    <h3>Global Indices & ETFs</h3>
-                    <div id="indices-list-container">
-                        <table id="indices-table">
-                            <thead>
-                                <tr>
-                                    <th>Symbol</th>
-                                    <th class="pct-col">Chg%</th>
-                                </tr>
-                            </thead>
-                            <tbody id="indices-list">
-                                <!-- Indices will be injected here -->
-                            </tbody>
-                        </table>
+                    <div class="portfolio-footer">
+                        <span>Total:</span>
+                        <span id="total-portfolio-value">₪0.00</span>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Bottom Row: Market Insights -->
-        <div id="market-insights" class="card insights-card full-width">
-            <div class="insights-header">
-                <h3>Market Insights</h3>
-                <div id="trend-indicator" class="trend-badge">Calculating...</div>
+            <!-- Simulator Window -->
+            <div id="win-simulator" class="card">
+                <div class="window-header">
+                    <h3>Simulator</h3>
+                    <div class="window-controls">
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-simulator')">[ ]</button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
+                    </div>
+                </div>
+                <div class="card-body" dir="ltr">
+                    <div class="flex gap-2 mb-1">
+                        <input type="text" id="sim-symbol" placeholder="Sym" class="bg-[#1e2329] border border-[#363c4e] text-white p-1 rounded text-xs w-full outline-none">
+                        <input type="number" id="sim-qty" placeholder="Qty" min="1" class="bg-[#1e2329] border border-[#363c4e] text-white p-1 rounded text-xs w-full outline-none">
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="buy-btn" class="flex-1 bg-[#0ecb81] text-[#0b0e11] py-1 rounded font-bold text-xs">Buy</button>
+                        <button id="sell-btn-sim" class="flex-1 bg-[#f6465d] text-white py-1 rounded font-bold text-xs">Sell</button>
+                    </div>
+                </div>
             </div>
-            <div id="insights-content" class="insights-content">
-                <p id="performance-summary">Add stocks to your portfolio to see market analysis.</p>
+
+            <!-- History Window -->
+            <div id="win-history" class="card">
+                <div class="window-header">
+                    <h3>History</h3>
+                    <div class="window-controls">
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-history')">[ ]</button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
+                    </div>
+                </div>
+                <div class="card-body" dir="ltr">
+                    <div class="scroll-container">
+                        <table id="history-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-left text-[9px] text-[#848e9c]">Time</th>
+                                    <th class="text-left text-[9px]">Act</th>
+                                    <th class="text-left text-[9px]">Sym</th>
+                                    <th class="text-right text-[9px]">Qty</th>
+                                    <th class="text-right text-[9px]">Price</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-list"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <div id="stock-modal" class="modal">
-        <div class="modal-content">
-            <div id="modal-header" class="modal-header">
-                <h2 id="modal-stock-name">Stock Name</h2>
-                <span class="close-modal" onclick="closeModal()">&times;</span>
-            </div>
-            <div class="modal-body">
-                <span id="modal-current-price">₪0.00</span>
-                <span id="modal-price-change" class="pct-col">0.00%</span>
-            </div>
-            <div class="timeframe-stats">
-                <div id="modal-stat-day" class="stat-item active-tf" onclick="updateModalChartTf('day')">
-                    <label>Day</label>
-                    <span id="stat-day">0.00%</span>
-                </div>
-                <div id="modal-stat-week" class="stat-item" onclick="updateModalChartTf('week')">
-                    <label>Week</label>
-                    <span id="stat-week">0.00%</span>
-                </div>
-                <div id="modal-stat-month" class="stat-item" onclick="updateModalChartTf('month')">
-                    <label>Month</label>
-                    <span id="stat-month">0.00%</span>
-                </div>
-                <div id="modal-stat-3months" class="stat-item" onclick="updateModalChartTf('3months')">
-                    <label>3 Months</label>
-                    <span id="stat-3months">0.00%</span>
-                </div>
-            </div>
-            <div class="modal-chart-container">
-                <canvas id="modalChart"></canvas>
-            </div>
-        </div>
-    </div>
+    <!-- Dynamic windows will be appended to the dashboard -->
     <script src="script.js"></script>
 </body>
 </html>
