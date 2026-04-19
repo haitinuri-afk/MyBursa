@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(node server.js)",
+      "Bash(curl -s \"http://localhost:3000/api/stock/batch?symbols=LUMI.TA,^TA35\")",
+      "Bash(curl -s \"http://localhost:3000/api/stock/batch?symbols=LUMI.TA\")",
+      "Bash(PORT=4000 node server.js)",
+      "Bash(curl -s \"http://localhost:4000/api/stock/batch?symbols=LUMI.TA\")",
+      "Bash(curl -s \"http://localhost:4000/api/stock/history?symbol=LUMI.TA&range=5d\")",
+      "Bash(node -e ' *)",
+      "Bash(curl -s \"http://localhost:4001/test\")",
+      "Bash(kill %1)",
+      "Bash(PORT=4002 node server.js)",
+      "Bash(curl -s \"http://localhost:4002/api/stock/batch?symbols=LUMI.TA,^TA35,TEVA.TA\")",
+      "Bash(curl -s \"http://localhost:4002/api/stock/history?symbol=LUMI.TA&range=5d\")",
+      "Bash(PORT=4003 node server.js)",
+      "Bash(curl -s \"http://localhost:4003/api/stock/batch?symbols=LUMI.TA,^TA35,TEVA.TA\")",
+      "Bash(curl -s \"https://query1.finance.yahoo.com/v8/finance/chart/%5ETA35?range=5d&interval=1d\" -A \"Mozilla/5.0\")",
+      "Bash(curl -s \"https://query1.finance.yahoo.com/v8/finance/chart/TA35.TA?range=5d&interval=1d\" -A \"Mozilla/5.0\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); m=d['chart']['result'][0]['meta']; print\\('price:', m['regularMarketPrice'], 'instrType:', m['instrumentType']\\)\")",
+      "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\)\\); const m=d.chart.result[0].meta; console.log\\('price:', m.regularMarketPrice, 'type:', m.instrumentType\\);\")",
+      "Bash(PORT=4004 node server.js)",
+      "Bash(curl -s \"http://localhost:4004/api/stock/batch?symbols=LUMI.TA,^TA35,TEVA.TA,ENRG.TA\")",
+      "Bash(curl -s \"http://localhost:4004/api/stock/history?symbol=^TA35&range=5d\")",
+      "Bash(netstat -ano)",
+      "Bash(node -e \"require\\('./server.js'\\)\")",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(findstr :3000)",
+      "Bash(taskkill /PID 9308 /F)",
+      "Bash(powershell -Command \"Stop-Process -Id \\(Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object -First 1 -ExpandProperty OwningProcess\\) -Force\")",
+      "Bash(powershell -Command \"Stop-Process -Id \\(Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object -First 1 -ExpandProperty OwningProcess\\) -Force -ErrorAction SilentlyContinue\")"
+    ]
+  }
+}

@@ -17,13 +17,15 @@
         <header class="top-bar px-2">
             <h1 class="text-xs font-bold text-[#87ceeb] flex items-center gap-2">
                 בורסת תל אביב <span id="market-status" class="text-[#f6465d] text-[8px]">●</span>
+                <span id="market-label" class="text-[8px] font-mono font-bold" style="color:#f6465d"></span>
+                <span id="data-status" class="text-[8px] font-mono px-1 rounded" style="background:#1e2430;color:#424c5c">SIM</span>
             </h1>
         </header>
 
         <!-- Slim Ticker -->
         <div class="ticker-row">
             <div class="flex-grow overflow-hidden h-full flex items-center">
-                <div id="ticker-content" class="flex whitespace-nowrap animate-[marquee_60s_linear_infinite]"></div>
+                <div id="ticker-content" class="ticker-scroll"></div>   
             </div>
         </div>
 
@@ -37,19 +39,25 @@
             <!-- Indices Window -->
             <div id="win-indices-tase" class="card">
                 <div class="window-header">
-                    <h3>TA-35 Index</h3>
+                    <h3>TA-35 Index <span id="ta35-status" class="text-[9px] font-mono font-bold ml-1" style="color:#f6465d"></span></h3>
                     <div class="window-controls">
-                        <div class="timeframe-buttons">
+                        <div class="timeframe-buttons" id="index-tf-btns">
                             <button class="active" onclick="updateTimeframe('daily')">D</button>
                             <button onclick="updateTimeframe('weekly')">W</button>
                             <button onclick="updateTimeframe('monthly')">M</button>
+                            <button onclick="updateTimeframe('3months')">3M</button>
                         </div>
-                        <button class="win-btn win-max" onclick="toggleMaximize('win-indices-tase')">[ ]</button>
-                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-indices-tase')"></button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
                 <div class="card-body" dir="ltr">
-                    <div class="h-full w-full overflow-hidden relative">
+                    <div class="flex items-baseline gap-2 mb-1 px-1">
+                        <span id="ta35-price" class="font-mono font-bold text-sm text-white"></span>
+                        <span id="ta35-pct" class="font-mono font-bold text-xs"></span>
+                        <span id="ta35-pts" class="font-mono text-[10px] text-[#848e9c]"></span>
+                    </div>
+                    <div class="flex-1 w-full overflow-hidden relative" style="min-height:0">
                         <canvas id="indexChart"></canvas>
                     </div>
                 </div>
@@ -60,8 +68,8 @@
                 <div class="window-header">
                     <h3>מניות מובילות</h3>
                     <div class="window-controls">
-                        <button class="win-btn win-max" onclick="toggleMaximize('win-stocks')">[ ]</button>
-                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-stocks')"></button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -80,37 +88,20 @@
                 </div>
             </div>
 
-            <!-- Global Indices Window -->
-            <div id="win-indices-global" class="card">
-                <div class="window-header">
-                    <h3 dir="ltr">Global Indices</h3>
-                    <div class="window-controls">
-                        <button class="win-btn win-max" onclick="toggleMaximize('win-indices-global')">[ ]</button>
-                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
-                    </div>
-                </div>
-                <div class="card-body" dir="ltr">
-                    <div class="scroll-container">
-                        <table id="indices-table">
-                            <thead>
-                                <tr>
-                                    <th class="text-left">Symbol</th>
-                                    <th class="pct-col text-center">Chg%</th>
-                                </tr>
-                            </thead>
-                            <tbody id="indices-list"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
 
             <!-- Main Chart Window -->
             <div id="win-main-chart" class="card">
                 <div class="window-header">
                     <h2 id="main-chart-title">לאומי</h2>
                     <div class="window-controls">
-                        <button class="win-btn win-max" onclick="toggleMaximize('win-main-chart')">[ ]</button>
-                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
+                        <div class="timeframe-buttons" id="main-tf-btns">
+                            <button class="active" onclick="updateMainTimeframe('daily')">D</button>
+                            <button onclick="updateMainTimeframe('weekly')">W</button>
+                            <button onclick="updateMainTimeframe('monthly')">M</button>
+                            <button onclick="updateMainTimeframe('3months')">3M</button>
+                        </div>
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-main-chart')"></button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -125,8 +116,8 @@
                 <div class="window-header">
                     <h3>My Portfolio</h3>
                     <div class="window-controls">
-                        <button class="win-btn win-max" onclick="toggleMaximize('win-portfolio')">[ ]</button>
-                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-portfolio')"></button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
                 <div class="card-body" dir="ltr">
@@ -156,8 +147,8 @@
                 <div class="window-header">
                     <h3>Simulator</h3>
                     <div class="window-controls">
-                        <button class="win-btn win-max" onclick="toggleMaximize('win-simulator')">[ ]</button>
-                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-simulator')"></button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
                 <div class="card-body" dir="ltr">
@@ -172,30 +163,21 @@
                 </div>
             </div>
 
-            <!-- History Window -->
-            <div id="win-history" class="card">
+            <!-- Search Window -->
+            <div id="win-search" class="card">
                 <div class="window-header">
-                    <h3>History</h3>
+                    <h3>Search</h3>
                     <div class="window-controls">
-                        <button class="win-btn win-max" onclick="toggleMaximize('win-history')">[ ]</button>
-                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'">×</button>
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-search')"></button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
                 <div class="card-body" dir="ltr">
-                    <div class="scroll-container">
-                        <table id="history-table">
-                            <thead>
-                                <tr>
-                                    <th class="text-left text-[9px] text-[#848e9c]">Time</th>
-                                    <th class="text-left text-[9px]">Act</th>
-                                    <th class="text-left text-[9px]">Sym</th>
-                                    <th class="text-right text-[9px]">Qty</th>
-                                    <th class="text-right text-[9px]">Price</th>
-                                </tr>
-                            </thead>
-                            <tbody id="history-list"></tbody>
-                        </table>
+                    <div class="flex gap-2">
+                        <input type="text" id="search-symbol" placeholder="Symbol (e.g. לאומי)" class="bg-[#1e2329] border border-[#363c4e] text-white p-1 rounded text-xs w-full outline-none">
+                        <button onclick="searchSymbol()" class="bg-[#2b3139] border border-[#474d57] text-white px-2 rounded text-xs">Go</button>
                     </div>
+                    <div id="search-error" class="text-[10px] text-[#f6465d] mt-1 hidden">Symbol not found.</div>
                 </div>
             </div>
         </div>

@@ -1,369 +1,625 @@
-@keyframes marquee {
-    0% { transform: translateX(0); }
-    100% { transform: translateX(100%); }
-}
+    @keyframes marquee {
+        0%   { transform: translateX(0); }
+        100% { transform: translateX(-33.333%); }
+    }
 
-/* Base resets */
-* { box-sizing: border-box; margin: 0; padding: 0; }
+    .ticker-scroll {
+        display: flex;
+        white-space: nowrap;
+        animation: marquee 55s linear infinite;
+        will-change: transform;
+    }
 
-body {
-    background: #000;
-    color: #ffffff;
-    font-family: 'Assistant', 'Inter', 'Segoe UI', sans-serif;
-    direction: rtl;
-    height: 100vh;
-    overflow: hidden;
-}
+    /* ── Reset ── */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* Zero-Scroll Layout */
-.main-wrapper {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    padding: 4px;
-    gap: 4px;
-}
+    body {
+        background: #0b0e11;
+        color: #c9d1d9;
+        font-family: 'Assistant', 'Inter', 'Segoe UI', sans-serif;
+        direction: rtl;
+        height: 100vh;
+        overflow: hidden;
+    }
 
-header.top-bar {
-    height: 28px;
-    display: flex;
-    align-items: center;
-    border-bottom: 1px solid #363c4e;
-}
+    /* ── Layout ── */
+    .main-wrapper {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        padding: 6px;
+        gap: 4px;
+    }
 
-.ticker-row {
-    height: 34px;
-    min-height: 34px;
-    display: flex;
-    align-items: center;
-    background: #1e2329;
-    border: 1px solid #363c4e;
-    border-radius: 4px;
-    overflow: hidden;
-}
+    header.top-bar {
+        height: 30px;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid #1d222a;
+        padding: 0 4px;
+    }
 
-.dashboard-grid {
-    flex: 1;
-    position: relative;
-    min-height: 0;
-    overflow: hidden;
-}
+    /* ── Ticker ── */
+    .ticker-row {
+        height: 32px;
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        background: #0d1117;
+        border: 1px solid #1d222a;
+        border-radius: 6px;
+        overflow: hidden;
+        position: relative;
+    }
 
-.card.dragging {
-    pointer-events: none;
-    opacity: 0.9;
-}
+    .ticker-row::before,
+    .ticker-row::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        height: 100%;
+        width: 48px;
+        z-index: 2;
+        pointer-events: none;
+    }
+    .ticker-row::before {
+        left: 0;
+        background: linear-gradient(to right, #0d1117, transparent);
+    }
+    .ticker-row::after {
+        right: 0;
+        background: linear-gradient(to left, #0d1117, transparent);
+    }
 
-.card {
-    background: #161a1e;
-    border: 1px solid #363c4e;
-    border-radius: 4px;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    position: absolute !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    transition: box-shadow 0.2s, opacity 0.2s;
-    z-index: 10;
-}
+    /* ── Dashboard Grid ── */
+    .dashboard-grid {
+        flex: 1;
+        position: relative;
+        min-height: 0;
+        overflow: hidden;
+    }
 
-.card.dragging {
-    opacity: 0.8;
-    box-shadow: 0 15px 35px rgba(0,0,0,0.6);
-    cursor: move;
-    z-index: 9999 !important;
-}
+    /* ── Cards / Windows ── */
+    .card {
+        background: #12161b;
+        border: 1px solid #1e2430;
+        border-radius: 8px;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        position: absolute !important;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
+        transition: box-shadow 0.2s, border-color 0.2s, opacity 0.2s;
+        z-index: 10;
+    }
 
-.card.dragging .window-header {
-    background: #3d4450 !important;
-}
+    .card:hover {
+        border-color: #2a3040;
+    }
 
-.card:active {
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-}
+    .card.dragging {
+        opacity: 0.88;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75);
+        cursor: move;
+        z-index: 9999 !important;
+        pointer-events: none;
+    }
 
-.window-header {
-    background: #2b3139;
-    padding: 4px 8px;
-    border-bottom: 1px solid #363c4e;
-    border-radius: 4px 4px 0 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: move;
-    user-select: none;
-}
+    .card.dragging .window-header {
+        background: #2c3340 !important;
+    }
 
-.window-header h3, .window-header h2 {
-    font-size: 0.7rem;
-    margin-bottom: 0;
-    color: #f0b90b;
-    font-weight: 600;
-}
+    /* ── Window Header ── */
+    .window-header {
+        background: #171b21;
+        padding: 6px 10px;
+        border-bottom: 1px solid #1e2430;
+        border-radius: 8px 8px 0 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: move;
+        user-select: none;
+    }
 
-.window-controls {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-}
+    .window-header h3,
+    .window-header h2 {
+        font-size: 0.62rem;
+        color: #c8961e;
+        font-weight: 700;
+        letter-spacing: 0.7px;
+        text-transform: uppercase;
+    }
 
-.win-btn {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 7px;
-    color: rgba(0,0,0,0.5);
-    transition: opacity 0.2s;
-}
+    /* ── Window Controls ── */
+    .window-controls {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+    }
 
-/* Optimized Window Positions - 100% Real Estate */
-#win-portfolio { width: 25%; height: 60%; top: 0; left: 0; }
-#win-simulator { width: 25%; height: 39%; top: 61%; left: 0; }
+    .win-btn {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: none;
+        cursor: pointer;
+        font-size: 0;           /* hides "[ ]" and "×" text */
+        flex-shrink: 0;
+        transition: filter 0.15s, transform 0.1s;
+    }
 
-#win-main-chart { width: 49%; height: 71%; top: 0; left: 25.5%; }
-#win-history { width: 49%; height: 28%; top: 72%; left: 25.5%; }
+    .win-btn:hover {
+        filter: brightness(1.4);
+        transform: scale(1.15);
+    }
 
-#win-indices-tase { width: 25%; height: 28%; top: 0; left: 75%; }
-#win-stocks { width: 25%; height: 42%; top: 29%; left: 75%; }
-#win-indices-global { width: 25%; height: 28%; top: 72%; left: 75%; }
+    .win-max   { background: #0ecb81; }
+    .win-close { background: #f6465d; }
 
-.card.maximized {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    z-index: 9999 !important;
-    border-radius: 0;
-    margin: 0;
-}
+    /* ── Window Positions ── */
+    #win-portfolio      { width: 25%;  height: 55%;  top: 0;    left: 0;     }
+    #win-simulator      { width: 25%;  height: 20%;  top: 56%;  left: 0;     }
+    #win-main-chart     { width: 49%;  height: 75%;  top: 0;    left: 25.5%; }
+    #win-history        { width: 49%;  height: 15%;  top: 84%;  left: 25.5%; }
+    #win-indices-tase   { width: 25%;  height: 28%;  top: 0;    left: 75%;   }
+    #win-stocks         { width: 25%;  height: 71%;  top: 29%;  left: 75%;   }
 
-.card.maximized .window-header {
-    cursor: default;
-    border-radius: 0;
-}
+    .card.maximized {
+        position: fixed !important;
+        top: 0 !important; left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        z-index: 9999 !important;
+        border-radius: 0;
+        margin: 0;
+    }
 
-.reset-layout-btn {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 9999;
-    background: #2b3139;
-    border: 1px solid #474d57;
-    color: #848e9c;
-    padding: 4px 10px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transition: all 0.2s;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-}
+    .card.maximized .window-header {
+        cursor: default;
+        border-radius: 0;
+    }
 
-.reset-layout-btn:hover {
-    background: #3d4450;
-    color: #ffffff;
-    border-color: #f0b90b;
-}
+    /* ── Reset Layout Button ── */
+    .reset-layout-btn {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 9999;
+        background: rgba(23, 27, 33, 0.92);
+        backdrop-filter: blur(6px);
+        border: 1px solid #2a3040;
+        color: #6b7280;
+        padding: 4px 10px;
+        border-radius: 5px;
+        font-size: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        transition: all 0.2s;
+    }
 
-.win-max { background: #0ecb81; } /* Green for maximize */
-.win-close { background: #f6465d; } /* Red for close */
+    .reset-layout-btn:hover {
+        background: #252c37;
+        color: #c9d1d9;
+        border-color: #c8961e;
+    }
 
-.card-body {
-    padding: 10px;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
-}
+    /* ── Card Body ── */
+    .card-body {
+        padding: 8px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+    }
 
-/* Internal Scrolling Containers */
-.scroll-container {
-    overflow-y: auto;
-    flex: 1;
-    min-height: 0;
-}
+    /* ── Scroll Containers ── */
+    .scroll-container {
+        overflow-y: auto;
+        flex: 1;
+        min-height: 0;
+    }
 
-/* Table Design */
-table {
-    width: 100%;
-    border-collapse: collapse;
-}
+    /* ── Tables ── */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
 
-th, td {
-    padding: 6px 4px; /* More compact cell padding */
-    text-align: right;
-    vertical-align: middle;
-    border-bottom: 1px solid #1e2329;
-    font-size: 0.75rem; /* text-xs */
-}
+    th {
+        color: #424c5c;
+        font-weight: 600;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        padding: 0 4px 5px;
+        border-bottom: 1px solid #1e2430;
+        position: sticky;
+        top: 0;
+        background: #12161b;
+        z-index: 1;
+    }
 
-th {
-    color: #848e9c;
-    font-weight: 500;
-}
+    td {
+        padding: 5px 4px;
+        text-align: right;
+        vertical-align: middle;
+        border-bottom: 1px solid #171b21;
+        font-size: 0.74rem;
+        color: #b8c0cc;
+    }
 
-.pct-col {
-    font-weight: 700 !important;
-    text-align: center !important;
-}
+    .pct-col {
+        font-family: 'Roboto Mono', monospace;
+        font-weight: 700 !important;
+        font-size: 0.72rem !important;
+        text-align: center !important;
+    }
 
-.stock-row:hover { background: #2b3139; cursor: pointer; }
+    .stock-row:hover {
+        background: rgba(200, 150, 30, 0.05);
+        cursor: pointer;
+    }
 
-.portfolio-footer {
-    margin-top: 6px;
-    padding-top: 6px;
-    border-top: 1px solid #363c4e;
-    display: flex;
-    justify-content: space-between;
-    font-weight: 700;
-    color: #f0b90b;
-    font-size: 0.9rem;
-}
+    /* ── Portfolio Footer ── */
+    .portfolio-footer {
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid #1e2430;
+        display: flex;
+        justify-content: space-between;
+        font-weight: 700;
+        color: #c8961e;
+        font-size: 0.82rem;
+    }
 
-/* Simulator Controls */
-.input-group input {
-    background: #1e2329;
-    border: 1px solid #363c4e;
-    color: #ffffff;
-    padding: 4px 8px;
-    border-radius: 4px;
-    width: 100%;
-    outline: none;
-    font-size: 0.75rem;
-}
+    /* ── Sell Button (in portfolio rows) ── */
+    .sell-btn {
+        background: rgba(246, 70, 93, 0.12);
+        color: #f6465d;
+        border: 1px solid rgba(246, 70, 93, 0.25);
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-size: 0.68rem;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.15s;
+        white-space: nowrap;
+    }
 
-/* Chart Components */
-.timeframe-buttons {
-    display: flex;
-    background: rgba(0, 0, 0, 0.2);
-    padding: 1px;
-    border-radius: 4px;
-    gap: 1px;
-}
+    .sell-btn:hover {
+        background: rgba(246, 70, 93, 0.25);
+        border-color: #f6465d;
+    }
 
-.timeframe-buttons button {
-    background: transparent;
-    color: #848e9c;
-    border: none;
-    padding: 2px 5px;
-    border-radius: 3px;
-    font-size: 0.65em;
-    cursor: pointer;
-}
+    /* ── Simulator Inputs (fallback, Tailwind also applies) ── */
+    .input-group input {
+        background: #0d1117;
+        border: 1px solid #1e2430;
+        color: #c9d1d9;
+        padding: 4px 8px;
+        border-radius: 4px;
+        width: 100%;
+        outline: none;
+        font-size: 0.75rem;
+    }
 
-.timeframe-buttons button.active {
-    background: #2b3139;
-    color: #f0b90b;
-}
+    /* ── Timeframe Buttons ── */
+    .timeframe-buttons {
+        display: flex;
+        background: rgba(0, 0, 0, 0.35);
+        padding: 2px;
+        border-radius: 5px;
+        gap: 1px;
+    }
 
-canvas { width: 100% !important; height: 100% !important; }
+    .timeframe-buttons button {
+        background: transparent;
+        color: #424c5c;
+        border: none;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.6rem;
+        cursor: pointer;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        transition: all 0.15s;
+    }
 
-/* Scrollbars */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-thumb { background: #474d57; border-radius: 10px; }
+    .timeframe-buttons button.active {
+        background: #1f2430;
+        color: #c8961e;
+    }
 
-/* Modal Styles */
-.modal {
-    display: none;
-    position: fixed;
-    z-index: 1000;
-    left: 0; top: 0; width: 100%; height: 100%;
-    background-color: rgba(0, 0, 0, 0.6);
-}
+    .timeframe-buttons button:hover:not(.active) {
+        color: #848e9c;
+    }
 
-.modal-content {
-    background-color: #1e2329;
-    position: absolute;
-    top: 10%; left: 50%; transform: translateX(-50%);
-    width: 450px;
-    max-width: 95vw;
-    border-radius: 16px;
-    border: 1px solid #474d57;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-    overflow: hidden;
-    animation: modalFadeIn 0.2s ease-out;
-}
+    /* ── Resize Handle ── */
+    .resize-handle {
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 16px;
+        height: 16px;
+        cursor: se-resize;
+        z-index: 20;
+        border-radius: 0 0 8px 0;
+    }
 
-@keyframes modalFadeIn {
-    from { opacity: 0; transform: translate(-50%, -20px); }
-    to { opacity: 1; transform: translate(-50%, 0); }
-}
+    .resize-handle::after {
+        content: '';
+        position: absolute;
+        bottom: 4px;
+        right: 4px;
+        width: 7px;
+        height: 7px;
+        border-right: 2px solid #2a3040;
+        border-bottom: 2px solid #2a3040;
+        border-radius: 0 0 2px 0;
+        transition: border-color 0.15s;
+    }
 
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    background: #2b3139;
-    border-bottom: 1px solid #363c4e;
-}
+    .card:hover .resize-handle::after {
+        border-color: #474d57;
+    }
 
-.modal-header h2 {
-    font-size: 1.1rem;
-    color: #f0b90b;
-}
+    /* ── Charts ── */
+    canvas { width: 100% !important; height: 100% !important; }
 
-.close-modal {
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: #848e9c;
-    transition: color 0.2s;
-}
+    /* ── Scrollbars ── */
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a3040; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #474d57; }
 
-.close-modal:hover { color: #ffffff; }
+    /* ── Modal ── */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 10000;
+        left: 0; top: 0; width: 100%; height: 100%;
+        background-color: rgba(0, 0, 0, 0.72);
+        backdrop-filter: blur(3px);
+    }
 
-.modal-body {
-    padding: 20px;
-    text-align: center;
-    background: linear-gradient(180deg, #1e2329 0%, #161a1e 100%);
-}
+    .modal-content {
+        background: #12161b;
+        position: absolute;
+        top: 10%; left: 50%; transform: translateX(-50%);
+        width: 450px;
+        max-width: 95vw;
+        border-radius: 12px;
+        border: 1px solid #2a3040;
+        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75);
+        overflow: hidden;
+        animation: modalFadeIn 0.2s ease-out;
+    }
 
-#modal-current-price {
-    display: block;
-    font-family: 'Roboto Mono', monospace;
-    letter-spacing: -0.5px;
-}
+    @keyframes modalFadeIn {
+        from { opacity: 0; transform: translate(-50%, -14px); }
+        to   { opacity: 1; transform: translate(-50%, 0); }
+    }
 
-.stat-item {
-    transition: all 0.2s;
-    padding: 8px;
-    border-radius: 8px;
-}
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 20px;
+        background: #171b21;
+        border-bottom: 1px solid #1e2430;
+    }
 
-.stat-item:hover {
-    background: rgba(255, 255, 255, 0.03);
-}
+    .modal-header h2 {
+        font-size: 1rem;
+        color: #c8961e;
+        font-weight: 700;
+    }
 
-.active-tf {
-    opacity: 1 !important;
-    background: rgba(240, 185, 11, 0.1);
-    border-radius: 8px;
-}
-/* עיצוב משודרג ובטוח שלא פוגע בביצועים */
-.widget {
-    background: #1e1e1e !important; /* רקע כהה נקי */
-    border-radius: 12px !important; /* פינות מעוגלות */
-    border: 1px solid #333 !important; /* גבול עדין */
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important; /* צללית שנותנת עומק */
-    overflow: hidden; /* שומר שהתוכן לא יצא מהפינות המעוגלות */
-}
+    .close-modal {
+        font-size: 1.4rem;
+        cursor: pointer;
+        color: #424c5c;
+        transition: color 0.2s;
+        line-height: 1;
+    }
 
-/* שדרוג הכותרות של החלונות */
-.widget-header {
-    background: #252525 !important;
-    padding: 10px !important;
-    border-bottom: 1px solid #333;
-    font-weight: bold;
-    color: #e0e0e0;
-}
+    .close-modal:hover { color: #c9d1d9; }
+
+    .modal-body {
+        padding: 20px;
+        text-align: center;
+        background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+    }
+
+    #modal-current-price {
+        display: block;
+        font-family: 'Roboto Mono', monospace;
+        letter-spacing: -0.5px;
+    }
+
+    .stat-item {
+        transition: all 0.2s;
+        padding: 8px;
+        border-radius: 8px;
+    }
+
+    .stat-item:hover {
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .active-tf {
+        opacity: 1 !important;
+        background: rgba(200, 150, 30, 0.08);
+        border-radius: 8px;
+    }
+    /* ══════════════════════════════════════════
+    MOBILE RESPONSIVE  (≤ 768px)
+    ══════════════════════════════════════════ */
+    @media (max-width: 768px) {
+
+        /* Allow the page to scroll on small screens */
+        body {
+            overflow: auto;
+            height: auto;
+            min-height: 100vh;
+        }
+
+        .main-wrapper {
+            height: auto;
+            min-height: 100vh;
+            padding: 4px;
+            gap: 6px;
+        }
+
+        /* Dashboard: swap from absolute-overlay to stacked flow */
+        .dashboard-grid {
+            position: static;
+            overflow: visible;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-top: 4px;
+            padding-bottom: 20px;
+        }
+
+        /* Reset-layout button: inline in flow, full width */
+        .reset-layout-btn {
+            position: static;
+            width: 100%;
+            justify-content: center;
+            padding: 8px 12px;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        /* All cards: relative positioning, full width */
+        .card {
+            position: relative !important;
+            width: 100% !important;
+            height: auto !important;
+            top: auto !important;
+            left: auto !important;
+            right: auto !important;
+            bottom: auto !important;
+        }
+
+        /* Cancel every individual window's fixed position */
+        #win-portfolio,
+        #win-simulator,
+        #win-main-chart,
+        #win-history,
+        #win-indices-tase,
+        #win-stocks,
+        #win-indices-global {
+            width: 100% !important;
+            height: auto !important;
+            top: auto !important;
+            left: auto !important;
+        }
+
+        /* Give chart containers enough room to render */
+        .card-body {
+            min-height: 220px;
+        }
+
+        #win-main-chart .card-body,
+        #win-indices-tase .card-body {
+            min-height: 260px;
+        }
+
+        /* Simulator and history need less vertical space */
+        #win-simulator .card-body,
+        #win-history .card-body {
+            min-height: 120px;
+        }
+
+        /* Cap scrollable tables so they don't fill the whole screen */
+        .scroll-container {
+            max-height: 300px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Portfolio table: shrink text and prevent overflow */
+        #portfolio-table {
+            min-width: 320px;
+            font-size: 0.65rem;
+        }
+
+        #portfolio-table th,
+        #portfolio-table td {
+            padding: 4px 3px;
+            font-size: 0.65rem;
+            white-space: nowrap;
+        }
+
+        #portfolio-table .pct-col {
+            font-size: 0.62rem !important;
+        }
+
+        /* Larger tap targets for window-control dots */
+        .win-btn {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* Timeframe buttons – bigger tap area */
+        .timeframe-buttons button {
+            padding: 5px 10px;
+            font-size: 0.7rem;
+        }
+
+        /* Simulator inputs: 16px prevents iOS auto-zoom */
+        #win-simulator .card-body input {
+            font-size: 16px !important;
+            padding: 8px;
+        }
+
+        /* Simulator Buy / Sell buttons */
+        #buy-btn,
+        #sell-btn-sim {
+            padding: 10px 0;
+            font-size: 0.88rem;
+            min-height: 44px;
+        }
+
+        /* Refresh button */
+        #refresh-btn {
+            padding: 8px 12px;
+            font-size: 11px;
+            width: 100%;
+            margin-top: 6px;
+        }
+
+        /* Table rows: more vertical padding for finger-sized tap area */
+        td { padding: 8px 4px; }
+        th { padding: 0 4px 8px; }
+
+        /* Sell button in portfolio rows */
+        .sell-btn {
+            padding: 6px 10px;
+            font-size: 0.75rem;
+            min-width: 44px;
+        }
+
+        /* Dynamically opened stock-detail windows */
+        .stock-detail-window {
+            position: relative !important;
+            width: 100% !important;
+            height: auto !important;
+            top: auto !important;
+            left: auto !important;
+            z-index: 10 !important;
+            min-height: 400px;
+        }
+
+        .stock-detail-window .card-body {
+            min-height: 340px;
+        }
+    }
