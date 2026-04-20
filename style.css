@@ -158,13 +158,105 @@
     .win-max   { background: #0ecb81; }
     .win-close { background: #f6465d; }
 
-    /* ── Window Positions ── */
-    #win-portfolio      { width: 25%;  height: 55%;  top: 0;    left: 0;     }
-    #win-simulator      { width: 25%;  height: 20%;  top: 56%;  left: 0;     }
-    #win-main-chart     { width: 49%;  height: 75%;  top: 0;    left: 25.5%; }
-    #win-history        { width: 49%;  height: 15%;  top: 84%;  left: 25.5%; }
-    #win-indices-tase   { width: 25%;  height: 28%;  top: 0;    left: 75%;   }
-    #win-stocks         { width: 25%;  height: 71%;  top: 29%;  left: 75%;   }
+    /* ── Window Positions — 3 columns, 1% gap ── */
+
+    /* Col A  |  left: 0  width: 24.5% */
+    #win-portfolio    { left: 0;      width: 24.5%; top:  0%;  height: 49%; }
+    #win-simulator    { left: 0;      width: 24.5%; top: 50%;  height: 17%; }
+    #win-ai-chat      { left: 0;      width: 24.5%; top: 68%;  height: 32%; }
+
+    /* Col B  |  left: 25.5%  width: 49% */
+    #win-main-chart   { left: 25.5%;  width: 49%;   top:  0%;  height: 91%; }
+    #win-search       { left: 25.5%;  width: 49%;   top: 92%;  height:  8%; }
+
+    /* Col C  |  left: 75.5%  width: 24.5% */
+    #win-indices-tase { left: 75.5%;  width: 24.5%; top:  0%;  height: 30%; }
+    #win-stocks       { left: 75.5%;  width: 24.5%; top: 31%;  height: 69%; }
+
+    /* ── AI Chat ── */
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        min-height: 0;
+        padding: 2px 0;
+    }
+
+    .chat-msg {
+        padding: 6px 9px;
+        border-radius: 7px;
+        font-size: 0.74rem;
+        line-height: 1.45;
+        max-width: 92%;
+        word-break: break-word;
+        white-space: pre-wrap;
+    }
+
+    .chat-msg-user {
+        background: rgba(200, 150, 30, 0.12);
+        border: 1px solid rgba(200, 150, 30, 0.2);
+        color: #e8d5a0;
+        align-self: flex-end;
+        text-align: right;
+    }
+
+    .chat-msg-ai {
+        background: #161a20;
+        border: 1px solid #1e2430;
+        color: #b8c0cc;
+        align-self: flex-start;
+        text-align: right;
+    }
+
+    .chat-msg-ai.thinking {
+        color: #424c5c;
+        font-style: italic;
+    }
+
+    .chat-msg-ai.error {
+        border-color: rgba(246, 70, 93, 0.25);
+        color: #f6465d;
+    }
+
+    .chat-input-row {
+        display: flex;
+        gap: 5px;
+        margin-top: 6px;
+        flex-shrink: 0;
+    }
+
+    .chat-input {
+        flex: 1;
+        background: #0d1117;
+        border: 1px solid #1e2430;
+        color: #c9d1d9;
+        padding: 5px 8px;
+        border-radius: 5px;
+        font-size: 0.75rem;
+        outline: none;
+        font-family: 'Assistant', sans-serif;
+        transition: border-color 0.15s;
+    }
+
+    .chat-input:focus { border-color: #c8961e; }
+
+    .chat-send-btn {
+        background: #c8961e;
+        color: #0b0e11;
+        border: none;
+        padding: 5px 11px;
+        border-radius: 5px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: filter 0.15s;
+    }
+
+    .chat-send-btn:hover { filter: brightness(1.2); }
+    .chat-send-btn:disabled { opacity: 0.45; cursor: default; }
 
     .card.maximized {
         position: fixed !important;
@@ -516,7 +608,8 @@
         #win-history,
         #win-indices-tase,
         #win-stocks,
-        #win-indices-global {
+        #win-indices-global,
+        #win-ai-chat {
             width: 100% !important;
             height: auto !important;
             top: auto !important;

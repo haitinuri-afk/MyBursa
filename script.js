@@ -1,4 +1,5 @@
-const STORAGE_KEY = 'trading_station_pro_data';
+const STORAGE_KEY   = 'trading_station_pro_data';
+const PORTFOLIO_KEY = 'trading_station_portfolio';
 
 
 // Yahoo Finance ticker symbols for each Hebrew stock name
@@ -6,14 +7,21 @@ const STOCK_SYMBOLS = {
     "מדד תא-35":    "^TA35",
     "לאומי":        "LUMI.TA",
     "פועלים":       "POLI.TA",
+    "דיסקונט":      "DSCT.TA",
+    "מזרחי טפחות": "MZTF.TA",
     "אלביט":        "ESLT.TA",
     "נייס":         "NICE.TA",
     "טבע":          "TEVA.TA",
+    "כיל":          "ICL.TA",
     "שטראוס":       "STRS.TA",
     "שופרסל":       "SAE.TA",
     "פוקס":         "FOX.TA",
     "עזריאלי":      "AZRG.TA",
     "מליסרון":      "MLSR.TA",
+    "בזק":          "BEZQ.TA",
+    "סלקום":        "SELC.TA",
+    "אמות":         "AMOT.TA",
+    "ביג":          "BIG.TA",
     "אורמת":        "ORA.TA",
     "שיכון ובינוי": "SKBN.TA",
     "קבוצת דלק":    "DLEKG.TA",
@@ -29,10 +37,30 @@ const SYM_TO_NAME = Object.fromEntries(
     Object.entries(STOCK_SYMBOLS).map(([name, sym]) => [sym, name])
 );
 
+// ── Portfolio persistence (dedicated key — never wiped by price cache) ──────
+function savePortfolio() {
+    try {
+        localStorage.setItem(PORTFOLIO_KEY, JSON.stringify({ portfolio, transactionHistory }));
+    } catch(e) { console.error('savePortfolio', e); }
+}
+
+function loadPortfolio() {
+    try {
+        const raw = localStorage.getItem(PORTFOLIO_KEY);
+        if (raw) return JSON.parse(raw);
+    } catch(e) { localStorage.removeItem(PORTFOLIO_KEY); }
+    return null;
+}
+
+// ── General state (prices / indices cache) ─────────────────────────────────
 function saveState() {
     try {
-        const state = { portfolio, transactionHistory, indicesData };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        const prices = {};
+        Object.entries(stocksData).forEach(([name, d]) => {
+            if (d.price > 0) prices[name] = { price: d.price, initial: d.initial };
+        });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ indicesData, prices }));
+        savePortfolio();   // always flush portfolio too
     } catch (e) { console.error("Failed to save state:", e); }
 }
 
@@ -47,14 +75,19 @@ function loadState() {
     return null;
 }
 
-// Hardcoded prices removed — all values come from live API only
 const STOCK_NAMES = Object.keys(STOCK_SYMBOLS);
 
 const savedState = loadState();
-// stocksData is never restored from cache; always populated by refreshRealData()
+// שחזר מחירים שמורים כדי להציג % מיד בטעינה
 let stocksData = {};
 STOCK_NAMES.forEach(name => {
-    stocksData[name] = { price: 0, initial: 0, baseWeek: 0, baseMonth: 0, base3Month: 0, history: [], historyWeek: [], historyMonth: [], history3Month: [], trend: 0 };
+    const saved = savedState?.prices?.[name];
+    stocksData[name] = {
+        price: saved?.price ?? 0,
+        initial: saved?.initial ?? 0,
+        baseWeek: 0, baseMonth: 0, base3Month: 0,
+        history: [], historyWeek: [], historyMonth: [], history3Month: [], trend: 0
+    };
 });
 
 function buildIndexHistory(basePrice, points = 50) {
@@ -81,14 +114,15 @@ if (indicesData["מדד תא-35"]?.price) {
 }
 
 
-let portfolio = (savedState && savedState.portfolio) ? savedState.portfolio : {};
-let transactionHistory = (savedState && savedState.transactionHistory) ? savedState.transactionHistory : [];
+const _savedPortfolio = loadPortfolio();
+let portfolio          = _savedPortfolio?.portfolio        ?? savedState?.portfolio        ?? {};
+let transactionHistory = _savedPortfolio?.transactionHistory ?? savedState?.transactionHistory ?? [];
 
 let fetchInterval = null;
 let lastMarketOpen = null;
 
 let currentStock = "מדד תא-35";
-let myChart = null;
+let myChart = null;  // kept for compat (unused after LW Charts)
 let mainChartData = [];
 let indexChart = null;
 let modalChart = null;
@@ -96,6 +130,13 @@ let currentModalStock = null;
 let currentModalTf = 'day';
 let currentTf = 'daily';
 let currentMainTf = 'daily';
+
+// ── Lightweight Charts (candlestick) state ─────────────────────────────────
+let _lwChart   = null;
+let _lwSeries  = null;
+let _lwVolume  = null;
+let _lwStock   = null;   // last rendered stock name
+let _lwTf      = null;   // last rendered timeframe
 
 // ── Real Data ──────────────────────────────────────────────────────────────
 
@@ -113,16 +154,21 @@ function applyMarketStatus(marketState) {
 }
 
 async function loadSessionHistory() {
-    for (const name of [...new Set([currentStock, "מדד תא-35"])]) {
-        const sym = STOCK_SYMBOLS[name];
-        if (!sym) continue;
-        const c = await fetchHistoricalCloses(sym, '1d', '5m');
-        if (c.length > 5) {
-            stocksData[name].history = c;
-            if (name === currentStock) drawChart();
-            if (name === "מדד תא-35") drawIndexChart();
+    // Index chart: load 5d daily closes
+    const idxSym = STOCK_SYMBOLS["מדד תא-35"];
+    if (idxSym) {
+        const w5d = await fetchHistoricalCloses(idxSym, '5d', '1d');
+        if (w5d.length > 1) {
+            stocksData["מדד תא-35"].historyWeek = w5d;
+            drawIndexChart('daily');
         }
+        // Pre-load W/M/3M for index chart timeframe buttons
+        fetchHistoricalCloses(idxSym, '1mo', '1d').then(w => { if (w.length > 1) { stocksData["מדד תא-35"].historyMonth  = w; } });
+        fetchHistoricalCloses(idxSym, '3mo', '1d').then(w => { if (w.length > 1) { stocksData["מדד תא-35"].history3Month = w; } });
     }
+    // Main candlestick chart — force a fresh load
+    _lwStock = null; _lwTf = null;
+    await drawChart();
 }
 
 function isMarketOpen() {
@@ -176,6 +222,23 @@ async function fetchHistoricalCloses(symbol, range, interval = '1d') {
     }
 }
 
+async function fetchHistoricalOHLC(symbol, range, interval = '1d') {
+    try {
+        const params = new URLSearchParams({ symbol, range, interval });
+        const resp = await fetch(`/api/stock/history?${params}`);
+        if (!resp.ok) return [];
+        const data = await resp.json();
+        return (data.ohlc ?? []).filter(d => d.open > 0 && d.high > 0 && d.low > 0 && d.close > 0);
+    } catch(e) { return []; }
+}
+
+function tfToOhlcRange(tf) {
+    if (tf === 'daily')   return { range: '5d',  interval: '1d' };
+    if (tf === 'weekly')  return { range: '1mo', interval: '1d' };
+    if (tf === 'monthly') return { range: '3mo', interval: '1d' };
+    return                       { range: '1y',  interval: '1d' };
+}
+
 // Fetch and store historical closes for a stock/timeframe, then redraw.
 async function fetchAndStoreHistory(stockName, tf) {
     const sym = STOCK_SYMBOLS[stockName];
@@ -221,7 +284,10 @@ async function refreshRealData() {
     }
 
     const { marketState = 'CLOSED', quotes: quoteList } = quotes;
-    applyMarketStatus(marketState);
+    window._lastQuotes = quoteList;
+    // Use client-side time check as override — Yahoo sometimes returns wrong state for TASE
+    const effectiveState = isMarketOpen() ? 'REGULAR' : marketState;
+    applyMarketStatus(effectiveState);
 
     let liveCount = 0;
     quoteList.forEach(q => {
@@ -246,6 +312,14 @@ async function refreshRealData() {
 
     console.log(`[YF] Live: ${liveCount}/${symbols.length}`);
     setDataStatus(liveCount > 0 ? 'live' : (isMarketOpen() ? 'error' : 'sim'), `${liveCount} symbols live`);
+
+    // Update last-fetch timestamp
+    if (liveCount > 0) {
+        const now = new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const el = document.getElementById('last-update');
+        if (el) el.textContent = `עודכן ${now}`;
+    }
+
     initTicker(); updateStockList(); updatePortfolioList();
     drawChart(); drawIndexChart(); updateAllStockWindows();
     saveState();
@@ -471,47 +545,74 @@ function updateAllStockWindows() {
 
 // ── Charts ─────────────────────────────────────────────────────────────────
 
-function getMainChartData(stockName, tf) {
-    const stock = stocksData[stockName];
-    if (tf === 'daily')   return stock.history.length ? [...stock.history, parseFloat(stock.price)] : [parseFloat(stock.price)];
-    if (tf === 'weekly')  return stock.historyWeek?.length  ? [...stock.historyWeek]  : null;
-    if (tf === 'monthly') return stock.historyMonth?.length ? [...stock.historyMonth] : null;
-    return stock.history3Month?.length ? [...stock.history3Month] : null;
-}
-
-function drawChart() {
-    const canvas = document.getElementById('stockChart');
-    if (!canvas) return;
+async function drawChart() {
+    const container = document.getElementById('stockChart');
+    if (!container) return;
     const stockName = currentStock || Object.keys(stocksData)[0];
-    const stock = stocksData[stockName];
-    if (!stock) return;
-
     document.getElementById('main-chart-title').innerText = stockName;
-    const data = getMainChartData(stockName, currentMainTf);
+    const sym = STOCK_SYMBOLS[stockName];
+    if (!sym) return;
 
-    if (!data || data.length < 2) {
-        if (currentMainTf !== 'daily') fetchAndStoreHistory(stockName, currentMainTf);
-        return;
-    }
+    // Skip re-fetch if stock and timeframe haven't changed (e.g. called from refreshRealData every 2s)
+    if (_lwStock === stockName && _lwTf === currentMainTf && _lwChart) return;
+    _lwStock = stockName;
+    _lwTf    = currentMainTf;
 
-    if (!myChart) {
-        myChart = new Chart(canvas.getContext('2d'), {
-            type: 'line',
-            data: {
-                labels: new Array(data.length).fill(''),
-                datasets: [{ label: stockName, data, borderColor: '#f0b90b', backgroundColor: 'rgba(240, 185, 11, 0.1)', fill: true, tension: 0.4, pointRadius: 0, borderWidth: 3 }]
-            },
-            options: {
-                animation: false, maintainAspectRatio: false, responsive: true,
-                plugins: { legend: { display: false } },
-                scales: { x: { display: false }, y: { beginAtZero: false, grid: { color: 'rgba(255,255,255,0.05)' }, afterDataLimits: s => { const mid = (s.max + s.min) / 2, span = mid * 0.008; if (s.max - s.min < span) { s.min = mid - span / 2; s.max = mid + span / 2; } } } }
-            }
-        });
-    } else {
-        myChart.data.datasets[0].label = stockName;
-        myChart.data.datasets[0].data = data;
-        myChart.data.labels = new Array(data.length).fill('');
-        myChart.update('none');
+    const { range, interval } = tfToOhlcRange(currentMainTf);
+    const ohlc = await fetchHistoricalOHLC(sym, range, interval);
+    if (!ohlc.length) { console.warn('[lwChart] no OHLC for', sym, range); return; }
+
+    // Destroy old chart
+    if (_lwChart) { _lwChart.remove(); _lwChart = null; _lwSeries = null; _lwVolume = null; }
+
+    const w = container.clientWidth  || 600;
+    const h = container.clientHeight || 400;
+    _lwChart = LightweightCharts.createChart(container, {
+        width: w, height: h,
+        layout:   { background: { color: '#0b0e11' }, textColor: '#848e9c' },
+        grid:     { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
+        timeScale:      { borderColor: '#1e2430', timeVisible: true, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true },
+        rightPriceScale:{ borderColor: '#1e2430', scaleMargins: { top: 0.08, bottom: 0.28 } },
+        crosshair: { mode: 1 },
+    });
+    // Keep chart sized to container on window resize
+    new ResizeObserver(() => {
+        if (_lwChart && container.clientWidth && container.clientHeight)
+            _lwChart.resize(container.clientWidth, container.clientHeight);
+    }).observe(container);
+
+    _lwSeries = _lwChart.addCandlestickSeries({
+        upColor: '#0ecb81', downColor: '#f6465d',
+        borderUpColor: '#0ecb81', borderDownColor: '#f6465d',
+        wickUpColor:   '#0ecb81', wickDownColor:   '#f6465d',
+    });
+    _lwSeries.setData(ohlc);
+
+    // Volume histogram — sits at the bottom 22% of the chart
+    _lwVolume = _lwChart.addHistogramSeries({
+        priceFormat:  { type: 'volume' },
+        priceScaleId: 'vol',
+    });
+    _lwChart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.78, bottom: 0 }, drawTicks: false });
+    _lwVolume.setData(ohlc.map(d => ({
+        time:  d.time,
+        value: d.volume,
+        color: d.close >= d.open ? 'rgba(14,203,129,0.3)' : 'rgba(246,70,93,0.3)',
+    })));
+
+    _lwChart.timeScale().fitContent();
+
+    // Update header with last close + range %
+    const last  = ohlc[ohlc.length - 1];
+    const first = ohlc[0];
+    const pct   = first?.close ? (((last.close - first.close) / first.close) * 100).toFixed(2) : null;
+    const prEl  = document.getElementById('main-chart-price');
+    const pcEl  = document.getElementById('main-chart-pct');
+    if (prEl) prEl.textContent = last ? `₪${last.close.toFixed(2)}` : '';
+    if (pcEl && pct !== null) {
+        const up = parseFloat(pct) >= 0;
+        pcEl.textContent = `${up ? '+' : ''}${pct}%`;
+        pcEl.style.color = up ? '#0ecb81' : '#f6465d';
     }
 }
 
@@ -521,16 +622,17 @@ function updateMainTimeframe(tf) {
     const map = { daily: 0, weekly: 1, monthly: 2, '3months': 3 };
     const btns = document.querySelectorAll('#main-tf-btns button');
     if (btns[map[tf]]) btns[map[tf]].classList.add('active');
-    if (myChart) { myChart.destroy(); myChart = null; }
+    _lwTf = null;  // force re-fetch
     drawChart();
 }
 
 function getIndexChartData(tf) {
     const idx = stocksData["מדד תא-35"];
     if (!idx?.price) return null;
-    if (tf === 'daily')   return idx.history.length     ? [...idx.history]      : null;
-    if (tf === 'weekly')  return idx.historyWeek?.length  ? [...idx.historyWeek]  : null;
-    if (tf === 'monthly') return idx.historyMonth?.length ? [...idx.historyMonth] : null;
+    // D: use 5-day historical closes (not the live-push array which is flat when market closed)
+    if (tf === 'daily')   return idx.historyWeek?.length   ? [...idx.historyWeek]   : null;
+    if (tf === 'weekly')  return idx.historyMonth?.length  ? [...idx.historyMonth]  : null;
+    if (tf === 'monthly') return idx.history3Month?.length ? [...idx.history3Month] : null;
     return idx.history3Month?.length ? [...idx.history3Month] : null;
 }
 
@@ -627,13 +729,19 @@ function updateStockList() {
     list.innerHTML = "";
     Object.keys(stocksData).forEach(name => {
         const stock = stocksData[name];
-        const pct = calculatePctChange(parseFloat(stock.price), stock.initial);
-        const color = parseFloat(pct) >= 0 ? '#0ecb81' : '#f6465d';
-        const arrow = parseFloat(pct) >= 0 ? '▲' : '▼';
+        const price = parseFloat(stock.price);
+        const pct   = calculatePctChange(price, stock.initial);
+        const up    = parseFloat(pct) >= 0;
+        const color = up ? '#0ecb81' : '#f6465d';
+        const arrow = up ? '▲' : '▼';
+        const priceStr = price > 0 ? `₪${price.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
         const tr = document.createElement('tr');
         tr.className = 'stock-row';
-        tr.innerHTML = `<td>${name}</td><td class="pct-col" style="color: ${color}"><span dir="ltr" class="inline-block">${parseFloat(pct) >= 0 ? '+' : ''}${pct}%${arrow}</span></td>`;
-        tr.onclick = () => { currentStock = name; drawChart(); openStockWindow(name); };
+        tr.innerHTML = `
+            <td class="text-right" style="font-size:0.72rem">${name}</td>
+            <td class="text-right font-mono" style="font-size:0.72rem;color:#c9d1d9" dir="ltr">${priceStr}</td>
+            <td class="pct-col" style="color:${color}"><span dir="ltr" class="inline-block">${up ? '+' : ''}${pct}%${arrow}</span></td>`;
+        tr.onclick = () => { currentStock = name; _lwStock = null; drawChart(); openStockWindow(name); };
         list.appendChild(tr);
     });
 }
@@ -658,7 +766,7 @@ function updatePortfolioList() {
         const tr = document.createElement('tr');
         tr.className = 'stock-row';
         tr.onclick = (e) => {
-            if (e.target.tagName !== 'BUTTON') { currentStock = symbol; drawChart(); openStockWindow(symbol); }
+            if (e.target.tagName !== 'BUTTON') { currentStock = symbol; _lwStock = null; drawChart(); openStockWindow(symbol); }
         };
         tr.innerHTML = `
             <td>${symbol}</td>
@@ -672,7 +780,6 @@ function updatePortfolioList() {
     const totalPL = totalCost > 0 ? calculatePctChange(totalValue, totalCost) : "0.00";
     const color = parseFloat(totalPL) >= 0 ? '#0ecb81' : '#f6465d';
     totalDisplay.innerHTML = `<span dir="ltr" class="inline-block">₪${totalValue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span> <span style="color: ${color}" dir="ltr" class="inline-block">(${totalPL}%)</span>`;
-    saveState();
 }
 
 function searchSymbol() {
@@ -705,6 +812,7 @@ function buyStock() {
     }
     transactionHistory.unshift({ time: new Date().toLocaleTimeString(), action: 'Buy', symbol, qty, price: price.toFixed(2) });
     if (transactionHistory.length > 50) transactionHistory.pop();
+    savePortfolio();
     updatePortfolioList();
 }
 
@@ -720,6 +828,7 @@ function sellStock(symbol) {
     delete portfolio[symbol];
     transactionHistory.unshift({ time: new Date().toLocaleTimeString(), action: 'Sell', symbol, qty, price: price.toFixed(2) });
     if (transactionHistory.length > 50) transactionHistory.pop();
+    savePortfolio();
     updatePortfolioList();
 }
 
@@ -761,7 +870,7 @@ function toggleMaximize(winId) {
     if (!win) return;
     win.classList.toggle('maximized');
     if (winId === 'win-indices-tase' && indexChart) indexChart.resize();
-    if (winId === 'win-main-chart'   && myChart)    myChart.resize();
+    // LW Charts uses autoSize — no manual resize needed for win-main-chart
     const nameMatch = winId.match(/win-detail-(.+)/);
     if (nameMatch && activeStockWindows[nameMatch[1]]) {
         activeStockWindows[nameMatch[1]].chart.resize();
@@ -772,7 +881,6 @@ function resetWindows() {
     const cards = document.querySelectorAll('.card');
     cards.forEach(card => { card.removeAttribute('style'); card.classList.remove('maximized'); });
     if (indexChart) indexChart.resize();
-    if (myChart)    myChart.resize();
     Object.keys(activeStockWindows).forEach(name => {
         if (activeStockWindows[name].chart) activeStockWindows[name].chart.resize();
     });
@@ -859,4 +967,61 @@ function makeResizable(el) {
         window.addEventListener('mousemove', onMouseMove);
         window.addEventListener('mouseup',   onMouseUp);
     });
+}
+
+
+let _aiHistory = [];
+
+function addAIMessage(role, text) {
+    const box = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    const isUser = role === 'user';
+    div.style.cssText = `display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'};margin:2px 0`;
+    div.innerHTML = `<div style="max-width:85%;padding:4px 8px;border-radius:8px;font-size:10px;line-height:1.5;white-space:pre-wrap;
+        background:${isUser ? '#1a3a5c' : '#1e2430'};color:${isUser ? '#87ceeb' : '#b7bdc6'};
+        border:1px solid ${isUser ? '#274d73' : '#2b3139'}">${text}</div>`;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn   = document.getElementById('ai-send-btn');
+    const text  = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    btn.disabled = true;
+    addAIMessage('user', text);
+    _aiHistory.push({ role: 'user', content: text });
+
+    const thinking = document.createElement('div');
+    thinking.id = 'ai-thinking';
+    thinking.style.cssText = 'font-size:10px;color:#424c5c;padding:2px 4px';
+    thinking.textContent = '...';
+    document.getElementById('ai-messages').appendChild(thinking);
+
+    try {
+        const res  = await fetch('/api/chat', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ messages: _aiHistory, quotes: window._lastQuotes || [] })
+        });
+        const data = await res.json();
+        document.getElementById('ai-thinking')?.remove();
+        const reply = data.reply || data.error || 'אין תשובה';
+        _aiHistory.push({ role: 'assistant', content: reply });
+        addAIMessage('assistant', reply);
+    } catch (e) {
+        document.getElementById('ai-thinking')?.remove();
+        addAIMessage('assistant', 'שגיאה: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        input.focus();
+    }
+}
+
+function clearAIChat() {
+    _aiHistory = [];
+    document.getElementById('ai-messages').innerHTML = '';
 }

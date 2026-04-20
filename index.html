@@ -8,18 +8,24 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="bg-black text-white">
     <div class="main-wrapper">
         <!-- Thin Header Bar -->
-        <header class="top-bar px-2">
+        <header class="top-bar px-2" style="justify-content:space-between">
             <h1 class="text-xs font-bold text-[#87ceeb] flex items-center gap-2">
-                בורסת תל אביב <span id="market-status" class="text-[#f6465d] text-[8px]">●</span>
-                <span id="market-label" class="text-[8px] font-mono font-bold" style="color:#f6465d"></span>
+                בורסת תל אביב
+                <span id="market-status" class="text-[8px]">●</span>
+                <span id="market-label" class="text-[8px] font-mono font-bold"></span>
                 <span id="data-status" class="text-[8px] font-mono px-1 rounded" style="background:#1e2430;color:#424c5c">SIM</span>
             </h1>
+            <div class="flex items-center gap-3" dir="ltr">
+                <span class="text-[9px] font-mono" style="color:#b7791f">⏱ נתונים מעוכבים ~15 דקות</span>
+                <span id="last-update" class="text-[9px] font-mono" style="color:#424c5c"></span>
+            </div>
         </header>
 
         <!-- Slim Ticker -->
@@ -77,7 +83,8 @@
                         <table id="stock-table">
                             <thead>
                                 <tr>
-                                    <th class="text-right">סימול</th>
+                                    <th class="text-right">מניה</th>
+                                    <th class="text-right">מחיר</th>
                                     <th class="pct-col text-center">שינוי%</th>
                                 </tr>
                             </thead>
@@ -91,8 +98,12 @@
 
             <!-- Main Chart Window -->
             <div id="win-main-chart" class="card">
-                <div class="window-header">
-                    <h2 id="main-chart-title">לאומי</h2>
+                <div class="window-header" dir="ltr">
+                    <div class="flex items-center gap-2">
+                        <h2 id="main-chart-title" style="text-transform:none;font-size:0.75rem;color:#e0c97a">לאומי</h2>
+                        <span id="main-chart-price" class="font-mono text-[11px] text-white"></span>
+                        <span id="main-chart-pct"   class="font-mono text-[10px]"></span>
+                    </div>
                     <div class="window-controls">
                         <div class="timeframe-buttons" id="main-tf-btns">
                             <button class="active" onclick="updateMainTimeframe('daily')">D</button>
@@ -105,8 +116,8 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="flex-1 w-full overflow-hidden relative bg-[#0b0e11] rounded">
-                        <canvas id="stockChart"></canvas>
+                    <div class="flex-1 w-full overflow-hidden relative bg-[#0b0e11] rounded" style="min-height:0;position:relative">
+                        <div id="stockChart" style="position:absolute;inset:0"></div>
                     </div>
                 </div>
             </div>
@@ -164,20 +175,36 @@
             </div>
 
             <!-- Search Window -->
-            <div id="win-search" class="card">
-                <div class="window-header">
-                    <h3>Search</h3>
-                    <div class="window-controls">
-                        <button class="win-btn win-max" onclick="toggleMaximize('win-search')"></button>
+            <div id="win-search" class="card" style="display:flex;flex-direction:row;align-items:center;padding:0 10px;gap:8px">
+                <span class="text-[10px] font-bold text-[#c8961e] whitespace-nowrap" dir="ltr">🔍 Search</span>
+                <div class="flex gap-2 flex-1" dir="ltr">
+                    <input type="text" id="search-symbol" placeholder="סימול (e.g. לאומי / LUMI.TA)"
+                        class="bg-[#1e2329] border border-[#363c4e] text-white px-2 rounded text-xs flex-1 outline-none"
+                        style="height:28px"
+                        onkeydown="if(event.key==='Enter') searchSymbol()">
+                    <button onclick="searchSymbol()" class="bg-[#2b3139] border border-[#474d57] text-white px-3 rounded text-xs font-bold" style="height:28px">Go</button>
+                </div>
+                <div id="search-error" class="text-[10px] text-[#f6465d] whitespace-nowrap hidden">לא נמצא</div>
+            </div>
+            <!-- AI Chat Window -->
+            <div id="win-ai-chat" class="card" style="display:flex;flex-direction:column">
+                <div class="card-header flex items-center justify-between">
+                    <span class="text-xs font-bold text-[#87ceeb]">🤖 יועץ AI</span>
+                    <div class="flex items-center gap-2">
+                        <button onclick="clearAIChat()" class="text-[9px] bg-[#2b3139] border border-[#474d57] px-2 py-0.5 rounded hover:bg-[#363c47]">נקה</button>
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-ai-chat')"></button>
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
-                <div class="card-body" dir="ltr">
-                    <div class="flex gap-2">
-                        <input type="text" id="search-symbol" placeholder="Symbol (e.g. לאומי)" class="bg-[#1e2329] border border-[#363c4e] text-white p-1 rounded text-xs w-full outline-none">
-                        <button onclick="searchSymbol()" class="bg-[#2b3139] border border-[#474d57] text-white px-2 rounded text-xs">Go</button>
-                    </div>
-                    <div id="search-error" class="text-[10px] text-[#f6465d] mt-1 hidden">Symbol not found.</div>
+                <div id="ai-messages" class="flex-1 overflow-y-auto px-2 py-1 space-y-1" style="min-height:0"></div>
+                <div class="flex gap-1 p-1 border-t border-[#2b3139]">
+                    <input id="ai-input" type="text" placeholder="שאל על התיק שלך..." dir="rtl"
+                        class="flex-1 bg-[#1e2430] border border-[#474d57] rounded px-2 text-[12px] text-white outline-none"
+                        style="height:28px"
+                        onkeydown="if(event.key==='Enter') sendAIMessage()" />
+                    <button onclick="sendAIMessage()" id="ai-send-btn"
+                        class="bg-[#0ecb81] text-[#0b0e11] px-3 rounded text-[12px] font-bold hover:opacity-80"
+                        style="height:28px">שלח</button>
                 </div>
             </div>
         </div>
