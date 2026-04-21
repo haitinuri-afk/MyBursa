@@ -233,9 +233,9 @@ async function fetchHistoricalOHLC(symbol, range, interval = '1d') {
 }
 
 function tfToOhlcRange(tf) {
-    if (tf === 'daily')   return { range: '5d',  interval: '1d' };
-    if (tf === 'weekly')  return { range: '1mo', interval: '1d' };
-    if (tf === 'monthly') return { range: '3mo', interval: '1d' };
+    if (tf === 'daily')   return { range: '1mo', interval: '1d' };
+    if (tf === 'weekly')  return { range: '3mo', interval: '1d' };
+    if (tf === 'monthly') return { range: '6mo', interval: '1d' };
     return                       { range: '1y',  interval: '1d' };
 }
 
@@ -264,7 +264,7 @@ async function fetchBatchPrices(symbols) {
         const resp = await fetch(`/api/stock/batch?${params}`);
         if (!resp.ok) { console.warn(`[batch] HTTP ${resp.status}`); return null; }
         const data = await resp.json();
-        return { marketOpen: data.marketOpen ?? false, quotes: Array.isArray(data) ? data : (data.quotes ?? []) };
+        return { marketOpen: data.marketOpen ?? false, marketState: data.marketState ?? 'CLOSED', quotes: Array.isArray(data) ? data : (data.quotes ?? []) };
     } catch(e) {
         console.warn('[batch]', e.message);
         return null;
@@ -285,8 +285,7 @@ async function refreshRealData() {
 
     const { marketState = 'CLOSED', quotes: quoteList } = quotes;
     window._lastQuotes = quoteList;
-    // Use client-side time check as override — Yahoo sometimes returns wrong state for TASE
-    const effectiveState = isMarketOpen() ? 'REGULAR' : marketState;
+    const effectiveState = marketState;
     applyMarketStatus(effectiveState);
 
     let liveCount = 0;
@@ -570,9 +569,9 @@ async function drawChart() {
     _lwChart = LightweightCharts.createChart(container, {
         width: w, height: h,
         layout:   { background: { color: '#0b0e11' }, textColor: '#848e9c' },
-        grid:     { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
-        timeScale:      { borderColor: '#1e2430', timeVisible: true, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true },
-        rightPriceScale:{ borderColor: '#1e2430', scaleMargins: { top: 0.08, bottom: 0.28 } },
+        grid:     { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
+        timeScale:      { borderColor: '#1e2430', timeVisible: true, secondsVisible: false, fixRightEdge: true },
+        rightPriceScale:{ borderColor: '#1e2430', scaleMargins: { top: 0.06, bottom: 0.26 } },
         crosshair: { mode: 1 },
     });
     // Keep chart sized to container on window resize
@@ -582,7 +581,7 @@ async function drawChart() {
     }).observe(container);
 
     _lwSeries = _lwChart.addCandlestickSeries({
-        upColor: '#0ecb81', downColor: '#f6465d',
+        upColor:       '#0ecb81', downColor:       '#f6465d',
         borderUpColor: '#0ecb81', borderDownColor: '#f6465d',
         wickUpColor:   '#0ecb81', wickDownColor:   '#f6465d',
     });
@@ -984,6 +983,40 @@ function addAIMessage(role, text) {
     box.scrollTop = box.scrollHeight;
 }
 
+let _rateLimitTimer  = null;
+let _rateLimitActive = false;
+
+function _startRateLimitCountdown(seconds, restoredText) {
+    const btn   = document.getElementById('ai-send-btn');
+    const input = document.getElementById('ai-input');
+    if (restoredText) input.value = restoredText;
+
+    let remaining    = seconds;
+    _rateLimitActive = true;
+    btn.disabled          = true;
+    btn.style.background  = '#2b3139';
+    btn.style.color       = '#4a5568';
+    btn.style.borderColor = '#363c4e';
+    btn.textContent       = `${remaining}s`;
+
+    clearInterval(_rateLimitTimer);
+    _rateLimitTimer = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+            clearInterval(_rateLimitTimer);
+            _rateLimitActive      = false;
+            btn.disabled          = false;
+            btn.style.background  = '';
+            btn.style.color       = '';
+            btn.style.borderColor = '';
+            btn.textContent       = 'שלח';
+            input.focus();
+        } else {
+            btn.textContent = `${remaining}s`;
+        }
+    }, 1000);
+}
+
 async function sendAIMessage() {
     const input = document.getElementById('ai-input');
     const btn   = document.getElementById('ai-send-btn');
@@ -1009,6 +1042,25 @@ async function sendAIMessage() {
         });
         const data = await res.json();
         document.getElementById('ai-thinking')?.remove();
+
+        if (res.status === 429) {
+            // Roll back the user message — it was never processed
+            _aiHistory.pop();
+            const wait = Math.ceil(data.retryAfter || 60);
+            const rateLimitMsg = `⏱ מגבלת API — ניתן לשלוח שוב בעוד ${wait} שניות`;
+
+            // Update existing rate-limit bubble instead of stacking new ones
+            const box = document.getElementById('ai-messages');
+            const lastInner = box.lastElementChild?.querySelector('div');
+            if (lastInner?.textContent?.startsWith('⏱ מגבלת API')) {
+                lastInner.textContent = rateLimitMsg;
+            } else {
+                addAIMessage('assistant', rateLimitMsg);
+            }
+            _startRateLimitCountdown(wait, text);
+            return;
+        }
+
         const reply = data.reply || data.error || 'אין תשובה';
         _aiHistory.push({ role: 'assistant', content: reply });
         addAIMessage('assistant', reply);
@@ -1016,7 +1068,10 @@ async function sendAIMessage() {
         document.getElementById('ai-thinking')?.remove();
         addAIMessage('assistant', 'שגיאה: ' + e.message);
     } finally {
-        btn.disabled = false;
+        if (!_rateLimitActive) {
+            btn.disabled    = false;
+            btn.textContent = 'שלח';
+        }
         input.focus();
     }
 }

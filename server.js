@@ -3,7 +3,7 @@ const express   = require('express');
 const path      = require('path');
 const https     = require('https');
 const fs        = require('fs');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -14,11 +14,12 @@ app.use(express.static(path.join(__dirname)));
 
 const SYMBOL_FALLBACKS = { '^TA35':'TA35.TA', '^TA125':'TA125.TA', '^TA90':'TA90.TA' };
 
-let _usdIlsRate = 3.65;
+let _usdIlsRate = 3.004;
 async function refreshUsdIlsRate() {
     try {
-        const { meta } = await fetchChartMeta('USDILS=X', '1d');
-        if (meta?.regularMarketPrice) { _usdIlsRate = meta.regularMarketPrice; console.log(`[rate] USD/ILS = ${_usdIlsRate}`); }
+        const { body } = await httpsGet('https://open.er-api.com/v6/latest/USD');
+        const ils = body?.rates?.ILS;
+        if (ils > 0) { _usdIlsRate = parseFloat(ils.toFixed(4)); console.log(`[rate] USD/ILS = ${_usdIlsRate}`); }
     } catch(e) { console.warn('[rate]', e.message); }
 }
 
@@ -32,9 +33,9 @@ function applyDivisor(sym, value, currency) {
 }
 
 async function fetchChartMeta(symbol, range, interval = '1d') {
-    // Try known-good fallback first, then original symbol
+    // Try original symbol first, fallback only if it fails
     const fallback   = SYMBOL_FALLBACKS[symbol];
-    const candidates = fallback ? [fallback, symbol] : [symbol];
+    const candidates = fallback ? [symbol, fallback] : [symbol];
     for (const candidate of candidates) {
         const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(candidate)}?range=${range}&interval=${interval}&includePrePost=false`;
         try {
@@ -121,16 +122,17 @@ app.get('/api/stock/batch', async (req, res) => {
     const symList  = symbols.split(',').map(s => s.trim()).filter(Boolean);
     const settled  = await Promise.allSettled(symList.map(async sym => {
         const isIndex = sym.startsWith('^');
-        const range   = isIndex ? '5d' : '1d';
-        const { meta, result: chartResult, canonicalSymbol } = await fetchChartMeta(sym, range);
+        const { meta, result: chartResult, canonicalSymbol } = await fetchChartMeta(sym, '5d');
         const currency = meta.currency;
 
-        // For indices (5d range): use second-to-last close as prev close (= last session's close)
-        let prevClose = meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
-        if (isIndex && chartResult) {
-            const closes = (chartResult.indicators?.quote?.[0]?.close ?? []).filter(v => v != null && v > 0);
-            if (closes.length >= 2) prevClose = closes[closes.length - 2];
-        }
+        // Get all valid daily closes from the 5d chart
+        const closes = (chartResult?.indicators?.quote?.[0]?.close ?? []).filter(v => v != null && v > 0);
+
+        // prevClose = second-to-last close from chart (= last full session's close)
+        // Fall back to Yahoo's metadata fields if chart doesn't have enough data
+        let prevClose = closes.length >= 2
+            ? closes[closes.length - 2]
+            : (meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice);
 
         const result = {
             symbol: canonicalSymbol,
@@ -149,9 +151,12 @@ app.get('/api/stock/batch', async (req, res) => {
         else console.warn(`[batch] ${symList[i]}: ${r.reason?.message}`);
     });
 
-    const serverOpen  = isMarketOpen();
+    // Use Yahoo Finance's marketState as ground truth (knows about holidays)
+    // Fall back to our time-based check only when Yahoo data is unavailable
+    const yahooState  = results.find(r => r.marketState)?.marketState;
+    const serverOpen  = yahooState ? yahooState === 'REGULAR' : isMarketOpen();
     const marketState = serverOpen ? 'REGULAR' : 'CLOSED';
-    console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen}`);
+    console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen} (yahoo:${yahooState ?? 'n/a'})`);
     res.json({ marketOpen: serverOpen, marketState, quotes: results });
 });
 
@@ -242,8 +247,12 @@ function buildRAGContext(query, quotes) {
         : '';
 
     return `אתה יועץ השקעות אישי לבורסה הישראלית. ענה תמיד בעברית, בצורה ממוקדת.
+השתמש אך ורק בנתונים החיים שסופקו — אל תנחש ואל תסתמך על נתוני אימון.
 
 ${knowledgeSection}
+
+## שערי חליפין (עדכני):
+USD/ILS: ${_usdIlsRate} ₪ לדולר
 
 ## היסטוריית מסחר:
 ${history}
@@ -255,33 +264,55 @@ ${info}
 ${liveData}`;
 }
 
-const Anthropic = require('@anthropic-ai/sdk');
-const _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const _groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+let _chatBusy       = false;
+let _lastChatAt     = 0;
+const CHAT_MIN_GAP  = 1000;
 
 app.post('/api/chat', express.json(), async (req, res) => {
+    if (_chatBusy) {
+        return res.status(429).json({ error: 'בקשה קודמת עדיין מעובדת.', retryAfter: 3 });
+    }
+    const gap = Date.now() - _lastChatAt;
+    if (gap < CHAT_MIN_GAP) {
+        const wait = Math.ceil((CHAT_MIN_GAP - gap) / 1000);
+        return res.status(429).json({ error: 'יש להמתין מעט בין הודעות.', retryAfter: wait });
+    }
+
+    _chatBusy   = true;
+    _lastChatAt = Date.now();
+
     try {
         const { messages = [], quotes = [] } = req.body;
         const lastMsg   = messages[messages.length - 1]?.content || '';
         const systemCtx = buildRAGContext(lastMsg, quotes);
 
-        const claudeMsgs = messages.map(m => ({
-            role:    m.role === 'assistant' ? 'assistant' : 'user',
-            content: m.content
-        }));
+        const groqMessages = [
+            { role: 'system', content: systemCtx },
+            ...messages.slice(0, -1).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+            { role: 'user', content: lastMsg },
+        ];
 
-        const result = await _anthropic.messages.create({
-            model:      'claude-haiku-4-5',
+        const result = await _groq.chat.completions.create({
+            model:      'llama-3.3-70b-versatile',
             max_tokens: 1024,
-            system:     systemCtx,
-            messages:   claudeMsgs
+            messages:   groqMessages,
         });
 
-        res.json({ reply: result.content[0].text });
+        res.json({ reply: result.choices[0].message.content });
     } catch (e) {
         console.error('[/api/chat]', e.message);
+        if (e.status === 429 || e.message?.includes('rate')) {
+            return res.status(429).json({ error: 'יש להמתין מעט.', retryAfter: 15 });
+        }
         res.status(500).json({ error: e.message });
+    } finally {
+        _chatBusy = false;
     }
 });
+
+app.get('/api/rate', (req, res) => res.json({ usdIls: _usdIlsRate }));
 
 // ── Start ──────────────────────────────────────────────────────────────────
 
