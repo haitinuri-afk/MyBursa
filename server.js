@@ -78,6 +78,47 @@ async function fetchChartMeta(symbol, range, interval = '1d') {
 const _lastKnownPrices = {};
 let _cachedQuotes = [];   // latest batch quotes, reused by AI chat
 
+// ── News RSS fetching ─────────────────────────────────────────────────────
+const NEWS_FEEDS = [
+    { url: 'https://www.globes.co.il/rss/rss.aspx?id=1002',       source: 'גלובס שוק ההון' },
+    { url: 'https://www.bizportal.co.il/rss/all',                   source: 'ביזפורטל' },
+    { url: 'https://www.ynet.co.il/Integration/StoryRss1854.xml',  source: 'ynet כלכלה' },
+    { url: 'https://www.maariv.co.il/Rss/RssChadashot',            source: 'מעריב כלכלה' },
+];
+const NEWS_HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; BursaBot/1.0)' };
+let _cachedNews    = [];
+let _lastNewsFetch = 0;
+const NEWS_TTL_MS  = 15 * 60 * 1000;
+
+function parseRSS(xml, source) {
+    const items = [];
+    const re = /<item[\s>]([\s\S]*?)<\/item>/g;
+    let m;
+    while ((m = re.exec(xml)) !== null) {
+        const c     = m[1];
+        const title = c.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/)?.[1]?.trim();
+        const date  = c.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1]?.trim() ?? '';
+        if (title && title.length > 5) items.push({ title, source, date });
+    }
+    return items.slice(0, 8);
+}
+
+async function fetchNews() {
+    if (Date.now() - _lastNewsFetch < NEWS_TTL_MS && _cachedNews.length) return;
+    _lastNewsFetch = Date.now();
+    const all = [];
+    await Promise.all(NEWS_FEEDS.map(async ({ url, source }) => {
+        try {
+            const r = await fetch(url, { headers: NEWS_HEADERS, signal: AbortSignal.timeout(6000) });
+            if (r.ok) all.push(...parseRSS(await r.text(), source));
+            else console.warn(`[news] ${source}: HTTP ${r.status}`);
+        } catch (e) { console.warn(`[news] ${source}:`, e.message); }
+    }));
+    if (all.length) _cachedNews = all;
+    console.log(`[news] cached ${_cachedNews.length} headlines`);
+}
+fetchNews();
+
 const BASE_HEADERS = {
     'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Accept':          'application/json, text/plain, */*',
@@ -262,7 +303,6 @@ console.log(`[RAG] Loaded ${_knowledgeChunks.length} knowledge chunks`);
 function buildRAGContext(query, quotes) {
     const read = f => { try { return fs.readFileSync(path.join(CONTEXT_IQ_PATH, f), 'utf8'); } catch { return ''; } };
     const history = read('history.txt');
-    const info    = read('info.txt');
 
     // ── Sector mapping ────────────────────────────────────────────────────────
     const SECTORS = {
@@ -272,7 +312,7 @@ function buildRAGContext(query, quotes) {
         'טכנולוגיה':      ['נייס','טאוור'],
         'פארמה':          ['טבע'],
         'כימיה':          ['כיל'],
-        'אנרגיה':         ['אנרג\'יקס','אנלייט','אורמת','קבוצת דלק'],
+        'אנרגיה':         ["אנרג'יקס",'אנלייט','אורמת','קבוצת דלק'],
         'נדל"ן':          ['עזריאלי','מליסרון','אמות','ביג','גב ים','שיכון ובינוי'],
         'תקשורת':         ['בזק','סלקום','פרטנר'],
         'מזון/קמעונאות':  ['שטראוס','שופרסל','פוקס','רמי לוי'],
@@ -280,53 +320,95 @@ function buildRAGContext(query, quotes) {
     const nameToSector = {};
     Object.entries(SECTORS).forEach(([sec, names]) => names.forEach(n => nameToSector[n] = sec));
 
-    // ── Portfolio with P&L and support/resistance ─────────────────────────────
+    // Helper: resolve day% for a Hebrew name
+    const getDayPct = name => {
+        const sym   = STOCK_SYMBOLS_HE[name];
+        const quote = sym && quotes.find(q => q.symbol === sym);
+        if (!quote?.regularMarketPreviousClose) return null;
+        return ((quote.regularMarketPrice - quote.regularMarketPreviousClose) / quote.regularMarketPreviousClose) * 100;
+    };
+
+    // ── Portfolio with P&L, DAY%, support/resistance ───────────────────────────
     const portfolioData = loadPortfolioFile();
     const portfolioLines = Object.entries(portfolioData.portfolio ?? {}).map(([name, h]) => {
         const qty      = h.qty      ?? h.quantity ?? 0;
         const avgCost  = h.buyPrice ?? h.avgCost  ?? h.purchasePrice ?? 0;
         const yahooSym = STOCK_SYMBOLS_HE[name] ?? name;
         const quote    = quotes.find(q => q.symbol === yahooSym);
-        const curPrice = quote?.regularMarketPrice ?? 0;
-        const prevClose= quote?.regularMarketPreviousClose ?? 0;
-        const value    = (curPrice * qty).toFixed(2);
-        const pl       = avgCost && curPrice ? (((curPrice - avgCost) / avgCost) * 100).toFixed(2) : '?';
-        const dayPct   = prevClose && curPrice ? (((curPrice - prevClose) / prevClose) * 100).toFixed(2) : '?';
-        const support  = prevClose && curPrice
+        const curPrice = quote?.regularMarketPrice  ?? null;
+        const prevClose= quote?.regularMarketPreviousClose ?? null;
+        const priceStr = curPrice  != null ? `₪${curPrice}`  : 'אין נתון';
+        const value    = curPrice  != null ? `₪${(curPrice * qty).toFixed(2)}` : 'אין נתון';
+        const pl       = avgCost && curPrice != null ? `${(((curPrice - avgCost) / avgCost) * 100).toFixed(2)}%` : 'אין נתון';
+        const dayPct   = curPrice != null && prevClose != null
+            ? `${(((curPrice - prevClose) / prevClose) * 100).toFixed(2)}%`
+            : 'אין נתון';
+        const momentum = curPrice != null && prevClose != null
             ? (curPrice < prevClose ? '⚠ מתחת לבסיס — שבירת מומנטום' : '✓ מעל בסיס — תמיכה מחזיקה')
             : '';
         const sector   = nameToSector[name] ?? 'אחר';
-        return `  ${name} | סקטור: ${sector} | ${qty} יח׳ | עלות: ₪${avgCost} | עכשיו: ₪${curPrice} | יומי: ${dayPct}% | P/L: ${pl}% | שווי: ₪${value} | ${support}`;
+        return `  ${name} | סקטור: ${sector} | ${qty} יח׳ | עלות: ₪${avgCost} | עכשיו: ${priceStr} | יומי: ${dayPct} | P/L כולל: ${pl} | שווי: ${value} | ${momentum}`;
     });
     const portfolioSection = portfolioLines.length
         ? `## תיק השקעות נוכחי:\n${portfolioLines.join('\n')}`
-        : '## תיק השקעות: ריק';
+        : '## תיק השקעות: ריק (המשתמש עדיין לא קנה מניות)';
 
-    // ── Sector rotation analysis ──────────────────────────────────────────────
+    // ── Sector rotation — averages per sector ─────────────────────────────────
     const sectorMoves = {};
     quotes.forEach(q => {
         if (!q.regularMarketPreviousClose) return;
         const pct  = ((q.regularMarketPrice - q.regularMarketPreviousClose) / q.regularMarketPreviousClose) * 100;
         const name = Object.entries(STOCK_SYMBOLS_HE).find(([,sym]) => sym === q.symbol)?.[0];
-        const sec  = name ? (nameToSector[name] ?? 'אחר') : null;
+        const sec  = name ? (nameToSector[name] ?? null) : null;
         if (!sec) return;
         if (!sectorMoves[sec]) sectorMoves[sec] = [];
         sectorMoves[sec].push(pct);
     });
     const sectorSummary = Object.entries(sectorMoves).map(([sec, pcts]) => {
-        const avg = (pcts.reduce((a,b) => a+b, 0) / pcts.length).toFixed(2);
-        return `  ${sec}: ${avg >= 0 ? '+' : ''}${avg}% (${pcts.length} מניות)`;
+        const avg = (pcts.reduce((a,b) => a+b, 0) / pcts.length);
+        return `  ${sec}: ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% (${pcts.length} מניות)`;
     }).join('\n');
+
+    // ── Sector intelligence signals (pre-computed facts for the AI) ───────────
+    const signals = [];
+
+    // Banks: לאומי + פועלים + דיסקונט all above +2%
+    const bankPcts = ['לאומי','פועלים','דיסקונט'].map(getDayPct).filter(p => p !== null);
+    if (bankPcts.length === 3 && bankPcts.every(p => p > 2)) {
+        signals.push(`✅ חוזקה במגזר הפיננסי: כל הבנקים הגדולים (לאומי, פועלים, דיסקונט) עולים מעל +2% היום — סיגנל לרוטציה פיננסית חיובית.`);
+    } else if (bankPcts.length >= 2 && bankPcts.filter(p => p < -2).length === bankPcts.length) {
+        signals.push(`⚠ חולשה במגזר הפיננסי: הבנקים בלחץ מכירות רחב — שקול הפחתת חשיפה.`);
+    }
+
+    // Dual-listed tech/pharma: טבע + נייס + אלביט all in strong red
+    const dualPcts = ['טבע','נייס','אלביט'].map(getDayPct).filter(p => p !== null);
+    if (dualPcts.length >= 2 && dualPcts.every(p => p < -1.5)) {
+        signals.push(`🔴 לחץ מכירות במניות הטכנולוגיה והפארמה: ${['טבע','נייס','אלביט'].filter(n => (getDayPct(n) ?? 0) < -1.5).join(', ')} בירידות חדות — ייתכן לחץ ממניות הדואליות בארה"ב.`);
+    }
+
+    // Momentum breaks — stocks in portfolio that dropped below prevClose
+    const momentumBreaks = Object.keys(portfolioData.portfolio ?? {}).filter(name => {
+        const pct = getDayPct(name);
+        return pct !== null && pct < -1;
+    });
+    if (momentumBreaks.length) {
+        signals.push(`⚠ שבירת מומנטום בתיק: ${momentumBreaks.join(', ')} מתחת לבסיס היומי — אין להניח "Buy the Dip" אוטומטי; בדוק נפח ומגמת הסקטור.`);
+    }
+
+    const signalsSection = signals.length
+        ? `## סיגנלים אוטומטיים — עובדות מחושבות:\n${signals.join('\n')}`
+        : '';
 
     // ── Live prices with anomaly flags ────────────────────────────────────────
     const liveData = quotes.length ? quotes.map(q => {
         const price  = q.regularMarketPrice;
         const prev   = q.regularMarketPreviousClose;
-        const pct    = prev ? (((price - prev) / prev) * 100).toFixed(2) : null;
-        const flag   = pct !== null && Math.abs(pct) >= 5 ? ' 🚨 תנועה קיצונית' : '';
-        const trend  = pct !== null ? (price < prev ? '⚠ מתחת לבסיס' : '✓ מעל בסיס') : '';
-        return `${q.symbol}: ₪${price} (${pct >= 0 ? '+' : ''}${pct}%) ${trend}${flag}`;
-    }).join('\n') : '';
+        const pct    = prev ? (((price - prev) / prev) * 100) : null;
+        const pctStr = pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : 'אין נתון';
+        const flag   = pct != null && Math.abs(pct) >= 5 ? ' 🚨 תנועה קיצונית' : '';
+        const trend  = pct != null ? (price < prev ? '⚠ מתחת לבסיס' : '✓ מעל בסיס') : '';
+        return `${q.symbol}: ₪${price} (${pctStr}) ${trend}${flag}`;
+    }).join('\n') : 'אין נתוני מחיר זמינים';
 
     // ── Extreme movers ────────────────────────────────────────────────────────
     const extremes = quotes
@@ -341,16 +423,27 @@ function buildRAGContext(query, quotes) {
     const knowledgeSection = retrieved.length
         ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}` : '';
 
-    return `אתה אסטרטג שוק הון בכיר המתמחה בבורסת תל אביב. הטון שלך: מקצועי, חד, ישיר — כמו יועץ בחדר מסחר.
-ענה תמיד בעברית. פעל אך ורק לפי הנתונים שסופקו; אל תסתמך על נתוני אימון.
+    const newsSection = _cachedNews.length
+        ? `## חדשות פיננסיות אחרונות:\n${_cachedNews.map(n => `- [${n.source}] ${n.title}`).join('\n')}`
+        : '';
 
-## עקרונות ניתוח:
-- זהה רוטציה סקטוריאלית: אם ענף שלם עולה/יורד יחד, ציין זאת במפורש.
-- תמיכה/התנגדות: מניה מתחת לבסיס יומי = שבירת מומנטום; מעל בסיס = תמיכה מחזיקה.
-- תנועה קיצונית (±5%+): בדוק האם זה אירוע ספציפי לחברה או ירידה רוחבית בסקטור.
-- היה סקפטי לגבי "Buy the Dip" במניות ששברו תמיכה.
-- כשמדברים על תיק: הצע מימוש רווחים בסקטורים חזקים כדי לאזן חשיפה לסקטורים חלשים.
-- אל תציג רק מספרים — תמיד הוסף משפט אסטרטגי אחד לפחות.
+    // ── System prompt ─────────────────────────────────────────────────────────
+    const systemPrompt = `אתה אנליסט שוק הון בכיר המתמחה בבורסת תל אביב. הטון שלך: מקצועי, חד, ישיר — כמו יועץ בחדר מסחר אמיתי.
+ענה תמיד בעברית. השתמש במושגים מקצועיים: "מימוש רווחים", "רוטציה סקטוריאלית", "שבירת מומנטום", "איזון תיק", "לחץ מכירות".
+**אורך תגובה: ממוקד ומועיל — עד 8-10 שורות. השתמש בנקודות כשיש מספר נקודות. שאלה מכווינה אחת בסוף.**
+
+## כללי דיוק — חובה:
+- פעל אך ורק לפי הנתונים שמופיעים ב-Context שלמטה. אל תסתמך על ידע אימון לגבי מחירים ספציפיים.
+- אם נתון רלוונטי (כגון מחיר, P/L, שינוי יומי) מסומן "אין נתון" — ציין זאת במפורש. אל תמציא מספרים.
+
+## כללי ניתוח:
+1. **חדשות ודוחות:** אם ישנן כותרות חדשות ב-Context — השתמש בהן כדי לתת הקשר לתנועות המחיר. ציין את המקור. אם אין חדשות רלוונטיות, אמור זאת בכנות.
+2. **זיהוי רוטציה סקטוריאלית:** כאשר ענף שלם עולה או יורד יחד, ציין זאת — "חוזקה במגזר הבנקים", "לחץ רוחבי בנדל"ן" וכו׳.
+2. **שבירת תמיכה:** מניה שמחירה מתחת לבסיס היומי (prevClose) נמצאת בשבירת מומנטום. אל תמליץ "Buy the Dip" אוטומטית — בדוק תחילה האם זה אירוע חברה או לחץ סקטוריאלי רוחבי.
+3. **רמות פסיכולוגיות:** ירידה מתחת למספר עגול (כגון 92.50 → 91.99) היא שבירת מומנטום פסיכולוגי — הזהר מפני תנודתיות מוגברת.
+4. **תנועה קיצונית (±5%+):** זהה אם זה אירוע ספציפי לחברה (דוחות, רגולציה) או ירידה/עלייה סקטוריאלית.
+5. **ניהול תיק:** כאשר סקטור בתיק חזק, הצע בחינת מימוש חלקי כדי לאזן חשיפה לסקטורים חלשים יותר.
+6. **שאלה מכווינה:** בסוף כל ניתוח שמתייחס לתיק, הוסף שאלת המשך אחת שמעודדת החלטה — לדוגמה: "האם תרצה שנבדוק אם כדאי לממש חלק מהרווח ב[מניה] כדי להקטין חשיפה?" או "האם נבחן חלופות בסקטור [X] שמראה חוזקה יחסית?".
 
 ${knowledgeSection}
 
@@ -358,14 +451,21 @@ ${knowledgeSection}
 USD/ILS: ${_usdIlsRate} ₪
 
 ## היסטוריית מסחר:
-${history}
+${history || 'אין היסטוריה'}`;
+
+    // ── Assembled context (system + data) ─────────────────────────────────────
+    return `${systemPrompt}
+
+${newsSection}
 
 ${portfolioSection}
 
 ## ביצועי סקטורים היום:
 ${sectorSummary || 'אין נתונים'}
 
-## מחירים חיים + תמיכה/התנגדות:
+${signalsSection}
+
+## מחירים חיים + מומנטום:
 ${liveData}
 ${extremes ? `\n## תנועות קיצוניות — דורשות בדיקה:\n${extremes}` : ''}`;
 }
@@ -393,6 +493,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
         const { messages = [], quotes: clientQuotes = [] } = req.body;
         const quotes    = clientQuotes.length ? clientQuotes : _cachedQuotes;
         const lastMsg   = messages[messages.length - 1]?.content || '';
+        await fetchNews();
         const systemCtx = buildRAGContext(lastMsg, quotes);
         console.log('[chat] quotes used:', quotes.length, '| portfolio:', systemCtx.slice(systemCtx.indexOf('## תיק'), systemCtx.indexOf('## תיק') + 200));
 
@@ -430,6 +531,11 @@ function loadPortfolioFile() {
     try { return JSON.parse(fs.readFileSync(PORTFOLIO_FILE, 'utf8')); }
     catch { return { portfolio: {}, transactionHistory: [] }; }
 }
+
+app.get('/api/news', async (req, res) => {
+    await fetchNews();
+    res.json({ news: _cachedNews });
+});
 
 app.get('/api/portfolio', (req, res) => res.json(loadPortfolioFile()));
 

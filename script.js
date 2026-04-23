@@ -370,6 +370,7 @@ async function refreshRealData() {
 
     initTicker(); initStockSuggestions(); updateStockList(); updatePortfolioList(); updateTransactionHistory();
     drawChart(); drawIndexChart(); updateAllStockWindows();
+    checkPortfolioAlerts();
     saveState();
     scheduleFetch();
 }
@@ -406,27 +407,22 @@ function initStockSuggestions() {
     });
 }
 
-let _tickerX = 0;
-let _tickerRaf = null;
-let _tickerLastTs = null;
-const TICKER_PX_PER_SEC = 60;
-
 function initTicker() {
     const ticker = document.getElementById('ticker-content');
     if (!ticker) return;
 
-    // Build stable DOM structure once — 2 copies for seamless loop
+    // Build stable DOM once — 3 identical copies for seamless CSS loop
     if (!ticker.querySelector('[data-stock]')) {
         const names = Object.keys(stocksData);
         const frag  = document.createDocumentFragment();
-        for (let copy = 0; copy < 2; copy++) {
+        for (let copy = 0; copy < 3; copy++) {
             names.forEach(name => {
                 const item = document.createElement('span');
                 item.dataset.stock = name;
-                item.style.cssText = 'padding:0 24px;white-space:nowrap;font-family:"Inter",sans-serif;font-size:0.72rem;font-weight:500;display:inline-flex;align-items:center;gap:5px';
+                item.style.cssText = 'padding:0 22px;white-space:nowrap;font-family:"Inter",sans-serif;font-size:0.72rem;font-weight:500;display:inline-flex;align-items:center;gap:4px';
                 const lbl = document.createElement('span');
                 lbl.className = 'tick-lbl';
-                lbl.textContent = name + ' ';
+                lbl.textContent = name;
                 lbl.style.color = '#5f6368';
                 const val = document.createElement('span');
                 val.className = 'tick-val';
@@ -437,21 +433,6 @@ function initTicker() {
             });
         }
         ticker.appendChild(frag);
-
-        // Start JS-driven scroll
-        if (_tickerRaf) cancelAnimationFrame(_tickerRaf);
-        function step(ts) {
-            if (_tickerLastTs !== null) {
-                const dt = (ts - _tickerLastTs) / 1000;
-                _tickerX += TICKER_PX_PER_SEC * dt;
-                const half = ticker.scrollWidth / 2;
-                if (_tickerX >= half) _tickerX -= half;
-                ticker.style.transform = `translateX(${-_tickerX}px)`;
-            }
-            _tickerLastTs = ts;
-            _tickerRaf = requestAnimationFrame(step);
-        }
-        _tickerRaf = requestAnimationFrame(step);
     }
 
     // Update only the value leaf — never touch structure
@@ -897,6 +878,7 @@ function updatePortfolioList() {
         list.appendChild(tr);
     });
 
+    snapshotPortfolioValue(totalValue);
     const totalPL    = totalCost > 0 ? calculatePctChange(totalValue, totalCost) : "0.00";
     const totalPLils = totalValue - totalCost;
     const c          = pctColor(totalPL);
@@ -989,6 +971,7 @@ let highestZIndex = 100;
 
 document.addEventListener('DOMContentLoaded', () => {
     try { initWindowManager(); } catch(e) { console.error("Window manager failed:", e); }
+    requestNotifPermission();
 
     initTicker(); initStockSuggestions(); updateStockList(); updatePortfolioList(); updateTransactionHistory();
     drawChart(); drawIndexChart();
@@ -1162,7 +1145,7 @@ function makeResizable(el) {
 }
 
 
-let _aiHistory = [];
+let _aiHistory = (() => { try { return JSON.parse(localStorage.getItem('aiHistory') || '[]'); } catch { return []; } })();
 
 function buildMoversBar() {
     const movers = Object.keys(stocksData)
@@ -1221,10 +1204,10 @@ function addAIMessage(role, text) {
     const html = isUser
         ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
         : tagStockMentions(text);
-    div.style.cssText = `display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'};margin:2px 0`;
-    div.innerHTML = `<div style="max-width:85%;padding:4px 8px;border-radius:8px;font-size:10px;line-height:1.5;white-space:pre-wrap;
-        background:${isUser ? '#1a3a5c' : '#1e2430'};color:${isUser ? '#87ceeb' : '#b7bdc6'};
-        border:1px solid ${isUser ? '#274d73' : '#2b3139'}">${html}</div>`;
+    div.style.cssText = `display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'};margin:3px 0`;
+    div.innerHTML = `<div style="max-width:88%;padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.6;white-space:pre-wrap;
+        background:${isUser ? 'rgba(26,115,232,0.1)' : '#f8f9fa'};color:${isUser ? '#1a56c4' : '#202124'};
+        border:1px solid ${isUser ? 'rgba(26,115,232,0.2)' : 'rgba(0,0,0,0.08)'};direction:rtl;text-align:right">${html}</div>`;
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
@@ -1263,6 +1246,89 @@ function _startRateLimitCountdown(seconds, restoredText) {
     }, 1000);
 }
 
+let _notifAlertsToday = new Set();
+
+function requestNotifPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+}
+
+function checkPortfolioAlerts() {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const today = new Date().toDateString();
+    Object.keys(portfolio).forEach(name => {
+        const stock = stocksData[name];
+        if (!stock?.price || !stock?.initial) return;
+        const pct = ((stock.price - stock.initial) / stock.initial) * 100;
+        const key = `${name}:${today}`;
+        if (pct < -2 && !_notifAlertsToday.has(key)) {
+            _notifAlertsToday.add(key);
+            new Notification(`⚠ ${name} — שבירת תמיכה`, {
+                body: `${name} ירדה ${pct.toFixed(2)}% מהבסיס היומי`,
+                icon: '/icon-192.svg',
+            });
+        }
+    });
+}
+
+let _portfolioHistory = (() => { try { return JSON.parse(localStorage.getItem('portfolioHistory') || '[]'); } catch { return []; } })();
+let _lwPortfolio = null;
+
+function snapshotPortfolioValue(value) {
+    if (!value || value <= 0) return;
+    const now = Math.floor(Date.now() / 1000);
+    const last = _portfolioHistory[_portfolioHistory.length - 1];
+    if (last && now - last.time < 300) {
+        last.value = value;
+    } else {
+        _portfolioHistory.push({ time: now, value });
+    }
+    if (_portfolioHistory.length > 500) _portfolioHistory.shift();
+    try { localStorage.setItem('portfolioHistory', JSON.stringify(_portfolioHistory)); } catch {}
+}
+
+function drawPortfolioChart() {
+    const el = document.getElementById('portfolioChart');
+    if (!el || document.getElementById('win-portfolio-chart')?.style.display === 'none') return;
+    const data = _portfolioHistory.filter(p => p.value > 0);
+    if (data.length < 2) {
+        el.innerHTML = '<div style="color:#9aa0a6;font-size:11px;text-align:center;padding-top:30px">אין מספיק נתונים עדיין — נתונים נאספים כל 5 דקות</div>';
+        return;
+    }
+    if (_lwPortfolio) { _lwPortfolio.remove(); _lwPortfolio = null; }
+    const firstVal = data[0].value;
+    const lastVal  = data[data.length - 1].value;
+    const upColor  = lastVal >= firstVal ? '#34a853' : '#ea4335';
+    _lwPortfolio = LightweightCharts.createChart(el, {
+        layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
+        grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
+        rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)' },
+        timeScale: { borderColor: 'rgba(0,0,0,0.1)', timeVisible: true },
+        handleScroll: true, handleScale: true,
+    });
+    const series = _lwPortfolio.addAreaSeries({
+        lineColor: upColor,
+        topColor: lastVal >= firstVal ? 'rgba(52,168,83,0.2)' : 'rgba(234,67,53,0.2)',
+        bottomColor: 'rgba(0,0,0,0)',
+        lineWidth: 2,
+        priceFormat: { type: 'price', precision: 0, minMove: 1 },
+    });
+    series.setData(data.map(p => ({ time: p.time, value: p.value })));
+    _lwPortfolio.timeScale().fitContent();
+}
+
+function togglePortfolioChart() {
+    const win = document.getElementById('win-portfolio-chart');
+    if (!win) return;
+    if (win.style.display === 'none' || win.style.display === '') {
+        win.style.display = '';
+        drawPortfolioChart();
+    } else {
+        win.style.display = 'none';
+    }
+}
+
 async function sendAIMessage() {
     const input = document.getElementById('ai-input');
     const btn   = document.getElementById('ai-send-btn');
@@ -1273,6 +1339,7 @@ async function sendAIMessage() {
     btn.disabled = true;
     addAIMessage('user', text);
     _aiHistory.push({ role: 'user', content: text });
+    try { localStorage.setItem('aiHistory', JSON.stringify(_aiHistory.slice(-20))); } catch {}
 
     const thinking = document.createElement('div');
     thinking.id = 'ai-thinking';
@@ -1309,6 +1376,7 @@ async function sendAIMessage() {
 
         const reply = data.reply || data.error || 'אין תשובה';
         _aiHistory.push({ role: 'assistant', content: reply });
+        try { localStorage.setItem('aiHistory', JSON.stringify(_aiHistory.slice(-20))); } catch {}
         addAIMessage('assistant', reply);
     } catch (e) {
         document.getElementById('ai-thinking')?.remove();
@@ -1324,5 +1392,6 @@ async function sendAIMessage() {
 
 function clearAIChat() {
     _aiHistory = [];
+    localStorage.removeItem('aiHistory');
     document.getElementById('ai-messages').innerHTML = '';
 }

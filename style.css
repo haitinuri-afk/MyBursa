@@ -1,7 +1,12 @@
+@keyframes ticker-loop {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-33.3334%); }
+}
+
 .ticker-scroll {
-    display: flex;
+    display: inline-flex;
     white-space: nowrap;
-    will-change: transform;
+    animation: ticker-loop 70s linear infinite;
 }
 
 /* ── Reset ── */
@@ -160,6 +165,9 @@ header.top-bar {
 #win-portfolio    { left: 0;      width: 24.5%; top:  0%;  height: 49%; }
 #win-simulator    { left: 0;      width: 24.5%; top: 50%;  height: 20%; }
 #win-ai-chat      { left: 0;      width: 24.5%; top: 71%;  height: 29%; }
+
+/* Portfolio chart — floats over col A, not blocking main chart */
+#win-portfolio-chart { left: 0; width: 30%; top: 8%; height: 55%; z-index: 25; }
 
 /* Col B */
 #win-main-chart   { left: 25.5%;  width: 49%;   top:  0%;  height: 86%; max-height: 86%; }
@@ -605,6 +613,7 @@ MOBILE RESPONSIVE  (≤ 768px)
     #win-indices-tase,
     #win-stocks,
     #win-indices-global,
+    #win-portfolio-chart,
     #win-ai-chat {
         width: 100% !important;
         height: auto !important;

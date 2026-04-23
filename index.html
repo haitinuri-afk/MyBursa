@@ -30,6 +30,7 @@
                 <span id="data-status" style="font-size:8px;font-family:monospace;padding:1px 5px;border-radius:4px;background:#f1f3f4;color:#5f6368">SIM</span>
             </h1>
             <div style="display:flex;align-items:center;gap:10px" dir="ltr">
+                <button onclick="resetWindows()" style="font-size:10px;background:#f1f3f4;border:1px solid rgba(0,0,0,0.12);color:#5f6368;padding:2px 10px;border-radius:20px;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:600">↺ Reset</button>
                 <span style="font-size:11px;font-family:'Inter',sans-serif;color:#9aa0a6;letter-spacing:0.01em">נתונים מעוכבים ~15 דק׳</span>
                 <span id="last-update" style="font-size:11px;font-family:'Inter',sans-serif;color:#5f6368;font-weight:500"></span>
             </div>
@@ -44,9 +45,6 @@
 
         <!-- Dashboard Area -->
         <div id="dashboard" class="dashboard-grid">
-            <button onclick="resetWindows()" class="reset-layout-btn" dir="ltr">
-                <span>↺</span> Reset Layout
-            </button>
 
             <!-- TA-35 Index Window -->
             <div id="win-indices-tase" class="card">
@@ -138,6 +136,7 @@
                 <div class="window-header">
                     <h3>תיק השקעות</h3>
                     <div class="window-controls">
+                        <button onclick="togglePortfolioChart()" style="font-size:10px;background:#e8f0fe;border:1px solid #c5d3f5;color:#1a73e8;padding:2px 10px;border-radius:20px;height:20px;line-height:1;cursor:pointer;font-weight:600">📈 גרף</button>
                         <button class="win-btn win-max" onclick="toggleMaximize('win-portfolio')"></button>
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
@@ -197,6 +196,22 @@
                             </thead>
                             <tbody id="tx-history-list"></tbody>
                         </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Portfolio Chart Window -->
+            <div id="win-portfolio-chart" class="card" style="display:none">
+                <div class="window-header">
+                    <h3>📈 ביצועי תיק</h3>
+                    <div class="window-controls">
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-portfolio-chart')"></button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="flex-1 w-full overflow-hidden relative" style="min-height:0;position:relative;background:#ffffff;border-radius:8px">
+                        <div id="portfolioChart" style="position:absolute;inset:0"></div>
                     </div>
                 </div>
             </div>
