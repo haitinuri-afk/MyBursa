@@ -821,9 +821,10 @@ function updateStockList() {
         const tr = document.createElement('tr');
         tr.className = 'stock-row';
         tr.innerHTML = `
-            <td class="text-right" style="font-size:0.82rem;color:#202124;white-space:nowrap">${name}</td>
+            <td class="text-right" style="font-size:0.82rem;color:#202124;white-space:nowrap;cursor:pointer">${name}</td>
             <td class="text-right" style="font-size:0.82rem;color:#202124;font-variant-numeric:tabular-nums;white-space:nowrap" dir="ltr">${priceStr}</td>
-            <td class="pct-col"><span dir="ltr" class="inline-block" style="color:${pctColor(pct).text};background:${pctColor(pct).bg};padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700">${up ? '+' : ''}${pct}%</span></td>`;
+            <td class="pct-col"><span dir="ltr" class="inline-block" style="color:${pctColor(pct).text};background:${pctColor(pct).bg};padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700">${up ? '+' : ''}${pct}%</span></td>
+            <td class="text-center"><button onclick="event.stopPropagation();quickBuy('${name}')" style="background:#16a34a;color:#fff;border:none;border-radius:4px;font-size:9px;font-weight:700;padding:2px 5px;cursor:pointer">קנה</button></td>`;
         tr.onclick = () => { currentStock = name; _lwStock = null; drawChart(); openStockWindow(name); };
         list.appendChild(tr);
     });
@@ -900,6 +901,15 @@ function resolveStockName(input) {
         STOCK_SYMBOLS[name].toLowerCase() === lower ||
         STOCK_SYMBOLS[name].toLowerCase().replace('.ta','') === lower
     ) ?? null;
+}
+
+function quickBuy(name) {
+    const simEl = document.getElementById('win-simulator');
+    if (simEl) simEl.style.display = '';
+    const symEl = document.getElementById('sim-symbol');
+    const qtyEl = document.getElementById('sim-qty');
+    if (symEl) symEl.value = name;
+    if (qtyEl) { qtyEl.value = ''; qtyEl.focus(); }
 }
 
 function buyStock() {
