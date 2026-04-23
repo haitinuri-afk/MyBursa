@@ -25,6 +25,15 @@ app.use(express.static(path.join(__dirname)));
 
 const SYMBOL_FALLBACKS = { '^TA35':'TA35.TA', '^TA125':'TA125.TA', '^TA90':'TA90.TA' };
 
+const STOCK_SYMBOLS_HE = {
+    "מדד תא-35":"^TA35","לאומי":"LUMI.TA","פועלים":"POLI.TA","דיסקונט":"DSCT.TA",
+    "מזרחי טפחות":"MZTF.TA","אלביט":"ESLT.TA","נייס":"NICE.TA","טבע":"TEVA.TA",
+    "כיל":"ICL.TA","שטראוס":"STRS.TA","שופרסל":"SAE.TA","פוקס":"FOX.TA",
+    "עזריאלי":"AZRG.TA","מליסרון":"MLSR.TA","בזק":"BEZQ.TA","סלקום":"SELC.TA",
+    "אמות":"AMOT.TA","ביג":"BIG.TA","אורמת":"ORA.TA","שיכון ובינוי":"SKBN.TA",
+    "קבוצת דלק":"DLEKG.TA","טאוור":"TSEM.TA","אנרג'יקס":"ENRG.TA","אנלייט":"ENLT.TA"
+};
+
 let _usdIlsRate = 3.004;
 async function refreshUsdIlsRate() {
     try {
@@ -62,6 +71,7 @@ async function fetchChartMeta(symbol, range, interval = '1d') {
 
 // Last-known prices cache — keyed by Yahoo symbol
 const _lastKnownPrices = {};
+let _cachedQuotes = [];   // latest batch quotes, reused by AI chat
 
 const BASE_HEADERS = {
     'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -167,6 +177,7 @@ app.get('/api/stock/batch', async (req, res) => {
     const serverOpen  = isMarketOpen();
     const marketState = serverOpen ? 'REGULAR' : 'CLOSED';
     console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen} (yahoo:${yahooState ?? 'n/a'})`);
+    _cachedQuotes = results;   // keep for AI chat context
     res.json({ marketOpen: serverOpen, marketState, quotes: results });
 });
 
@@ -247,59 +258,112 @@ function buildRAGContext(query, quotes) {
     const read = f => { try { return fs.readFileSync(path.join(CONTEXT_IQ_PATH, f), 'utf8'); } catch { return ''; } };
     const history = read('history.txt');
     const info    = read('info.txt');
-    const liveData = quotes.length
-        ? quotes.map(q => {
-            const price   = q.regularMarketPrice;
-            const prev    = q.regularMarketPreviousClose;
-            const pct     = prev ? (((price - prev) / prev) * 100).toFixed(2) : null;
-            const pctStr  = pct !== null ? ` (${pct >= 0 ? '+' : ''}${pct}%)` : '';
-            return `${q.symbol}: ₪${price}${pctStr}`;
-          }).join('\n')
-        : '';
 
-    // Flag significant movers for the AI to interpret
-    const movers = quotes
+    // ── Sector mapping ────────────────────────────────────────────────────────
+    const SECTORS = {
+        'בנקים':     ['לאומי','פועלים','דיסקונט','מזרחי טפחות'],
+        'ביטחון':    ['אלביט'],
+        'טכנולוגיה': ['נייס','טאוור'],
+        'פארמה':     ['טבע'],
+        'אנרגיה':    ['אנרג\'יקס','אנלייט','אורמת'],
+        'נדל"ן':     ['עזריאלי','מליסרון','אמות','ביג'],
+        'כימיה':     ['כיל'],
+        'תקשורת':    ['בזק','סלקום'],
+        'מזון/קמעונאות': ['שטראוס','שופרסל','פוקס'],
+        'אנרגיה-מסורתית': ['קבוצת דלק'],
+        'נדל"ן-שיכון': ['שיכון ובינוי'],
+    };
+    const nameToSector = {};
+    Object.entries(SECTORS).forEach(([sec, names]) => names.forEach(n => nameToSector[n] = sec));
+
+    // ── Portfolio with P&L and support/resistance ─────────────────────────────
+    const portfolioData = loadPortfolioFile();
+    const portfolioLines = Object.entries(portfolioData.portfolio ?? {}).map(([name, h]) => {
+        const qty      = h.qty      ?? h.quantity ?? 0;
+        const avgCost  = h.buyPrice ?? h.avgCost  ?? h.purchasePrice ?? 0;
+        const yahooSym = STOCK_SYMBOLS_HE[name] ?? name;
+        const quote    = quotes.find(q => q.symbol === yahooSym);
+        const curPrice = quote?.regularMarketPrice ?? 0;
+        const prevClose= quote?.regularMarketPreviousClose ?? 0;
+        const value    = (curPrice * qty).toFixed(2);
+        const pl       = avgCost && curPrice ? (((curPrice - avgCost) / avgCost) * 100).toFixed(2) : '?';
+        const dayPct   = prevClose && curPrice ? (((curPrice - prevClose) / prevClose) * 100).toFixed(2) : '?';
+        const support  = prevClose && curPrice
+            ? (curPrice < prevClose ? '⚠ מתחת לבסיס — שבירת מומנטום' : '✓ מעל בסיס — תמיכה מחזיקה')
+            : '';
+        const sector   = nameToSector[name] ?? 'אחר';
+        return `  ${name} | סקטור: ${sector} | ${qty} יח׳ | עלות: ₪${avgCost} | עכשיו: ₪${curPrice} | יומי: ${dayPct}% | P/L: ${pl}% | שווי: ₪${value} | ${support}`;
+    });
+    const portfolioSection = portfolioLines.length
+        ? `## תיק השקעות נוכחי:\n${portfolioLines.join('\n')}`
+        : '## תיק השקעות: ריק';
+
+    // ── Sector rotation analysis ──────────────────────────────────────────────
+    const sectorMoves = {};
+    quotes.forEach(q => {
+        if (!q.regularMarketPreviousClose) return;
+        const pct  = ((q.regularMarketPrice - q.regularMarketPreviousClose) / q.regularMarketPreviousClose) * 100;
+        const name = Object.entries(STOCK_SYMBOLS_HE).find(([,sym]) => sym === q.symbol)?.[0];
+        const sec  = name ? (nameToSector[name] ?? 'אחר') : null;
+        if (!sec) return;
+        if (!sectorMoves[sec]) sectorMoves[sec] = [];
+        sectorMoves[sec].push(pct);
+    });
+    const sectorSummary = Object.entries(sectorMoves).map(([sec, pcts]) => {
+        const avg = (pcts.reduce((a,b) => a+b, 0) / pcts.length).toFixed(2);
+        return `  ${sec}: ${avg >= 0 ? '+' : ''}${avg}% (${pcts.length} מניות)`;
+    }).join('\n');
+
+    // ── Live prices with anomaly flags ────────────────────────────────────────
+    const liveData = quotes.length ? quotes.map(q => {
+        const price  = q.regularMarketPrice;
+        const prev   = q.regularMarketPreviousClose;
+        const pct    = prev ? (((price - prev) / prev) * 100).toFixed(2) : null;
+        const flag   = pct !== null && Math.abs(pct) >= 5 ? ' 🚨 תנועה קיצונית' : '';
+        const trend  = pct !== null ? (price < prev ? '⚠ מתחת לבסיס' : '✓ מעל בסיס') : '';
+        return `${q.symbol}: ₪${price} (${pct >= 0 ? '+' : ''}${pct}%) ${trend}${flag}`;
+    }).join('\n') : '';
+
+    // ── Extreme movers ────────────────────────────────────────────────────────
+    const extremes = quotes
         .filter(q => q.regularMarketPreviousClose)
-        .map(q => {
-            const pct = ((q.regularMarketPrice - q.regularMarketPreviousClose) / q.regularMarketPreviousClose) * 100;
-            return { symbol: q.symbol, pct };
-        })
-        .filter(m => Math.abs(m.pct) >= 2)
-        .map(m => `${m.symbol}: ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(2)}%`)
-        .join(', ');
-
-    const moversNote = movers
-        ? `\n## תנועות חריגות (±2% ומעלה — מצריכות פרשנות):\n${movers}`
-        : '';
+        .map(q => ({ symbol: q.symbol, pct: ((q.regularMarketPrice - q.regularMarketPreviousClose) / q.regularMarketPreviousClose) * 100 }))
+        .filter(m => Math.abs(m.pct) >= 4)
+        .sort((a,b) => Math.abs(b.pct) - Math.abs(a.pct))
+        .map(m => `${m.symbol}: ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(2)}% — ${Math.abs(m.pct) >= 7 ? 'בדוק אירוע ספציפי לחברה' : 'חולשת/חוזקת ענף'}`)
+        .join('\n');
 
     const retrieved = retrieveRelevantChunks(query, _knowledgeChunks);
     const knowledgeSection = retrieved.length
-        ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}`
-        : '';
+        ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}` : '';
 
-    return `אתה אנליסט שוק הון בכיר המתמחה בבורסת תל אביב. הטון שלך: מקצועי, חד וישיר — כמו יועץ בחדר מסחר.
-ענה תמיד בעברית. היצמד אך ורק לנתונים שסופקו; אל תסתמך על נתוני אימון כמקור עצמאי.
+    return `אתה אסטרטג שוק הון בכיר המתמחה בבורסת תל אביב. הטון שלך: מקצועי, חד, ישיר — כמו יועץ בחדר מסחר.
+ענה תמיד בעברית. פעל אך ורק לפי הנתונים שסופקו; אל תסתמך על נתוני אימון.
 
-## כללי פרשנות:
-- מניה שירדה מעל 2%: ספק הסבר סנטימנט הגיוני (דוחות חלשים, לחץ רגולטורי, מכירות מוסדיות, חולשת ענף).
-- מניה שעלתה מעל 2%: הסבר כחוזקת סקטור, ציפיות לדוחות חזקים, תזרים חיובי, אמון משקיעים.
-- אם השינוי קטן מ-2%: תיאור עובדתי בלי ספקולציה.
-- כשדנים בתיק: הצג P&L, המלץ על פיזור או שמירת פוזיציות על בסיס המגמות שבנתונים.
-- אל תציג רק מספרים — תמיד הוסף משפט פרשנות אחד לפחות.
+## עקרונות ניתוח:
+- זהה רוטציה סקטוריאלית: אם ענף שלם עולה/יורד יחד, ציין זאת במפורש.
+- תמיכה/התנגדות: מניה מתחת לבסיס יומי = שבירת מומנטום; מעל בסיס = תמיכה מחזיקה.
+- תנועה קיצונית (±5%+): בדוק האם זה אירוע ספציפי לחברה או ירידה רוחבית בסקטור.
+- היה סקפטי לגבי "Buy the Dip" במניות ששברו תמיכה.
+- כשמדברים על תיק: הצע מימוש רווחים בסקטורים חזקים כדי לאזן חשיפה לסקטורים חלשים.
+- אל תציג רק מספרים — תמיד הוסף משפט אסטרטגי אחד לפחות.
 
 ${knowledgeSection}
 
-## שערי חליפין (עדכני):
-USD/ILS: ${_usdIlsRate} ₪ לדולר
+## שערי חליפין:
+USD/ILS: ${_usdIlsRate} ₪
 
 ## היסטוריית מסחר:
 ${history}
 
-## מצב תיק:
-${info}
+${portfolioSection}
 
-## מחירים חיים (כולל שינוי יומי):
-${liveData}${moversNote}`;
+## ביצועי סקטורים היום:
+${sectorSummary || 'אין נתונים'}
+
+## מחירים חיים + תמיכה/התנגדות:
+${liveData}
+${extremes ? `\n## תנועות קיצוניות — דורשות בדיקה:\n${extremes}` : ''}`;
 }
 
 const _groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -322,9 +386,11 @@ app.post('/api/chat', express.json(), async (req, res) => {
     _lastChatAt = Date.now();
 
     try {
-        const { messages = [], quotes = [] } = req.body;
+        const { messages = [], quotes: clientQuotes = [] } = req.body;
+        const quotes    = clientQuotes.length ? clientQuotes : _cachedQuotes;
         const lastMsg   = messages[messages.length - 1]?.content || '';
         const systemCtx = buildRAGContext(lastMsg, quotes);
+        console.log('[chat] quotes used:', quotes.length, '| portfolio:', systemCtx.slice(systemCtx.indexOf('## תיק'), systemCtx.indexOf('## תיק') + 200));
 
         const groqMessages = [
             { role: 'system', content: systemCtx },
