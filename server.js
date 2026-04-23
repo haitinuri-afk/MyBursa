@@ -26,12 +26,15 @@ app.use(express.static(path.join(__dirname)));
 const SYMBOL_FALLBACKS = { '^TA35':'TA35.TA', '^TA125':'TA125.TA', '^TA90':'TA90.TA' };
 
 const STOCK_SYMBOLS_HE = {
-    "מדד תא-35":"^TA35","לאומי":"LUMI.TA","פועלים":"POLI.TA","דיסקונט":"DSCT.TA",
-    "מזרחי טפחות":"MZTF.TA","אלביט":"ESLT.TA","נייס":"NICE.TA","טבע":"TEVA.TA",
-    "כיל":"ICL.TA","שטראוס":"STRS.TA","שופרסל":"SAE.TA","פוקס":"FOX.TA",
-    "עזריאלי":"AZRG.TA","מליסרון":"MLSR.TA","בזק":"BEZQ.TA","סלקום":"SELC.TA",
-    "אמות":"AMOT.TA","ביג":"BIG.TA","אורמת":"ORA.TA","שיכון ובינוי":"SKBN.TA",
-    "קבוצת דלק":"DLEKG.TA","טאוור":"TSEM.TA","אנרג'יקס":"ENRG.TA","אנלייט":"ENLT.TA"
+    "מדד תא-35":"^TA35","מדד תא-90":"^TA90",
+    "לאומי":"LUMI.TA","פועלים":"POLI.TA","דיסקונט":"DSCT.TA","מזרחי טפחות":"MZTF.TA",
+    "אלביט":"ESLT.TA","נייס":"NICE.TA","טאוור":"TSEM.TA",
+    "טבע":"TEVA.TA","כיל":"ICL.TA",
+    "הפניקס":"PHOE.TA","הראל":"HARL.TA","כלל ביטוח":"KLLI.TA",
+    "עזריאלי":"AZRG.TA","מליסרון":"MLSR.TA","אמות":"AMOT.TA","ביג":"BIG.TA","גב ים":"GVYM.TA","שיכון ובינוי":"SKBN.TA",
+    "אנרג'יקס":"ENRG.TA","אנלייט":"ENLT.TA","אורמת":"ORA.TA","קבוצת דלק":"DLEKG.TA",
+    "בזק":"BEZQ.TA","סלקום":"SELC.TA","פרטנר":"PTNR.TA",
+    "שטראוס":"STRS.TA","שופרסל":"SAE.TA","פוקס":"FOX.TA","רמי לוי":"RMLI.TA",
 };
 
 let _usdIlsRate = 3.004;
@@ -43,9 +46,11 @@ async function refreshUsdIlsRate() {
     } catch(e) { console.warn('[rate]', e.message); }
 }
 
+const INDEX_ALIASES = new Set(['TA90.TA', 'TA125.TA', 'TA35.TA']);
+
 function applyDivisor(sym, value, currency) {
     if (value == null) return null;
-    const isTA = !sym.startsWith('^') && sym.endsWith('.TA');
+    const isTA = !sym.startsWith('^') && sym.endsWith('.TA') && !INDEX_ALIASES.has(sym);
     if (!isTA) return parseFloat(value.toFixed(2));
     if (currency === 'USD') return parseFloat((value * _usdIlsRate).toFixed(2));
     if (value > 1000) return parseFloat((value / 100).toFixed(2));
@@ -261,17 +266,16 @@ function buildRAGContext(query, quotes) {
 
     // ── Sector mapping ────────────────────────────────────────────────────────
     const SECTORS = {
-        'בנקים':     ['לאומי','פועלים','דיסקונט','מזרחי טפחות'],
-        'ביטחון':    ['אלביט'],
-        'טכנולוגיה': ['נייס','טאוור'],
-        'פארמה':     ['טבע'],
-        'אנרגיה':    ['אנרג\'יקס','אנלייט','אורמת'],
-        'נדל"ן':     ['עזריאלי','מליסרון','אמות','ביג'],
-        'כימיה':     ['כיל'],
-        'תקשורת':    ['בזק','סלקום'],
-        'מזון/קמעונאות': ['שטראוס','שופרסל','פוקס'],
-        'אנרגיה-מסורתית': ['קבוצת דלק'],
-        'נדל"ן-שיכון': ['שיכון ובינוי'],
+        'בנקים':          ['לאומי','פועלים','דיסקונט','מזרחי טפחות'],
+        'ביטוח':          ['הפניקס','הראל','כלל ביטוח'],
+        'ביטחון':         ['אלביט'],
+        'טכנולוגיה':      ['נייס','טאוור'],
+        'פארמה':          ['טבע'],
+        'כימיה':          ['כיל'],
+        'אנרגיה':         ['אנרג\'יקס','אנלייט','אורמת','קבוצת דלק'],
+        'נדל"ן':          ['עזריאלי','מליסרון','אמות','ביג','גב ים','שיכון ובינוי'],
+        'תקשורת':         ['בזק','סלקום','פרטנר'],
+        'מזון/קמעונאות':  ['שטראוס','שופרסל','פוקס','רמי לוי'],
     };
     const nameToSector = {};
     Object.entries(SECTORS).forEach(([sec, names]) => names.forEach(n => nameToSector[n] = sec));

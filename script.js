@@ -4,30 +4,46 @@ const PORTFOLIO_KEY = 'trading_station_portfolio';
 
 // Yahoo Finance ticker symbols for each Hebrew stock name
 const STOCK_SYMBOLS = {
+    // מדדים
     "מדד תא-35":    "^TA35",
+    "מדד תא-90":    "^TA90",
+    // בנקים
     "לאומי":        "LUMI.TA",
     "פועלים":       "POLI.TA",
     "דיסקונט":      "DSCT.TA",
     "מזרחי טפחות": "MZTF.TA",
+    // ביטחון/טכנולוגיה
     "אלביט":        "ESLT.TA",
     "נייס":         "NICE.TA",
+    "טאוור":        "TSEM.TA",
+    // פארמה/כימיה
     "טבע":          "TEVA.TA",
     "כיל":          "ICL.TA",
+    // ביטוח
+    "הפניקס":       "PHOE.TA",
+    "הראל":         "HARL.TA",
+    "כלל ביטוח":    "KLLI.TA",
+    // נדל"ן
+    "עזריאלי":      "AZRG.TA",
+    "מליסרון":      "MLSR.TA",
+    "אמות":         "AMOT.TA",
+    "ביג":          "BIG.TA",
+    "גב ים":        "GVYM.TA",
+    "שיכון ובינוי": "SKBN.TA",
+    // אנרגיה
+    "אנרג'יקס":     "ENRG.TA",
+    "אנלייט":       "ENLT.TA",
+    "אורמת":        "ORA.TA",
+    "קבוצת דלק":    "DLEKG.TA",
+    // תקשורת
+    "בזק":          "BEZQ.TA",
+    "סלקום":        "SELC.TA",
+    "פרטנר":        "PTNR.TA",
+    // מזון/קמעונאות
     "שטראוס":       "STRS.TA",
     "שופרסל":       "SAE.TA",
     "פוקס":         "FOX.TA",
-    "עזריאלי":      "AZRG.TA",
-    "מליסרון":      "MLSR.TA",
-    "בזק":          "BEZQ.TA",
-    "סלקום":        "SELC.TA",
-    "אמות":         "AMOT.TA",
-    "ביג":          "BIG.TA",
-    "אורמת":        "ORA.TA",
-    "שיכון ובינוי": "SKBN.TA",
-    "קבוצת דלק":    "DLEKG.TA",
-    "טאוור":        "TSEM.TA",
-    "אנרג'יקס":     "ENRG.TA",
-    "אנלייט":       "ENLT.TA"
+    "רמי לוי":      "RMLI.TA",
 };
 
 const TASE_MAP = { "^TA35": "מדד תא-35", "^TA125": "מדד תא-125", "^TA90": "מדד תא-90" };
@@ -860,23 +876,40 @@ function updatePortfolioList() {
         totalCost  += p.totalCost;
         const totalPct = calculatePctChange(currentPrice, p.buyPrice);
         const dayPct   = calculatePctChange(currentPrice, stock.initial);
+        const plShekels = positionValue - p.totalCost;
+        const plUp  = plShekels >= 0;
+        const dayUp = parseFloat(dayPct) >= 0;
+        const plColor  = pctColor(totalPct);
+        const dayColor = pctColor(dayPct);
+        const plStr = (plShekels >= 0 ? '+' : '') + plShekels.toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
         const tr = document.createElement('tr');
         tr.className = 'stock-row';
         tr.onclick = (e) => {
             if (e.target.tagName !== 'BUTTON') { currentStock = symbol; _lwStock = null; drawChart(); openStockWindow(symbol); }
         };
         tr.innerHTML = `
-            <td>${symbol}</td>
-            <td class="pct-col" style="color: ${parseFloat(totalPct) >= 0 ? '#16a34a' : '#dc2626'}"><span dir="ltr" class="inline-block">${totalPct}%</span></td>
-            <td class="pct-col" style="color: ${parseFloat(dayPct) >= 0 ? '#16a34a' : '#dc2626'}"><span dir="ltr" class="inline-block">${dayPct}%</span></td>
-            <td><span dir="ltr" class="inline-block">₪${positionValue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></td>
-            <td><button class="sell-btn" onclick="sellStock('${symbol}')">Sell</button></td>`;
+            <td style="font-weight:600;font-size:0.8rem">${symbol}</td>
+            <td class="pct-col"><span dir="ltr" style="display:inline-block;background:${plColor.bg};color:${plColor.text};padding:1px 6px;border-radius:4px;font-weight:700;font-size:0.75rem">${parseFloat(totalPct)>=0?'+':''}${totalPct}%</span></td>
+            <td class="text-right" dir="ltr" style="font-size:0.75rem;font-weight:700;color:${plColor.text};font-variant-numeric:tabular-nums;white-space:nowrap">₪${plStr}</td>
+            <td class="pct-col"><span dir="ltr" style="display:inline-block;background:${dayColor.bg};color:${dayColor.text};padding:1px 6px;border-radius:4px;font-weight:700;font-size:0.75rem">${dayUp?'+':''}${dayPct}%</span></td>
+            <td class="text-right" dir="ltr" style="font-size:0.75rem;color:#3c4043;font-variant-numeric:tabular-nums;white-space:nowrap">₪${positionValue.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:0})}</td>
+            <td><button class="sell-btn" onclick="sellStock('${symbol}')">מכור</button></td>`;
         list.appendChild(tr);
     });
 
-    const totalPL = totalCost > 0 ? calculatePctChange(totalValue, totalCost) : "0.00";
-    const color = parseFloat(totalPL) >= 0 ? '#16a34a' : '#dc2626';
-    totalDisplay.innerHTML = `<span dir="ltr" class="inline-block">₪${totalValue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span> <span style="color: ${color}" dir="ltr" class="inline-block">(${totalPL}%)</span>`;
+    const totalPL    = totalCost > 0 ? calculatePctChange(totalValue, totalCost) : "0.00";
+    const totalPLils = totalValue - totalCost;
+    const c          = pctColor(totalPL);
+    const plSign     = totalPLils >= 0 ? '+' : '';
+    totalDisplay.innerHTML = `
+        <span dir="ltr" style="display:flex;flex-direction:column;align-items:flex-end;gap:1px">
+            <span style="font-size:0.85rem;font-weight:700;color:#202124;font-variant-numeric:tabular-nums">
+                ₪${totalValue.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:0})}
+            </span>
+            <span style="font-size:0.75rem;font-weight:700;color:${c.text};background:${c.bg};padding:1px 7px;border-radius:4px;font-variant-numeric:tabular-nums">
+                ${plSign}₪${Math.abs(totalPLils).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:0})} (${parseFloat(totalPL)>=0?'+':''}${totalPL}%)
+            </span>
+        </span>`;
 }
 
 function searchSymbol() {
