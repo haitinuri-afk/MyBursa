@@ -132,11 +132,12 @@ let currentTf = 'daily';
 let currentMainTf = 'daily';
 
 // ── Lightweight Charts (candlestick) state ─────────────────────────────────
-let _lwChart   = null;
-let _lwSeries  = null;
-let _lwVolume  = null;
-let _lwStock   = null;   // last rendered stock name
-let _lwTf      = null;   // last rendered timeframe
+let _lwChart    = null;
+let _lwSeries   = null;
+let _lwVolume   = null;
+let _lwStock    = null;
+let _lwTf       = null;
+let _lwResizeOb = null;  // singleton ResizeObserver for the main chart
 
 // ── Real Data ──────────────────────────────────────────────────────────────
 
@@ -154,17 +155,16 @@ function applyMarketStatus(marketState) {
 }
 
 async function loadSessionHistory() {
-    // Index chart: load 5d daily closes
+    // Index chart: load OHLC for LightweightCharts
     const idxSym = STOCK_SYMBOLS["מדד תא-35"];
     if (idxSym) {
-        const w5d = await fetchHistoricalCloses(idxSym, '5d', '1d');
-        if (w5d.length > 1) {
-            stocksData["מדד תא-35"].historyWeek = w5d;
+        const ohlc5d = await fetchHistoricalOHLC(idxSym, '5d', '30m');
+        if (ohlc5d.length > 1) {
+            stocksData["מדד תא-35"].ohlcWeek = ohlc5d;
             drawIndexChart('daily');
         }
-        // Pre-load W/M/3M for index chart timeframe buttons
-        fetchHistoricalCloses(idxSym, '1mo', '1d').then(w => { if (w.length > 1) { stocksData["מדד תא-35"].historyMonth  = w; } });
-        fetchHistoricalCloses(idxSym, '3mo', '1d').then(w => { if (w.length > 1) { stocksData["מדד תא-35"].history3Month = w; } });
+        fetchHistoricalOHLC(idxSym, '1mo', '1d').then(o => { if (o.length > 1) stocksData["מדד תא-35"].ohlcMonth    = o; });
+        fetchHistoricalOHLC(idxSym, '3mo', '1d').then(o => { if (o.length > 1) stocksData["מדד תא-35"].ohlc3Month   = o; });
     }
     // Main candlestick chart — force a fresh load
     _lwStock = null; _lwTf = null;
@@ -319,7 +319,7 @@ async function refreshRealData() {
         if (el) el.textContent = `עודכן ${now}`;
     }
 
-    initTicker(); updateStockList(); updatePortfolioList();
+    initTicker(); updateStockList(); updatePortfolioList(); updateTransactionHistory();
     drawChart(); drawIndexChart(); updateAllStockWindows();
     saveState();
     scheduleFetch();
@@ -574,11 +574,13 @@ async function drawChart() {
         rightPriceScale:{ borderColor: '#1e2430', scaleMargins: { top: 0.06, bottom: 0.26 } },
         crosshair: { mode: 1 },
     });
-    // Keep chart sized to container on window resize
-    new ResizeObserver(() => {
+    // Singleton ResizeObserver — disconnect old one before creating a new one
+    if (_lwResizeOb) { _lwResizeOb.disconnect(); _lwResizeOb = null; }
+    _lwResizeOb = new ResizeObserver(() => {
         if (_lwChart && container.clientWidth && container.clientHeight)
             _lwChart.resize(container.clientWidth, container.clientHeight);
-    }).observe(container);
+    });
+    _lwResizeOb.observe(container);
 
     _lwSeries = _lwChart.addCandlestickSeries({
         upColor:       '#0ecb81', downColor:       '#f6465d',
@@ -625,14 +627,13 @@ function updateMainTimeframe(tf) {
     drawChart();
 }
 
-function getIndexChartData(tf) {
+function getIndexOHLC(tf) {
     const idx = stocksData["מדד תא-35"];
     if (!idx?.price) return null;
-    // D: use 5-day historical closes (not the live-push array which is flat when market closed)
-    if (tf === 'daily')   return idx.historyWeek?.length   ? [...idx.historyWeek]   : null;
-    if (tf === 'weekly')  return idx.historyMonth?.length  ? [...idx.historyMonth]  : null;
-    if (tf === 'monthly') return idx.history3Month?.length ? [...idx.history3Month] : null;
-    return idx.history3Month?.length ? [...idx.history3Month] : null;
+    if (tf === 'daily')   return idx.ohlcWeek?.length   ? idx.ohlcWeek   : null;
+    if (tf === 'weekly')  return idx.ohlcMonth?.length  ? idx.ohlcMonth  : null;
+    if (tf === 'monthly') return idx.ohlc3Month?.length ? idx.ohlc3Month : null;
+    return idx.ohlc3Month?.length ? idx.ohlc3Month : null;
 }
 
 function updateTA35Stats() {
@@ -660,63 +661,62 @@ function updateTA35Stats() {
     if (ptsEl)   { ptsEl.textContent = `(${sign}${pts})`; ptsEl.style.color = color; }
 }
 
+let _idxChart = null, _idxSeries = null, _idxResizeOb = null;
+
 function drawIndexChart(tf = currentTf) {
     updateTA35Stats();
-    const canvas = document.getElementById('indexChart');
-    if (!canvas) return;
+    const container = document.getElementById('indexChart');
+    if (!container) return;
 
     const idx = stocksData["מדד תא-35"];
-
-    // Don't touch the chart until we have real data — avoids Y-axis being
-    // locked to 0 from the initial placeholder render.
     if (!idx?.price) return;
 
-    const data = getIndexChartData(tf);
-    if (!data || data.length < 2) {
-        if (tf !== 'daily') fetchAndStoreHistory("מדד תא-35", tf);
-        return;
-    }
+    const ohlc = getIndexOHLC(tf);
+    if (!ohlc || ohlc.length < 2) return;
 
-    const first = data[0];
-    const last  = data[data.length - 1];
-    const lineColor = last >= first ? '#0ecb81' : '#f6465d';
-    const fillColor = last >= first ? 'rgba(14,203,129,0.1)' : 'rgba(246,70,93,0.1)';
-
-    // Destroy stale chart if it was built before real data arrived
-    if (indexChart && indexChart._builtWithNoData) {
-        indexChart.destroy();
-        indexChart = null;
-    }
-
-    if (indexChart) {
-        indexChart.data.labels = new Array(data.length).fill('');
-        indexChart.data.datasets[0].data = data;
-        indexChart.data.datasets[0].borderColor = lineColor;
-        indexChart.data.datasets[0].backgroundColor = fillColor;
-        indexChart.update('none');
-    } else {
-        indexChart = new Chart(canvas.getContext('2d'), {
-            type: 'line',
-            data: {
-                labels: new Array(data.length).fill(''),
-                datasets: [{ data, borderColor: lineColor, backgroundColor: fillColor, borderWidth: 2, pointRadius: 0, fill: true, tension: 0.4 }]
-            },
-            options: {
-                animation: false, maintainAspectRatio: false, responsive: true,
-                plugins: { legend: { display: false } },
-                scales: { x: { display: false }, y: { beginAtZero: false, display: false, afterDataLimits: s => { const mid = (s.max + s.min) / 2, span = mid * 0.008; if (s.max - s.min < span) { s.min = mid - span / 2; s.max = mid + span / 2; } } } }
-            }
+    if (!_idxChart) {
+        _idxChart = LightweightCharts.createChart(container, {
+            width:  container.clientWidth  || 300,
+            height: container.clientHeight || 200,
+            layout:   { background: { color: '#0b0e11' }, textColor: '#848e9c' },
+            grid:     { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
+            timeScale:       { borderColor: '#1e2430', timeVisible: true, secondsVisible: false, fixRightEdge: true },
+            rightPriceScale: { borderColor: '#1e2430', scaleMargins: { top: 0.08, bottom: 0.06 } },
+            crosshair: { mode: 1 },
         });
-        indexChart._builtWithNoData = false;
+        _idxSeries = _idxChart.addAreaSeries({
+            lineColor:      '#0ecb81',
+            topColor:       'rgba(14,203,129,0.18)',
+            bottomColor:    'rgba(14,203,129,0)',
+            lineWidth:      2,
+            priceLineVisible: false,
+        });
+        if (_idxResizeOb) _idxResizeOb.disconnect();
+        _idxResizeOb = new ResizeObserver(() => {
+            if (_idxChart && container.clientWidth && container.clientHeight)
+                _idxChart.resize(container.clientWidth, container.clientHeight);
+        });
+        _idxResizeOb.observe(container);
     }
+
+    _idxSeries.setData(ohlc.map(d => ({ time: d.time, value: d.close })));
+    _idxChart.timeScale().fitContent();
 }
 
-function updateTimeframe(tf) {
+async function updateTimeframe(tf) {
     currentTf = tf;
     document.querySelectorAll('#index-tf-btns button').forEach(b => b.classList.remove('active'));
     const map = { daily: 0, weekly: 1, monthly: 2, '3months': 3 };
     const btns = document.querySelectorAll('#index-tf-btns button');
     if (btns[map[tf]]) btns[map[tf]].classList.add('active');
+
+    const idx = stocksData["מדד תא-35"];
+    const idxSym = STOCK_SYMBOLS["מדד תא-35"];
+    if (tf === 'weekly'   && !idx?.ohlcMonth  && idxSym)
+        idx.ohlcMonth   = await fetchHistoricalOHLC(idxSym, '1mo', '1d');
+    if ((tf === 'monthly' || tf === '3months') && !idx?.ohlc3Month && idxSym)
+        idx.ohlc3Month  = await fetchHistoricalOHLC(idxSym, '3mo', '1d');
+
     drawIndexChart(tf);
 }
 
@@ -745,6 +745,19 @@ function updateStockList() {
     });
 }
 
+
+function updateTransactionHistory() {
+    const tbody = document.getElementById('tx-history-list');
+    if (!tbody) return;
+    tbody.innerHTML = transactionHistory.map(tx => `
+        <tr>
+            <td style="padding:1px 3px;color:#848e9c">${tx.time}</td>
+            <td style="padding:1px 3px;color:${tx.action==='Buy'?'#0ecb81':'#f6465d'};font-weight:bold">${tx.action==='Buy'?'קנייה':'מכירה'}</td>
+            <td style="padding:1px 3px;color:#eaecef">${tx.symbol}</td>
+            <td style="padding:1px 3px;text-align:right;color:#eaecef">${tx.qty}</td>
+            <td style="padding:1px 3px;text-align:right;color:#eaecef">₪${tx.price}</td>
+        </tr>`).join('');
+}
 
 function updatePortfolioList() {
     const list = document.getElementById('portfolio-list');
@@ -813,6 +826,7 @@ function buyStock() {
     if (transactionHistory.length > 50) transactionHistory.pop();
     savePortfolio();
     updatePortfolioList();
+    updateTransactionHistory();
 }
 
 function sellStockSim() {
@@ -829,6 +843,7 @@ function sellStock(symbol) {
     if (transactionHistory.length > 50) transactionHistory.pop();
     savePortfolio();
     updatePortfolioList();
+    updateTransactionHistory();
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
@@ -838,7 +853,7 @@ let highestZIndex = 100;
 document.addEventListener('DOMContentLoaded', () => {
     try { initWindowManager(); } catch(e) { console.error("Window manager failed:", e); }
 
-    initTicker(); updateStockList(); updatePortfolioList();
+    initTicker(); updateStockList(); updatePortfolioList(); updateTransactionHistory();
     drawChart(); drawIndexChart();
 
     document.getElementById('buy-btn').onclick      = buyStock;
@@ -941,14 +956,30 @@ function makeResizable(el) {
         e.preventDefault();
         e.stopPropagation();
 
-        const startX = e.clientX;
-        const startY = e.clientY;
-        const startW = el.offsetWidth;
-        const startH = el.offsetHeight;
+        const startX    = e.clientX;
+        const startY    = e.clientY;
+        const startW    = el.offsetWidth;
+        const startH    = el.offsetHeight;
+        const dashboard = document.getElementById('dashboard');
+        const dashRect2 = dashboard ? dashboard.getBoundingClientRect() : { top: 0, height: Infinity };
+        const elTop0    = el.getBoundingClientRect().top - dashRect2.top;
+
+        // For win-main-chart, cap just above the search bar; for others cap at dashboard bottom
+        let maxH;
+        if (el.id === 'win-main-chart') {
+            const searchEl = document.getElementById('win-search');
+            if (searchEl) {
+                maxH = searchEl.getBoundingClientRect().top - dashRect2.top - elTop0 - 4;
+            } else {
+                maxH = dashRect2.height * 0.91 - elTop0;
+            }
+        } else {
+            maxH = dashRect2.height - elTop0 - 2;
+        }
 
         function onMouseMove(moveEvent) {
             const newW = Math.max(160, startW + (moveEvent.clientX - startX));
-            const newH = Math.max(100, startH + (moveEvent.clientY - startY));
+            const newH = Math.min(maxH, Math.max(100, startH + (moveEvent.clientY - startY)));
             el.style.width  = newW + 'px';
             el.style.height = newH + 'px';
         }

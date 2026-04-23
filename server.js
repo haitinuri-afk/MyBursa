@@ -8,6 +8,17 @@ const Groq = require('groq-sdk');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
+const BUILD_VERSION = `bursa-${Date.now()}`;
+
+app.get('/sw.js', (req, res) => {
+    const swPath = path.join(__dirname, 'sw.js');
+    let sw = fs.readFileSync(swPath, 'utf8');
+    sw = sw.replace("'bursa-v1'", `'${BUILD_VERSION}'`);
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.send(sw);
+});
+
 app.use(express.static(path.join(__dirname)));
 
 // ── Yahoo Finance helpers ─────────────────────────────────────────────────
