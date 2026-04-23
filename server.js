@@ -122,7 +122,7 @@ function isMarketOpen() {
     const [h, m] = t.split(':').map(Number);
     const dow = new Date(y, mo - 1, day).getDay();
     const mins = h * 60 + m;
-    return dow >= 0 && dow <= 4 && mins >= 590 && mins < 1050;
+    return dow >= 0 && dow <= 4 && mins >= 540 && mins < 1040;
 }
 
 // GET /api/stock/batch?symbols=LUMI.TA,POLI.TA,^TA35,...
@@ -162,10 +162,9 @@ app.get('/api/stock/batch', async (req, res) => {
         else console.warn(`[batch] ${symList[i]}: ${r.reason?.message}`);
     });
 
-    // Use Yahoo Finance's marketState as ground truth (knows about holidays)
-    // Fall back to our time-based check only when Yahoo data is unavailable
     const yahooState  = results.find(r => r.marketState)?.marketState;
-    const serverOpen  = yahooState ? yahooState === 'REGULAR' : isMarketOpen();
+    // isMarketOpen() is primary for TASE — Yahoo's marketState is unreliable for Israeli hours
+    const serverOpen  = isMarketOpen();
     const marketState = serverOpen ? 'REGULAR' : 'CLOSED';
     console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen} (yahoo:${yahooState ?? 'n/a'})`);
     res.json({ marketOpen: serverOpen, marketState, quotes: results });
@@ -324,6 +323,26 @@ app.post('/api/chat', express.json(), async (req, res) => {
 });
 
 app.get('/api/rate', (req, res) => res.json({ usdIls: _usdIlsRate }));
+
+// ── Portfolio persistence ──────────────────────────────────────────────────
+
+const PORTFOLIO_FILE = path.join(__dirname, 'portfolio.json');
+
+function loadPortfolioFile() {
+    try { return JSON.parse(fs.readFileSync(PORTFOLIO_FILE, 'utf8')); }
+    catch { return { portfolio: {}, transactionHistory: [] }; }
+}
+
+app.get('/api/portfolio', (req, res) => res.json(loadPortfolioFile()));
+
+app.post('/api/portfolio', express.json(), (req, res) => {
+    try {
+        fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(req.body, null, 2));
+        res.json({ ok: true });
+    } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // ── Start ──────────────────────────────────────────────────────────────────
 
