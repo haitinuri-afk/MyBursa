@@ -248,7 +248,28 @@ function buildRAGContext(query, quotes) {
     const history = read('history.txt');
     const info    = read('info.txt');
     const liveData = quotes.length
-        ? quotes.map(q => `${q.symbol}: ${q.regularMarketPrice} ₪`).join('\n')
+        ? quotes.map(q => {
+            const price   = q.regularMarketPrice;
+            const prev    = q.regularMarketPreviousClose;
+            const pct     = prev ? (((price - prev) / prev) * 100).toFixed(2) : null;
+            const pctStr  = pct !== null ? ` (${pct >= 0 ? '+' : ''}${pct}%)` : '';
+            return `${q.symbol}: ₪${price}${pctStr}`;
+          }).join('\n')
+        : '';
+
+    // Flag significant movers for the AI to interpret
+    const movers = quotes
+        .filter(q => q.regularMarketPreviousClose)
+        .map(q => {
+            const pct = ((q.regularMarketPrice - q.regularMarketPreviousClose) / q.regularMarketPreviousClose) * 100;
+            return { symbol: q.symbol, pct };
+        })
+        .filter(m => Math.abs(m.pct) >= 2)
+        .map(m => `${m.symbol}: ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(2)}%`)
+        .join(', ');
+
+    const moversNote = movers
+        ? `\n## תנועות חריגות (±2% ומעלה — מצריכות פרשנות):\n${movers}`
         : '';
 
     const retrieved = retrieveRelevantChunks(query, _knowledgeChunks);
@@ -256,8 +277,15 @@ function buildRAGContext(query, quotes) {
         ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}`
         : '';
 
-    return `אתה יועץ השקעות אישי לבורסה הישראלית. ענה תמיד בעברית, בצורה ממוקדת.
-השתמש אך ורק בנתונים החיים שסופקו — אל תנחש ואל תסתמך על נתוני אימון.
+    return `אתה אנליסט שוק הון בכיר המתמחה בבורסת תל אביב. הטון שלך: מקצועי, חד וישיר — כמו יועץ בחדר מסחר.
+ענה תמיד בעברית. היצמד אך ורק לנתונים שסופקו; אל תסתמך על נתוני אימון כמקור עצמאי.
+
+## כללי פרשנות:
+- מניה שירדה מעל 2%: ספק הסבר סנטימנט הגיוני (דוחות חלשים, לחץ רגולטורי, מכירות מוסדיות, חולשת ענף).
+- מניה שעלתה מעל 2%: הסבר כחוזקת סקטור, ציפיות לדוחות חזקים, תזרים חיובי, אמון משקיעים.
+- אם השינוי קטן מ-2%: תיאור עובדתי בלי ספקולציה.
+- כשדנים בתיק: הצג P&L, המלץ על פיזור או שמירת פוזיציות על בסיס המגמות שבנתונים.
+- אל תציג רק מספרים — תמיד הוסף משפט פרשנות אחד לפחות.
 
 ${knowledgeSection}
 
@@ -270,8 +298,8 @@ ${history}
 ## מצב תיק:
 ${info}
 
-## מחירים חיים:
-${liveData}`;
+## מחירים חיים (כולל שינוי יומי):
+${liveData}${moversNote}`;
 }
 
 const _groq = new Groq({ apiKey: process.env.GROQ_API_KEY });

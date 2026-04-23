@@ -173,7 +173,7 @@ let _lwResizeOb = null;  // singleton ResizeObserver for the main chart
 
 function applyMarketStatus(marketState) {
     const open = marketState === 'REGULAR';
-    const color = open ? '#1a7a3c' : '#b91c1c';
+    const color = open ? '#16a34a' : '#dc2626';
     const dot = document.getElementById('market-status');
     if (dot) dot.style.color = color;
     const label = document.getElementById('market-label');
@@ -227,9 +227,9 @@ function setDataStatus(state, detail = '') {
     if (!el) return;
     if (state === 'error' && !isMarketOpen()) state = 'sim';
     const styles = {
-        live:  { text: 'LIVE', color: '#1a7a3c', bg: 'rgba(29,185,84,0.15)' },
+        live:  { text: 'LIVE', color: '#16a34a', bg: 'rgba(29,185,84,0.15)' },
         sim:   { text: 'SIM',  color: '#5f6368', bg: '#f1f3f4' },
-        error: { text: 'ERR',  color: '#b91c1c', bg: 'rgba(234,67,53,0.12)' },
+        error: { text: 'ERR',  color: '#dc2626', bg: 'rgba(234,67,53,0.12)' },
         fetch: { text: '...',  color: '#f0b90b', bg: 'rgba(240,185,11,0.10)' }
     };
     const s = styles[state] || styles.sim;
@@ -365,6 +365,22 @@ function calculatePctChange(current, baseline) {
     return (((current - baseline) / baseline) * 100).toFixed(2);
 }
 
+// Color scaled by magnitude: small change = muted, large = vivid
+function pctColor(pct) {
+    const v = Math.abs(parseFloat(pct));
+    if (parseFloat(pct) >= 0) {
+        if (v < 0.5) return { text: '#4ade80', bg: 'rgba(74,222,128,0.15)' };
+        if (v < 1.5) return { text: '#22c55e', bg: 'rgba(34,197,94,0.18)' };
+        if (v < 3)   return { text: '#16a34a', bg: 'rgba(22,163,74,0.20)' };
+        return              { text: '#15803d', bg: 'rgba(21,128,61,0.22)' };
+    } else {
+        if (v < 0.5) return { text: '#f87171', bg: 'rgba(248,113,113,0.15)' };
+        if (v < 1.5) return { text: '#ef4444', bg: 'rgba(239,68,68,0.18)' };
+        if (v < 3)   return { text: '#dc2626', bg: 'rgba(220,38,38,0.20)' };
+        return              { text: '#b91c1c', bg: 'rgba(185,28,28,0.22)' };
+    }
+}
+
 function initStockSuggestions() {
     const dl = document.getElementById('stock-suggestions');
     if (!dl) return;
@@ -431,7 +447,7 @@ function initTicker() {
         const val   = item.querySelector('.tick-val');
         if (val) {
             val.textContent = `${up ? '▲' : '▼'} ${pct}%`;
-            val.style.color = up ? '#1a7a3c' : '#b91c1c';
+            val.style.color = pctColor(pct).text;
         }
     });
 }
@@ -471,7 +487,7 @@ function openStockWindow(name) {
     }
 
     const dayPct = calculatePctChange(parseFloat(stock.price), stock.initial);
-    const color = parseFloat(dayPct) >= 0 ? '#1a7a3c' : '#b91c1c';
+    const color = parseFloat(dayPct) >= 0 ? '#16a34a' : '#dc2626';
 
     card.innerHTML = `
         <div class="window-header">
@@ -509,7 +525,7 @@ function openStockWindow(name) {
 
 function calculateColor(stock, tf) {
     const val = calculateVal(stock, tf);
-    return parseFloat(val) >= 0 ? '#1a7a3c' : '#b91c1c';
+    return parseFloat(val) >= 0 ? '#16a34a' : '#dc2626';
 }
 
 function calculateVal(stock, tf) {
@@ -592,14 +608,14 @@ function updateAllStockWindows() {
         if (pctEl) {
             const dayPct = calculatePctChange(parseFloat(stock.price), stock.initial);
             pctEl.innerText = `${parseFloat(dayPct) >= 0 ? '+' : ''}${dayPct}%`;
-            pctEl.style.color = parseFloat(dayPct) >= 0 ? '#1a7a3c' : '#b91c1c';
+            pctEl.style.color = parseFloat(dayPct) >= 0 ? '#16a34a' : '#dc2626';
         }
         ['day', 'week', 'month', '3months'].forEach(tf => {
             const statEl = document.getElementById(`stat-${name}-${tf}`);
             if (statEl) {
                 const val = calculateVal(stock, tf);
                 statEl.innerText = `${val}%`;
-                statEl.style.color = parseFloat(val) >= 0 ? '#1a7a3c' : '#b91c1c';
+                statEl.style.color = parseFloat(val) >= 0 ? '#16a34a' : '#dc2626';
             }
         });
         if (activeStockWindows[name].tf === 'day') drawStockWindowChart(name);
@@ -677,7 +693,7 @@ async function drawChart() {
     if (pcEl && pct !== null) {
         const up = parseFloat(pct) >= 0;
         pcEl.textContent = `${up ? '+' : ''}${pct}%`;
-        pcEl.style.color = up ? '#1a7a3c' : '#b91c1c';
+        pcEl.style.color = up ? '#16a34a' : '#dc2626';
     }
 }
 
@@ -717,7 +733,7 @@ function updateTA35Stats() {
     const prev  = parseFloat(idx.initial);
     const pct   = calculatePctChange(price, prev);
     const pts   = (price - prev).toFixed(2);
-    const color = parseFloat(pct) >= 0 ? '#1a7a3c' : '#b91c1c';
+    const color = parseFloat(pct) >= 0 ? '#16a34a' : '#dc2626';
     const sign  = parseFloat(pct) >= 0 ? '+' : '';
 
     if (priceEl) priceEl.textContent = price.toLocaleString(undefined, { minimumFractionDigits: 2 });
@@ -799,7 +815,7 @@ function updateStockList() {
         const price = parseFloat(stock.price);
         const pct   = calculatePctChange(price, stock.initial);
         const up    = parseFloat(pct) >= 0;
-        const color = up ? '#1a7a3c' : '#b91c1c';
+        const color = up ? '#16a34a' : '#dc2626';
         const arrow = up ? '▲' : '▼';
         const priceStr = price > 0 ? `₪${price.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
         const tr = document.createElement('tr');
@@ -807,7 +823,7 @@ function updateStockList() {
         tr.innerHTML = `
             <td class="text-right" style="font-size:0.82rem;color:#202124;white-space:nowrap">${name}</td>
             <td class="text-right" style="font-size:0.82rem;color:#202124;font-variant-numeric:tabular-nums;white-space:nowrap" dir="ltr">${priceStr}</td>
-            <td class="pct-col"><span dir="ltr" class="inline-block" style="color:${up ? '#1a7a3c' : '#b91c1c'};background:${up ? 'rgba(29,185,84,0.18)' : 'rgba(234,67,53,0.15)'};padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700">${up ? '+' : ''}${pct}%</span></td>`;
+            <td class="pct-col"><span dir="ltr" class="inline-block" style="color:${pctColor(pct).text};background:${pctColor(pct).bg};padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700">${up ? '+' : ''}${pct}%</span></td>`;
         tr.onclick = () => { currentStock = name; _lwStock = null; drawChart(); openStockWindow(name); };
         list.appendChild(tr);
     });
@@ -850,15 +866,15 @@ function updatePortfolioList() {
         };
         tr.innerHTML = `
             <td>${symbol}</td>
-            <td class="pct-col" style="color: ${parseFloat(totalPct) >= 0 ? '#1a7a3c' : '#b91c1c'}"><span dir="ltr" class="inline-block">${totalPct}%</span></td>
-            <td class="pct-col" style="color: ${parseFloat(dayPct) >= 0 ? '#1a7a3c' : '#b91c1c'}"><span dir="ltr" class="inline-block">${dayPct}%</span></td>
+            <td class="pct-col" style="color: ${parseFloat(totalPct) >= 0 ? '#16a34a' : '#dc2626'}"><span dir="ltr" class="inline-block">${totalPct}%</span></td>
+            <td class="pct-col" style="color: ${parseFloat(dayPct) >= 0 ? '#16a34a' : '#dc2626'}"><span dir="ltr" class="inline-block">${dayPct}%</span></td>
             <td><span dir="ltr" class="inline-block">₪${positionValue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span></td>
             <td><button class="sell-btn" onclick="sellStock('${symbol}')">Sell</button></td>`;
         list.appendChild(tr);
     });
 
     const totalPL = totalCost > 0 ? calculatePctChange(totalValue, totalCost) : "0.00";
-    const color = parseFloat(totalPL) >= 0 ? '#1a7a3c' : '#b91c1c';
+    const color = parseFloat(totalPL) >= 0 ? '#16a34a' : '#dc2626';
     totalDisplay.innerHTML = `<span dir="ltr" class="inline-block">₪${totalValue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span> <span style="color: ${color}" dir="ltr" class="inline-block">(${totalPL}%)</span>`;
 }
 
@@ -1105,14 +1121,67 @@ function makeResizable(el) {
 
 let _aiHistory = [];
 
+function buildMoversBar() {
+    const movers = Object.keys(stocksData)
+        .filter(name => name !== 'מדד תא-35')
+        .map(name => {
+            const s = stocksData[name];
+            if (!s?.price || !s?.initial) return null;
+            const pct = ((parseFloat(s.price) - s.initial) / s.initial) * 100;
+            if (Math.abs(pct) < 1.5) return null;
+            return { name, pct };
+        })
+        .filter(Boolean)
+        .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct))
+        .slice(0, 6);
+
+    if (!movers.length) return '';
+
+    const tags = movers.map(({ name, pct }) => {
+        const up    = pct >= 0;
+        const abs   = Math.abs(pct);
+        const color = abs >= 3 ? (up ? '#16a34a' : '#dc2626') : '#b96000';
+        const bg    = abs >= 3 ? (up ? '#d4edda' : '#fde8e8') : '#fff3cd';
+        const sign  = up ? '+' : '';
+        return `<span style="display:inline-block;background:${bg};color:${color};border:1px solid ${color};`
+             + `padding:1px 6px;border-radius:4px;font-weight:700;font-size:9px;white-space:nowrap">`
+             + `${name} ${sign}${pct.toFixed(1)}%</span>`;
+    }).join(' ');
+
+    return `<div style="margin-top:6px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.1);display:flex;flex-wrap:wrap;gap:4px">${tags}</div>`;
+}
+
+function tagStockMentions(text) {
+    let out = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    // Inline-highlight stock name mentions that are significant movers
+    Object.keys(stocksData).forEach(name => {
+        const s = stocksData[name];
+        if (!s?.price || !s?.initial) return;
+        const pct = ((parseFloat(s.price) - s.initial) / s.initial) * 100;
+        if (Math.abs(pct) < 1.5) return;
+        const up    = pct >= 0;
+        const color = Math.abs(pct) >= 3 ? (up ? '#16a34a' : '#dc2626') : '#b96000';
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        out = out.replace(new RegExp(escaped, 'g'),
+            `<strong style="color:${color}">${name}</strong>`);
+    });
+
+    out += buildMoversBar();
+    return out;
+}
+
 function addAIMessage(role, text) {
     const box = document.getElementById('ai-messages');
     const div = document.createElement('div');
     const isUser = role === 'user';
+    const html = isUser
+        ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        : tagStockMentions(text);
     div.style.cssText = `display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'};margin:2px 0`;
     div.innerHTML = `<div style="max-width:85%;padding:4px 8px;border-radius:8px;font-size:10px;line-height:1.5;white-space:pre-wrap;
         background:${isUser ? '#1a3a5c' : '#1e2430'};color:${isUser ? '#87ceeb' : '#b7bdc6'};
-        border:1px solid ${isUser ? '#274d73' : '#2b3139'}">${text}</div>`;
+        border:1px solid ${isUser ? '#274d73' : '#2b3139'}">${html}</div>`;
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
