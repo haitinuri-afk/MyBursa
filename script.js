@@ -649,7 +649,7 @@ async function drawChart() {
         grid:     { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.06)' } },
         timeScale:      { borderColor: 'rgba(0,0,0,0.1)', timeVisible: true, secondsVisible: false, fixRightEdge: true },
         rightPriceScale:{ borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.06, bottom: 0.26 } },
-        crosshair: { mode: 1 },
+        crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
     });
     // Singleton ResizeObserver — disconnect old one before creating a new one
     if (_lwResizeOb) { _lwResizeOb.disconnect(); _lwResizeOb = null; }
@@ -763,7 +763,7 @@ function drawIndexChart(tf = currentTf) {
             grid:     { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.06)' } },
             timeScale:       { borderColor: '#1e2430', timeVisible: true, secondsVisible: false, fixRightEdge: true },
             rightPriceScale: { borderColor: '#1e2430', scaleMargins: { top: 0.08, bottom: 0.06 } },
-            crosshair: { mode: 1 },
+            crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
         });
         _idxSeries = _idxChart.addAreaSeries({
             lineColor:      '#1db954',
