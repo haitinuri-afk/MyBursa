@@ -236,16 +236,23 @@
                 </div>
             </div>
 
+
             <!-- Portfolio Chart Window -->
             <div id="win-portfolio-chart" class="card" style="display:none">
                 <div class="window-header">
                     <h3>📈 ביצועי תיק</h3>
                     <div class="window-controls">
+                        <div class="timeframe-buttons">
+                            <button id="ptf-day"  class="active" onclick="setPortfolioTf('day')">יום</button>
+                            <button id="ptf-week" onclick="setPortfolioTf('week')">שבוע</button>
+                            <button id="ptf-all"  onclick="setPortfolioTf('all')">הכל</button>
+                        </div>
                         <button class="win-btn win-max" onclick="toggleMaximize('win-portfolio-chart')"></button>
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
-                <div class="card-body">
+                <div class="card-body" style="display:flex;flex-direction:column;gap:6px">
+                    <div id="portfolio-chart-summary" style="text-align:center;padding:2px 0"></div>
                     <div class="flex-1 w-full overflow-hidden relative" style="min-height:0;position:relative;background:#ffffff;border-radius:8px">
                         <div id="portfolioChart" style="position:absolute;inset:0"></div>
                     </div>
