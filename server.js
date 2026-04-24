@@ -325,9 +325,9 @@ app.get('/api/stock/history', async (req, res) => {
         const q          = result?.indicators?.quote?.[0] ?? {};
         const timestamps = result?.timestamp ?? [];
 
-        const closes = (q.close ?? [])
-            .filter(v => v != null && v > 0)
-            .map(v => applyDivisor(canonicalSymbol, v, currency));
+        const closeData = (q.close ?? []).map((v, i) => ({ v, t: timestamps[i] })).filter(d => d.v != null && d.v > 0);
+        const closes    = closeData.map(d => applyDivisor(canonicalSymbol, d.v, currency));
+        const closeTimes = closeData.map(d => d.t ?? 0);
 
         const ohlc = timestamps.map((t, i) => ({
             time:   t,
@@ -343,11 +343,12 @@ app.get('/api/stock/history', async (req, res) => {
             price:     applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency),
             prevClose: applyDivisor(canonicalSymbol, meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice, currency),
             closes,
+            timestamps: closeTimes,
             ohlc
         });
     } catch(e) {
         console.error('[/api/stock/history]', e.message);
-        res.status(404).json({ error: e.message, closes: [], ohlc: [] });
+        res.status(404).json({ error: e.message, closes: [], timestamps: [], ohlc: [] });
     }
 });
 

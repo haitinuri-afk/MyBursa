@@ -268,6 +268,23 @@ async function fetchHistoricalCloses(symbol, range, interval = '1d') {
     }
 }
 
+async function fetchHistoricalWithTs(symbol, range, interval = '1d') {
+    try {
+        const params = new URLSearchParams({ symbol, range, interval });
+        const resp = await fetch(`/api/stock/history?${params}`);
+        if (!resp.ok) return { closes: [], timestamps: [] };
+        const data = await resp.json();
+        return { closes: data.closes ?? [], timestamps: data.timestamps ?? [] };
+    } catch(e) { return { closes: [], timestamps: [] }; }
+}
+
+function fmtTs(unixSec, intraday) {
+    if (!unixSec) return '';
+    const d = new Date(unixSec * 1000);
+    if (intraday) return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' });
+}
+
 async function fetchHistoricalOHLC(symbol, range, interval = '1d') {
     try {
         const params = new URLSearchParams({ symbol, range, interval });
@@ -346,8 +363,11 @@ async function refreshRealData() {
 
         stocksData[name].price   = q.regularMarketPrice;
         stocksData[name].initial = q.regularMarketPreviousClose ?? q.regularMarketPrice;
+        const nowSec = Math.floor(Date.now() / 1000);
         stocksData[name].history.push(stocksData[name].price);
-        if (stocksData[name].history.length > 300) stocksData[name].history.shift();
+        if (!stocksData[name].historyTs) stocksData[name].historyTs = [];
+        stocksData[name].historyTs.push(nowSec);
+        if (stocksData[name].history.length > 300) { stocksData[name].history.shift(); stocksData[name].historyTs.shift(); }
         liveCount++;
     });
 
@@ -596,11 +616,14 @@ function openStockWindow(name) {
                 <span id="price-${name}" style="font-size:1.6rem;font-weight:700;font-family:'Inter',monospace;color:var(--text)">₪${parseFloat(stock.price).toFixed(2)}</span>
                 <span id="pct-${name}" style="font-size:1rem;font-weight:700;color:${color}">${parseFloat(dayPct)>=0?'+':''}${dayPct}%</span>
             </div>
-            <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+            <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
                 ${['day','week','month','3months'].map(tf => {
                     const v = calculateVal(stock, tf);
-                    const c = calculateColor(stock, tf);
-                    return `<span id="stat-${name}-${tf}" style="font-size:0.75rem;color:${c};font-weight:600">${tfLabels[tf]}: ${v}%</span>`;
+                    const pos = parseFloat(v) >= 0;
+                    const c = pos ? '#16a34a' : '#dc2626';
+                    const bg = pos ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)';
+                    const sign = pos ? '+' : '';
+                    return `<span id="stat-${name}-${tf}" style="font-size:0.72rem;font-weight:700;color:${c};background:${bg};border-radius:20px;padding:2px 8px;white-space:nowrap">${tfLabels[tf]} ${sign}${v}%</span>`;
                 }).join('')}
             </div>
             <div style="flex:1;min-height:0;position:relative;height:180px">
@@ -620,38 +643,51 @@ function openStockWindow(name) {
     const sym = STOCK_SYMBOLS[name];
     if (sym) {
         const tfLabels = { day: 'יום', week: 'שבוע', month: 'חודש', '3months': '3M' };
-        // Seed intraday history for the day chart
-        fetchHistoricalCloses(sym, '1d', '2m').then(closes => {
+        // Seed intraday history for the day chart (5d/2m filtered to today)
+        fetchHistoricalWithTs(sym, '5d', '2m').then(({ closes, timestamps }) => {
             if (!closes.length) return;
-            stocksData[name].history = closes;
+            const now = new Date();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+            const todayEnd   = todayStart + 86400;
+            const pairs = timestamps.map((t, i) => ({ t, c: closes[i] })).filter(d => d.t >= todayStart && d.t < todayEnd);
+            if (!pairs.length) return;
+            stocksData[name].history   = pairs.map(d => d.c);
+            stocksData[name].historyTs = pairs.map(d => d.t);
             if (activeStockWindows[name]?.tf === 'day') drawStockWindowChart(name);
         }).catch(() => {});
-        fetchHistoricalCloses(sym, '1mo').then(closes => {
+        fetchHistoricalWithTs(sym, '1mo').then(({ closes, timestamps }) => {
             if (!closes.length) return;
-            stocksData[name].baseWeek     = closes[Math.max(0, closes.length - 6)];
-            stocksData[name].baseMonth    = closes[0];
-            stocksData[name].historyWeek  = closes.slice(Math.max(0, closes.length - 6));
-            stocksData[name].historyMonth = closes;
+            stocksData[name].baseWeek       = closes[Math.max(0, closes.length - 6)];
+            stocksData[name].baseMonth      = closes[0];
+            stocksData[name].historyWeek    = closes.slice(Math.max(0, closes.length - 6));
+            stocksData[name].historyMonth   = closes;
+            stocksData[name].historyWeekTs  = timestamps.slice(Math.max(0, timestamps.length - 6));
+            stocksData[name].historyMonthTs = timestamps;
             ['week', 'month'].forEach(tf => {
                 const el = document.getElementById(`stat-${name}-${tf}`);
                 if (el) {
                     const v = calculateVal(stocksData[name], tf);
-                    el.textContent = `${tfLabels[tf]}: ${v}%`;
-                    el.style.color = calculateColor(stocksData[name], tf);
+                    const pos = parseFloat(v) >= 0;
+                    el.textContent = `${tfLabels[tf]} ${pos?'+':''}${v}%`;
+                    el.style.color = pos ? '#16a34a' : '#dc2626';
+                    el.style.background = pos ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)';
                 }
             });
             const st = activeStockWindows[name];
             if (st && (st.tf === 'week' || st.tf === 'month')) drawStockWindowChart(name);
         }).catch(() => {});
-        fetchHistoricalCloses(sym, '3mo').then(closes => {
+        fetchHistoricalWithTs(sym, '3mo').then(({ closes, timestamps }) => {
             if (!closes.length) return;
-            stocksData[name].base3Month    = closes[0];
-            stocksData[name].history3Month = closes;
+            stocksData[name].base3Month      = closes[0];
+            stocksData[name].history3Month   = closes;
+            stocksData[name].history3MonthTs = timestamps;
             const el = document.getElementById(`stat-${name}-3months`);
             if (el) {
                 const v = calculateVal(stocksData[name], '3months');
-                el.textContent = `3M: ${v}%`;
-                el.style.color = calculateColor(stocksData[name], '3months');
+                const pos = parseFloat(v) >= 0;
+                el.textContent = `3M ${pos?'+':''}${v}%`;
+                el.style.color = pos ? '#16a34a' : '#dc2626';
+                el.style.background = pos ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)';
             }
             if (activeStockWindows[name]?.tf === '3months') drawStockWindowChart(name);
         }).catch(() => {});
@@ -699,29 +735,63 @@ function drawStockWindowChart(name) {
     const tf = state.tf;
     let data = [];
 
+    let tsData = [];
+    const intraday = tf === 'day';
     if (tf === 'day') {
-        data = [...stock.history];
+        data   = [...stock.history];
+        tsData = [...(stock.historyTs ?? [])];
     } else {
         const histField = tf === 'week' ? 'historyWeek' : (tf === 'month' ? 'historyMonth' : 'history3Month');
-        data = stock[histField]?.length ? [...stock[histField]] : [];
+        const tsField   = tf === 'week' ? 'historyWeekTs' : (tf === 'month' ? 'historyMonthTs' : 'history3MonthTs');
+        data   = stock[histField]?.length ? [...stock[histField]] : [];
+        tsData = stock[tsField]?.length   ? [...stock[tsField]]   : [];
     }
+    const labels = tsData.length === data.length
+        ? tsData.map(t => fmtTs(t, intraday))
+        : new Array(data.length).fill('');
 
     if (state.chart) {
-        state.chart.data.labels = new Array(data.length).fill('');
+        state.chart.data.labels = labels;
         state.chart.data.datasets[0].data = data;
         state.chart.update('none');
     } else {
         state.chart = new Chart(canvas.getContext('2d'), {
             type: 'line',
             data: {
-                labels: new Array(data.length).fill(''),
+                labels,
                 datasets: [{ data, borderColor: '#f0b90b', borderWidth: 2, pointRadius: 0, fill: true, backgroundColor: 'rgba(240, 185, 11, 0.1)', tension: 0.4 }]
             },
             options: {
                 animation: { duration: 500 },
                 maintainAspectRatio: false, responsive: true,
-                plugins: { legend: { display: false } },
-                scales: { x: { display: false }, y: { beginAtZero: false, grace: '5%', grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#848e9c', font: { size: 10 } } } }
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        enabled: true,
+                        backgroundColor: 'rgba(30,30,40,0.92)',
+                        titleColor: '#848e9c',
+                        bodyColor: '#fff',
+                        bodyFont: { size: 13, weight: '700' },
+                        titleFont: { size: 10 },
+                        padding: 8,
+                        cornerRadius: 8,
+                        displayColors: false,
+                        callbacks: {
+                            title: ctx => ctx[0]?.label ?? '',
+                            label: ctx => `₪${parseFloat(ctx.parsed.y).toFixed(2)}`
+                        }
+                    },
+                    crosshair: false
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        ticks: { color: '#848e9c', font: { size: 9 }, maxTicksLimit: 5, maxRotation: 0, autoSkip: true },
+                        grid: { display: false }
+                    },
+                    y: { beginAtZero: false, grace: '5%', grid: { color: 'rgba(128,128,128,0.1)' }, ticks: { color: '#848e9c', font: { size: 10 } } }
+                }
             }
         });
     }
@@ -739,12 +809,17 @@ function updateAllStockWindows() {
             pctEl.innerText = `${parseFloat(dayPct) >= 0 ? '+' : ''}${dayPct}%`;
             pctEl.style.color = parseFloat(dayPct) >= 0 ? '#16a34a' : '#dc2626';
         }
+        const _tfLbl = { day: 'יום', week: 'שבוע', month: 'חודש', '3months': '3M' };
         ['day', 'week', 'month', '3months'].forEach(tf => {
             const statEl = document.getElementById(`stat-${name}-${tf}`);
             if (statEl) {
                 const val = calculateVal(stock, tf);
-                statEl.innerText = `${val}%`;
-                statEl.style.color = parseFloat(val) >= 0 ? '#16a34a' : '#dc2626';
+                const pos = parseFloat(val) >= 0;
+                const c  = pos ? '#16a34a' : '#dc2626';
+                const bg = pos ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)';
+                statEl.innerText = `${_tfLbl[tf]} ${pos ? '+' : ''}${val}%`;
+                statEl.style.color = c;
+                statEl.style.background = bg;
             }
         });
         if (activeStockWindows[name].tf === 'day') drawStockWindowChart(name);
