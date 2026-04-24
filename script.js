@@ -22,7 +22,7 @@ const STOCK_SYMBOLS = {
     // ביטוח
     "הפניקס":       "PHOE.TA",
     "הראל":         "HARL.TA",
-    "כלל ביטוח":    "KLLI.TA",
+    "כלל ביטוח":    "CLIS.TA",
     // נדל"ן
     "עזריאלי":      "AZRG.TA",
     "מליסרון":      "MLSR.TA",
@@ -37,7 +37,7 @@ const STOCK_SYMBOLS = {
     "קבוצת דלק":    "DLEKG.TA",
     // תקשורת
     "בזק":          "BEZQ.TA",
-    "סלקום":        "SELC.TA",
+    "סלקום":        "CEL.TA",
     "פרטנר":        "PTNR.TA",
     // מזון/קמעונאות
     "שטראוס":       "STRS.TA",
@@ -188,14 +188,14 @@ let _lwResizeOb = null;  // singleton ResizeObserver for the main chart
 // ── Real Data ──────────────────────────────────────────────────────────────
 
 function applyMarketStatus(marketState) {
-    const open = marketState === 'REGULAR';
-    const color = open ? '#16a34a' : '#dc2626';
-    const dot = document.getElementById('market-status');
+    const open  = marketState === 'REGULAR';
+    const color = open ? '#16a34a' : '#9aa0a6';
+    const dot   = document.getElementById('market-status');
     if (dot) dot.style.color = color;
     const label = document.getElementById('market-label');
     if (label) { label.textContent = open ? 'מסחר רציף' : 'סגור'; label.style.color = color; }
     const badge = document.getElementById('ta35-status');
-    if (badge) { badge.textContent = open ? '' : 'סגור'; badge.style.color = '#f6465d'; }
+    if (badge) badge.textContent = '';
     const statusEl = document.getElementById('data-status');
     if (statusEl) statusEl.classList.toggle('idle-mode', !open);
 }
@@ -282,10 +282,11 @@ async function fetchHistoricalOHLC(symbol, range, interval = '1d') {
 }
 
 function tfToOhlcRange(tf) {
-    if (tf === 'daily')   return { range: '1mo', interval: '1d' };
-    if (tf === 'weekly')  return { range: '3mo', interval: '1d' };
-    if (tf === 'monthly') return { range: '6mo', interval: '1d' };
-    return                       { range: '1y',  interval: '1d' };
+    if (tf === 'intraday') return { range: '1d',  interval: '5m'  };
+    if (tf === 'daily')    return { range: '1mo', interval: '1d'  };
+    if (tf === 'weekly')   return { range: '3mo', interval: '1d'  };
+    if (tf === 'monthly')  return { range: '6mo', interval: '1d'  };
+    return                        { range: '1y',  interval: '1d'  };
 }
 
 // Fetch and store historical closes for a stock/timeframe, then redraw.
@@ -398,6 +399,59 @@ function pctColor(pct) {
     }
 }
 
+// ── Hebrew stock autocomplete ──────────────────────────────────────────────
+let _acIndex = -1;
+
+function stockAutocomplete(q) {
+    const dd = document.getElementById('ac-dropdown');
+    if (!dd) return;
+    const query = q.trim();
+    const allNames = Object.keys(STOCK_SYMBOLS);
+    const matches = query.length === 0
+        ? allNames.slice(0, 10)
+        : allNames.filter(n =>
+            n.includes(query) ||
+            (STOCK_SYMBOLS[n] || '').toLowerCase().includes(query.toLowerCase())
+          ).slice(0, 10);
+
+    if (!matches.length) { dd.style.display = 'none'; return; }
+    _acIndex = -1;
+    dd.innerHTML = matches.map((name, i) => {
+        const sym = STOCK_SYMBOLS[name] || '';
+        const price = stocksData[name]?.price ? `₪${parseFloat(stocksData[name].price).toFixed(2)}` : '';
+        return `<div class="ac-item" data-name="${name}" data-i="${i}"
+            style="padding:6px 10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:12px;border-bottom:1px solid rgba(0,0,0,0.05)"
+            onmousedown="selectAutocomplete('${name}')">
+            <span style="font-weight:600;direction:rtl">${name}</span>
+            <span style="color:#9aa0a6;font-size:10px;font-family:monospace">${sym} ${price}</span>
+        </div>`;
+    }).join('');
+    dd.style.display = 'block';
+}
+
+function selectAutocomplete(name) {
+    const inp = document.getElementById('sim-symbol');
+    const dd  = document.getElementById('ac-dropdown');
+    if (inp) { inp.value = name; inp.dispatchEvent(new Event('change')); }
+    if (dd)  dd.style.display = 'none';
+    document.getElementById('sim-qty')?.focus();
+}
+
+function handleAutocompleteKey(e) {
+    const dd    = document.getElementById('ac-dropdown');
+    const items = dd?.querySelectorAll('.ac-item');
+    if (!items?.length) { if (e.key === 'Enter') buyStock(); return; }
+    if (e.key === 'ArrowDown')  { e.preventDefault(); _acIndex = Math.min(_acIndex + 1, items.length - 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); _acIndex = Math.max(_acIndex - 1, -1); }
+    else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (_acIndex >= 0) selectAutocomplete(items[_acIndex].dataset.name);
+        else buyStock();
+        return;
+    } else if (e.key === 'Escape') { dd.style.display = 'none'; return; }
+    items.forEach((el, i) => el.style.background = i === _acIndex ? '#e8f0fe' : '');
+}
+
 function initStockSuggestions() {
     const dl = document.getElementById('stock-suggestions');
     if (!dl) return;
@@ -407,21 +461,34 @@ function initStockSuggestions() {
     });
 }
 
+let _tickerOffset = 0;
+let _tickerLastTs = null;
+let _tickerRAF    = null;
+const TICKER_PPS  = 60;
+
 function initTicker() {
     const ticker = document.getElementById('ticker-content');
     if (!ticker) return;
 
-    // Build stable DOM once — 3 identical copies for seamless CSS loop
-    if (!ticker.querySelector('[data-stock]')) {
-        const names = Object.keys(stocksData);
-        const frag  = document.createDocumentFragment();
+    const names = Object.keys(stocksData).filter(n => stocksData[n]?.price);
+    if (!names.length) return;   // wait until data arrives
+
+    // Rebuild only if stock list changed or DOM is empty
+    const existing = ticker.querySelectorAll('[data-stock]');
+    const needsBuild = existing.length === 0 ||
+        existing[0].dataset.stock !== names[0]; // data changed
+
+    if (needsBuild) {
+        ticker.innerHTML = '';
+        const frag = document.createDocumentFragment();
+        // 3 identical copies for seamless loop
         for (let copy = 0; copy < 3; copy++) {
             names.forEach(name => {
                 const item = document.createElement('span');
                 item.dataset.stock = name;
                 item.style.cssText = 'padding:0 22px;white-space:nowrap;font-family:"Inter",sans-serif;font-size:0.72rem;font-weight:500;display:inline-flex;align-items:center;gap:4px';
                 const lbl = document.createElement('span');
-                lbl.className = 'tick-lbl';
+                lbl.className  = 'tick-lbl';
                 lbl.textContent = name;
                 lbl.style.color = '#5f6368';
                 const val = document.createElement('span');
@@ -433,20 +500,42 @@ function initTicker() {
             });
         }
         ticker.appendChild(frag);
+        // Reset offset so we don't jump on rebuild
+        _tickerOffset = 0;
+        _tickerLastTs = null;
     }
 
-    // Update only the value leaf — never touch structure
+    // Update prices (text only — no DOM structure change)
     ticker.querySelectorAll('[data-stock]').forEach(item => {
         const stock = stocksData[item.dataset.stock];
         if (!stock) return;
-        const pct   = calculatePctChange(parseFloat(stock.price), stock.initial);
-        const up    = parseFloat(pct) >= 0;
-        const val   = item.querySelector('.tick-val');
+        const pct = calculatePctChange(parseFloat(stock.price), stock.initial);
+        const up  = parseFloat(pct) >= 0;
+        const val = item.querySelector('.tick-val');
         if (val) {
             val.textContent = `${up ? '▲' : '▼'} ${pct}%`;
             val.style.color = pctColor(pct).text;
         }
     });
+
+    // Start RAF loop once — never restart it
+    if (!_tickerRAF) _startTickerRAF(ticker);
+}
+
+function _startTickerRAF(ticker) {
+    function step(ts) {
+        if (_tickerLastTs !== null) {
+            const dt   = Math.min((ts - _tickerLastTs) / 1000, 0.1);
+            const third = ticker.scrollWidth / 3;
+            if (third > 0) {
+                _tickerOffset = (_tickerOffset + TICKER_PPS * dt) % third;
+                ticker.style.transform = `translateX(-${_tickerOffset}px)`;
+            }
+        }
+        _tickerLastTs = ts;
+        _tickerRAF = requestAnimationFrame(step);
+    }
+    _tickerRAF = requestAnimationFrame(step);
 }
 
 let activeStockWindows = {};
@@ -486,28 +575,36 @@ function openStockWindow(name) {
     const dayPct = calculatePctChange(parseFloat(stock.price), stock.initial);
     const color = parseFloat(dayPct) >= 0 ? '#16a34a' : '#dc2626';
 
+    const tfLabels = { day: 'יום', week: 'שבוע', month: 'חודש', '3months': '3M' };
     card.innerHTML = `
         <div class="window-header">
-            <h3>${name} - פרטי מניה</h3>
-            <div class="window-controls">
+            <div style="display:flex;align-items:center;gap:8px">
+                <h3>${name}</h3>
+                <button onclick="event.stopPropagation();quickBuy('${name}')" style="background:#16a34a;color:#fff;border:none;border-radius:12px;font-size:11px;font-weight:700;padding:2px 10px;cursor:pointer">קנה</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+                <div class="timeframe-buttons" style="margin:0">
+                    ${['day','week','month','3months'].map(tf => `
+                        <button id="tf-${name}-${tf}" class="${tf==='day'?'active':''}" onclick="updateStockWindowTf('${name}','${tf}')">${tfLabels[tf]}</button>
+                    `).join('')}
+                </div>
                 <button class="win-btn win-close" onclick="closeStockWindow('${name}')"></button>
             </div>
         </div>
-        <div class="card-body">
-            <div class="text-center mb-4">
-                <span id="price-${name}" class="text-2xl font-bold font-mono">₪${parseFloat(stock.price).toFixed(2)}</span>
-                <span id="pct-${name}" class="block font-bold" style="color: ${color}">${parseFloat(dayPct) >= 0 ? '+' : ''}${dayPct}%</span>
+        <div class="card-body" style="padding:8px 12px">
+            <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+                <span id="price-${name}" style="font-size:1.6rem;font-weight:700;font-family:'Inter',monospace;color:var(--text)">₪${parseFloat(stock.price).toFixed(2)}</span>
+                <span id="pct-${name}" style="font-size:1rem;font-weight:700;color:${color}">${parseFloat(dayPct)>=0?'+':''}${dayPct}%</span>
             </div>
-            <div class="flex justify-around bg-[#161a1e] py-2 border-t border-b border-[#363c4e] mb-4">
-                ${['day', 'week', 'month', '3months'].map(tf => `
-                    <div id="tf-${name}-${tf}" class="text-center cursor-pointer opacity-50 ${tf === 'day' ? 'active-tf' : ''}" onclick="updateStockWindowTf('${name}', '${tf}')">
-                        <label class="text-[10px] block text-[#848e9c] uppercase">${tf}</label>
-                        <span id="stat-${name}-${tf}" class="font-bold text-xs" style="color: ${calculateColor(stock, tf)}">${calculateVal(stock, tf)}%</span>
-                    </div>
-                `).join('')}
+            <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+                ${['day','week','month','3months'].map(tf => {
+                    const v = calculateVal(stock, tf);
+                    const c = calculateColor(stock, tf);
+                    return `<span id="stat-${name}-${tf}" style="font-size:0.75rem;color:${c};font-weight:600">${tfLabels[tf]}: ${v}%</span>`;
+                }).join('')}
             </div>
-            <div class="flex-1 min-h-0 relative">
-                <canvas id="canvas-${name}"></canvas>
+            <div style="flex:1;min-height:0;position:relative;height:180px">
+                <canvas id="canvas-${name}" style="width:100%;height:100%"></canvas>
             </div>
         </div>
     `;
@@ -518,6 +615,47 @@ function openStockWindow(name) {
 
     activeStockWindows[name] = { chart: null, tf: 'day' };
     drawStockWindowChart(name);
+
+    // Fetch historical baselines for week/month/3month stats + intraday for day chart
+    const sym = STOCK_SYMBOLS[name];
+    if (sym) {
+        const tfLabels = { day: 'יום', week: 'שבוע', month: 'חודש', '3months': '3M' };
+        // Seed intraday history for the day chart
+        fetchHistoricalCloses(sym, '1d', '2m').then(closes => {
+            if (!closes.length) return;
+            stocksData[name].history = closes;
+            if (activeStockWindows[name]?.tf === 'day') drawStockWindowChart(name);
+        }).catch(() => {});
+        fetchHistoricalCloses(sym, '1mo').then(closes => {
+            if (!closes.length) return;
+            stocksData[name].baseWeek     = closes[Math.max(0, closes.length - 6)];
+            stocksData[name].baseMonth    = closes[0];
+            stocksData[name].historyWeek  = closes.slice(Math.max(0, closes.length - 6));
+            stocksData[name].historyMonth = closes;
+            ['week', 'month'].forEach(tf => {
+                const el = document.getElementById(`stat-${name}-${tf}`);
+                if (el) {
+                    const v = calculateVal(stocksData[name], tf);
+                    el.textContent = `${tfLabels[tf]}: ${v}%`;
+                    el.style.color = calculateColor(stocksData[name], tf);
+                }
+            });
+            const st = activeStockWindows[name];
+            if (st && (st.tf === 'week' || st.tf === 'month')) drawStockWindowChart(name);
+        }).catch(() => {});
+        fetchHistoricalCloses(sym, '3mo').then(closes => {
+            if (!closes.length) return;
+            stocksData[name].base3Month    = closes[0];
+            stocksData[name].history3Month = closes;
+            const el = document.getElementById(`stat-${name}-3months`);
+            if (el) {
+                const v = calculateVal(stocksData[name], '3months');
+                el.textContent = `3M: ${v}%`;
+                el.style.color = calculateColor(stocksData[name], '3months');
+            }
+            if (activeStockWindows[name]?.tf === '3months') drawStockWindowChart(name);
+        }).catch(() => {});
+    }
 }
 
 function calculateColor(stock, tf) {
@@ -546,8 +684,8 @@ function closeStockWindow(name) {
 function updateStockWindowTf(name, tf) {
     if (!activeStockWindows[name]) return;
     activeStockWindows[name].tf = tf;
-    document.querySelectorAll(`[id^="tf-${name}-"]`).forEach(el => el.classList.remove('active-tf'));
-    document.getElementById(`tf-${name}-${tf}`).classList.add('active-tf');
+    document.querySelectorAll(`[id^="tf-${name}-"]`).forEach(el => el.classList.remove('active'));
+    document.getElementById(`tf-${name}-${tf}`)?.classList.add('active');
     drawStockWindowChart(name);
 }
 
@@ -564,14 +702,8 @@ function drawStockWindowChart(name) {
     if (tf === 'day') {
         data = [...stock.history];
     } else {
-        const basePrice = tf === 'week' ? stock.baseWeek : (tf === 'month' ? stock.baseMonth : stock.base3Month);
-        const currentPrice = parseFloat(stock.price);
-        const points = 20;
-        for (let i = 0; i < points; i++) {
-            const ratio = i / (points - 1);
-            const mid = basePrice + (currentPrice - basePrice) * ratio;
-            data.push(parseFloat((mid + mid * rnd(-0.005, 0.005)).toFixed(2)));
-        }
+        const histField = tf === 'week' ? 'historyWeek' : (tf === 'month' ? 'historyMonth' : 'history3Month');
+        data = stock[histField]?.length ? [...stock[histField]] : [];
     }
 
     if (state.chart) {
@@ -643,10 +775,15 @@ async function drawChart() {
 
     const w = container.clientWidth  || 600;
     const h = container.clientHeight || 400;
+    const dark    = document.documentElement.getAttribute('data-theme') === 'dark';
+    const chartBg = dark ? '#1a1d23' : '#ffffff';
+    const chartTx = dark ? '#9aa0a6' : '#5f6368';
+    const gridV   = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+    const gridH   = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
     _lwChart = LightweightCharts.createChart(container, {
         width: w, height: h,
-        layout:   { background: { color: '#ffffff' }, textColor: '#5f6368' },
-        grid:     { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.06)' } },
+        layout:   { background: { color: chartBg }, textColor: chartTx },
+        grid:     { vertLines: { color: gridV }, horzLines: { color: gridH } },
         timeScale:      { borderColor: 'rgba(0,0,0,0.1)', timeVisible: true, secondsVisible: false, fixRightEdge: true },
         rightPriceScale:{ borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.06, bottom: 0.26 } },
         crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
@@ -697,7 +834,7 @@ async function drawChart() {
 function updateMainTimeframe(tf) {
     currentMainTf = tf;
     document.querySelectorAll('#main-tf-btns button').forEach(b => b.classList.remove('active'));
-    const map = { daily: 0, weekly: 1, monthly: 2, '3months': 3 };
+    const map = { intraday: 0, daily: 1, weekly: 2, monthly: 3, '3months': 4 };
     const btns = document.querySelectorAll('#main-tf-btns button');
     if (btns[map[tf]]) btns[map[tf]].classList.add('active');
     _lwTf = null;  // force re-fetch
@@ -831,14 +968,17 @@ function updateStockList() {
 function updateTransactionHistory() {
     const tbody = document.getElementById('tx-history-list');
     if (!tbody) return;
-    tbody.innerHTML = transactionHistory.map(tx => `
-        <tr>
-            <td style="padding:1px 3px;color:#848e9c">${tx.time}</td>
-            <td style="padding:1px 3px;color:${tx.action==='Buy'?'#0ecb81':'#f6465d'};font-weight:bold">${tx.action==='Buy'?'קנייה':'מכירה'}</td>
-            <td style="padding:1px 3px;color:#eaecef">${tx.symbol}</td>
-            <td style="padding:1px 3px;text-align:right;color:#eaecef">${tx.qty}</td>
-            <td style="padding:1px 3px;text-align:right;color:#eaecef">₪${tx.price}</td>
-        </tr>`).join('');
+    tbody.innerHTML = transactionHistory.map(tx => {
+        const isBuy = tx.action === 'Buy';
+        const actionColor = isBuy ? '#16a34a' : '#dc2626';
+        return `<tr class="tx-row">
+            <td class="tx-time">${tx.time}</td>
+            <td class="tx-action" style="color:${actionColor}">${isBuy ? 'קנייה' : 'מכירה'}</td>
+            <td class="tx-symbol">${tx.symbol ?? tx.name ?? ''}</td>
+            <td class="tx-qty" dir="ltr">${tx.qty}</td>
+            <td class="tx-price" dir="ltr">₪${tx.price}</td>
+        </tr>`;
+    }).join('');
 }
 
 function updatePortfolioList() {
@@ -851,13 +991,15 @@ function updatePortfolioList() {
     Object.keys(portfolio).forEach(symbol => {
         const p = portfolio[symbol], stock = stocksData[symbol];
         if (!stock) return;
-        const currentPrice = parseFloat(stock.price);
+        const currentPrice = parseFloat(stock.price) || 0;
+        const avgCost      = p.buyPrice ?? p.avgCost ?? 0;
+        const costBasis    = p.totalCost ?? (p.qty * avgCost);
         const positionValue = p.qty * currentPrice;
         totalValue += positionValue;
-        totalCost  += p.totalCost;
+        totalCost  += costBasis;
         const totalPct = calculatePctChange(currentPrice, p.buyPrice);
         const dayPct   = calculatePctChange(currentPrice, stock.initial);
-        const plShekels = positionValue - p.totalCost;
+        const plShekels = positionValue - costBasis;
         const plUp  = plShekels >= 0;
         const dayUp = parseFloat(dayPct) >= 0;
         const plColor  = pctColor(totalPct);
@@ -969,7 +1111,25 @@ function sellStock(symbol) {
 
 let highestZIndex = 100;
 
+// ── Mobile Tabs ─────────────────────────────────────────────────────────────
+const MOB_TABS = {
+    market:    ['win-indices-tase', 'win-stocks', 'win-search'],
+    portfolio: ['win-portfolio', 'win-simulator'],
+    ai:        ['win-ai-chat'],
+};
+const MOB_ALL = Object.values(MOB_TABS).flat();
+
+function switchMobileTab(tab) {
+    if (window.innerWidth > 768) return;
+    document.querySelectorAll('.mob-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    MOB_ALL.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('mob-hidden', !MOB_TABS[tab].includes(id));
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    if (window.innerWidth <= 768) switchMobileTab('market');
     try { initWindowManager(); } catch(e) { console.error("Window manager failed:", e); }
     requestNotifPermission();
 
@@ -1035,6 +1195,38 @@ function toggleMaximize(winId) {
         activeStockWindows[nameMatch[1]].chart.resize();
     }
 }
+
+// ── Dark mode ─────────────────────────────────────────────────────────────
+function applyTheme(dark) {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const moon = document.getElementById('dark-icon-moon');
+    const sun  = document.getElementById('dark-icon-sun');
+    if (moon) moon.style.display = dark ? 'none'  : '';
+    if (sun)  sun.style.display  = dark ? ''      : 'none';
+    // Update LightweightCharts if active
+    const chartBg  = dark ? '#1a1d23' : '#ffffff';
+    const chartTxt = dark ? '#9aa0a6' : '#5f6368';
+    const gridV    = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+    const gridH    = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    if (window._lwChart) {
+        _lwChart.applyOptions({ layout: { background: { color: chartBg }, textColor: chartTxt }, grid: { vertLines: { color: gridV }, horzLines: { color: gridH } } });
+    }
+    if (window._idxChart) {
+        _idxChart.applyOptions({ layout: { background: { color: chartBg }, textColor: chartTxt }, grid: { vertLines: { color: gridV }, horzLines: { color: gridH } } });
+    }
+    localStorage.setItem('darkMode', dark ? '1' : '0');
+}
+
+function toggleDarkMode() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    applyTheme(!isDark);
+}
+
+// Init theme from localStorage
+(function() {
+    const saved = localStorage.getItem('darkMode');
+    if (saved === '1') applyTheme(true);
+})();
 
 function resetWindows() {
     const cards = document.querySelectorAll('.card');
@@ -1178,23 +1370,10 @@ function buildMoversBar() {
 }
 
 function tagStockMentions(text) {
-    let out = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-    // Inline-highlight stock name mentions that are significant movers
-    Object.keys(stocksData).forEach(name => {
-        const s = stocksData[name];
-        if (!s?.price || !s?.initial) return;
-        const pct = ((parseFloat(s.price) - s.initial) / s.initial) * 100;
-        if (Math.abs(pct) < 1.5) return;
-        const up    = pct >= 0;
-        const color = Math.abs(pct) >= 3 ? (up ? '#16a34a' : '#dc2626') : '#b96000';
-        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        out = out.replace(new RegExp(escaped, 'g'),
-            `<strong style="color:${color}">${name}</strong>`);
-    });
-
-    out += buildMoversBar();
-    return out;
+    const out = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    // Movers bar shown only if there are significant movers — as separate row below text
+    const bar = buildMoversBar();
+    return out + bar;
 }
 
 function addAIMessage(role, text) {
@@ -1204,10 +1383,12 @@ function addAIMessage(role, text) {
     const html = isUser
         ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
         : tagStockMentions(text);
-    div.style.cssText = `display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'};margin:3px 0`;
-    div.innerHTML = `<div style="max-width:88%;padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.6;white-space:pre-wrap;
-        background:${isUser ? 'rgba(26,115,232,0.1)' : '#f8f9fa'};color:${isUser ? '#1a56c4' : '#202124'};
-        border:1px solid ${isUser ? 'rgba(26,115,232,0.2)' : 'rgba(0,0,0,0.08)'};direction:rtl;text-align:right">${html}</div>`;
+    // direction:ltr on wrapper so flex-end = right regardless of page RTL
+    div.style.cssText = `display:flex;direction:ltr;justify-content:${isUser ? 'flex-end' : 'flex-start'};margin:2px 0`;
+    const bubble = document.createElement('div');
+    bubble.className = `chat-msg ${isUser ? 'chat-msg-user' : 'chat-msg-ai'}`;
+    bubble.innerHTML = html;
+    div.appendChild(bubble);
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
@@ -1341,11 +1522,14 @@ async function sendAIMessage() {
     _aiHistory.push({ role: 'user', content: text });
     try { localStorage.setItem('aiHistory', JSON.stringify(_aiHistory.slice(-20))); } catch {}
 
-    const thinking = document.createElement('div');
-    thinking.id = 'ai-thinking';
-    thinking.style.cssText = 'font-size:10px;color:#424c5c;padding:2px 4px';
-    thinking.textContent = '...';
-    document.getElementById('ai-messages').appendChild(thinking);
+    const thinkRow = document.createElement('div');
+    thinkRow.id = 'ai-thinking';
+    thinkRow.style.cssText = 'display:flex;justify-content:flex-start;margin:2px 0';
+    const thinkBubble = document.createElement('div');
+    thinkBubble.className = 'chat-msg chat-msg-ai thinking';
+    thinkBubble.textContent = '…';
+    thinkRow.appendChild(thinkBubble);
+    document.getElementById('ai-messages').appendChild(thinkRow);
 
     try {
         const res  = await fetch('/api/chat', {
@@ -1378,6 +1562,15 @@ async function sendAIMessage() {
         _aiHistory.push({ role: 'assistant', content: reply });
         try { localStorage.setItem('aiHistory', JSON.stringify(_aiHistory.slice(-20))); } catch {}
         addAIMessage('assistant', reply);
+        // If a trade was executed, refresh portfolio display
+        if (data.action) {
+            loadPortfolio().then(d => {
+                if (d?.portfolio) {
+                    portfolio = d.portfolio;
+                    updatePortfolioList();
+                }
+            }).catch(() => {});
+        }
     } catch (e) {
         document.getElementById('ai-thinking')?.remove();
         addAIMessage('assistant', 'שגיאה: ' + e.message);

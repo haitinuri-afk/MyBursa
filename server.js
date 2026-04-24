@@ -30,20 +30,27 @@ const STOCK_SYMBOLS_HE = {
     "לאומי":"LUMI.TA","פועלים":"POLI.TA","דיסקונט":"DSCT.TA","מזרחי טפחות":"MZTF.TA",
     "אלביט":"ESLT.TA","נייס":"NICE.TA","טאוור":"TSEM.TA",
     "טבע":"TEVA.TA","כיל":"ICL.TA",
-    "הפניקס":"PHOE.TA","הראל":"HARL.TA","כלל ביטוח":"KLLI.TA",
+    "הפניקס":"PHOE.TA","הראל":"HARL.TA","כלל ביטוח":"CLIS.TA",
     "עזריאלי":"AZRG.TA","מליסרון":"MLSR.TA","אמות":"AMOT.TA","ביג":"BIG.TA","גב ים":"GVYM.TA","שיכון ובינוי":"SKBN.TA",
     "אנרג'יקס":"ENRG.TA","אנלייט":"ENLT.TA","אורמת":"ORA.TA","קבוצת דלק":"DLEKG.TA",
-    "בזק":"BEZQ.TA","סלקום":"SELC.TA","פרטנר":"PTNR.TA",
+    "בזק":"BEZQ.TA","סלקום":"CEL.TA","פרטנר":"PTNR.TA",
     "שטראוס":"STRS.TA","שופרסל":"SAE.TA","פוקס":"FOX.TA","רמי לוי":"RMLI.TA",
 };
 
-let _usdIlsRate = 3.004;
+let _usdIlsRate = 2.98;
 async function refreshUsdIlsRate() {
+    // Primary: Yahoo Finance live rate
+    try {
+        const { meta } = await fetchChartMeta('USDILS=X', '1d');
+        const val = parseFloat(meta?.regularMarketPrice);
+        if (val > 0) { _usdIlsRate = parseFloat(val.toFixed(4)); console.log(`[rate] USD/ILS = ${_usdIlsRate} (yahoo)`); return; }
+    } catch(e) { console.warn('[rate] yahoo failed:', e.message); }
+    // Fallback: open.er-api.com
     try {
         const { body } = await httpsGet('https://open.er-api.com/v6/latest/USD');
         const ils = body?.rates?.ILS;
-        if (ils > 0) { _usdIlsRate = parseFloat(ils.toFixed(4)); console.log(`[rate] USD/ILS = ${_usdIlsRate}`); }
-    } catch(e) { console.warn('[rate]', e.message); }
+        if (ils > 0) { _usdIlsRate = parseFloat(ils.toFixed(4)); console.log(`[rate] USD/ILS = ${_usdIlsRate} (er-api)`); }
+    } catch(e) { console.warn('[rate] er-api failed:', e.message); }
 }
 
 const INDEX_ALIASES = new Set(['TA90.TA', 'TA125.TA', 'TA35.TA']);
@@ -84,11 +91,88 @@ const NEWS_FEEDS = [
     { url: 'https://www.bizportal.co.il/rss/all',                   source: 'ביזפורטל' },
     { url: 'https://www.ynet.co.il/Integration/StoryRss1854.xml',  source: 'ynet כלכלה' },
     { url: 'https://www.maariv.co.il/Rss/RssChadashot',            source: 'מעריב כלכלה' },
+    // Google News Hebrew — very reliable, aggregates many sources
+    { url: 'https://news.google.com/rss/search?q=בורסה+תל+אביב&hl=iw&gl=IL&ceid=IL:iw', source: 'Google News' },
 ];
 const NEWS_HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; BursaBot/1.0)' };
 let _cachedNews    = [];
+let _cachedXPosts  = [];   // X / Twitter posts via Nitter
 let _lastNewsFetch = 0;
+let _lastXFetch    = 0;
 const NEWS_TTL_MS  = 15 * 60 * 1000;
+const X_TTL_MS     =  5 * 60 * 1000;  // X posts stale faster
+
+// ── Nitter RSS (X/Twitter, no API key needed) ─────────────────────────────
+// Multiple instances — tries each until one succeeds
+const NITTER_INSTANCES = [
+    'https://nitter.privacydev.net',
+    'https://nitter.poast.org',
+    'https://nitter.net',
+    'https://nitter.1d4.us',
+];
+
+// Key financial X accounts in Hebrew market
+const X_ACCOUNTS = [
+    { handle: 'globes_news',     label: 'גלובס X'    },
+    { handle: 'TheMarkerOnline', label: 'TheMarker X' },
+    { handle: 'calcalist',       label: 'כלכליסט X'  },
+];
+
+// Search queries — TASE-relevant keywords
+const X_SEARCH_QUERIES = [
+    { q: 'בורסה%20תל%20אביב', label: 'X: בורסה ת"א' },
+    { q: 'TASE%20מניות',       label: 'X: TASE'      },
+];
+
+async function fetchNitterFeed(url) {
+    const r = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/rss+xml,application/xml,text/xml' },
+        signal:  AbortSignal.timeout(5000),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+}
+
+async function tryNitterInstances(path, label) {
+    for (const base of NITTER_INSTANCES) {
+        try {
+            const xml  = await fetchNitterFeed(`${base}${path}`);
+            const items = parseRSS(xml, label);
+            if (items.length) {
+                console.log(`[nitter] ✓ ${base} → ${items.length} items for "${label}"`);
+                return items;
+            }
+        } catch (e) {
+            console.warn(`[nitter] ✗ ${base}: ${e.message}`);
+        }
+    }
+    return [];
+}
+
+async function fetchXPosts() {
+    if (Date.now() - _lastXFetch < X_TTL_MS && _cachedXPosts.length) return;
+    _lastXFetch = Date.now();
+    const all = [];
+
+    // Fetch account timelines
+    await Promise.all(X_ACCOUNTS.map(async ({ handle, label }) => {
+        const items = await tryNitterInstances(`/${handle}/rss`, label);
+        all.push(...items.slice(0, 3));   // max 3 posts per account
+    }));
+
+    // Fetch search queries
+    await Promise.all(X_SEARCH_QUERIES.map(async ({ q, label }) => {
+        const items = await tryNitterInstances(`/search/rss?q=${q}&f=tweets`, label);
+        all.push(...items.slice(0, 4));   // max 4 results per query
+    }));
+
+    if (all.length) {
+        _cachedXPosts = all;
+        console.log(`[nitter] cached ${_cachedXPosts.length} X posts total`);
+    } else {
+        console.warn('[nitter] all instances failed — X posts unavailable');
+    }
+}
 
 function parseRSS(xml, source) {
     const items = [];
@@ -130,7 +214,7 @@ const BASE_HEADERS = {
 
 const zlib = require('zlib');
 
-function httpsGet(url, extraHeaders = {}, timeoutMs = 12000) {
+function httpsGet(url, extraHeaders = {}, timeoutMs = 12000, rawText = false) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(url);
         const options = {
@@ -140,7 +224,7 @@ function httpsGet(url, extraHeaders = {}, timeoutMs = 12000) {
         };
         const req = https.get(options, res => {
             if (res.statusCode === 301 || res.statusCode === 302) {
-                return httpsGet(res.headers.location, extraHeaders, timeoutMs)
+                return httpsGet(res.headers.location, extraHeaders, timeoutMs, rawText)
                     .then(resolve).catch(reject);
             }
             if (res.statusCode !== 200) {
@@ -158,6 +242,7 @@ function httpsGet(url, extraHeaders = {}, timeoutMs = 12000) {
             stream.setEncoding('utf8');
             stream.on('data', c => raw += c);
             stream.on('end', () => {
+                if (rawText) return resolve({ body: raw, headers: res.headers });
                 try { resolve({ body: JSON.parse(raw), headers: res.headers }); }
                 catch(e) { reject(new Error('JSON parse error')); }
             });
@@ -178,7 +263,10 @@ function isMarketOpen() {
     const [h, m] = t.split(':').map(Number);
     const dow = new Date(y, mo - 1, day).getDay();
     const mins = h * 60 + m;
-    return dow >= 0 && dow <= 4 && mins >= 540 && mins < 1040;
+    // TASE trades Sun–Fri (0–5); closed Saturday (6)
+    // Friday (5): pre-close 13:40, final close ~13:42; rest close at 17:30 (1050 mins)
+    const closeTime = dow === 5 ? 822 : 1050;
+    return dow >= 0 && dow <= 5 && mins >= 540 && mins < closeTime;
 }
 
 // GET /api/stock/batch?symbols=LUMI.TA,POLI.TA,^TA35,...
@@ -399,16 +487,29 @@ function buildRAGContext(query, quotes) {
         ? `## סיגנלים אוטומטיים — עובדות מחושבות:\n${signals.join('\n')}`
         : '';
 
-    // ── Live prices with anomaly flags ────────────────────────────────────────
-    const liveData = quotes.length ? quotes.map(q => {
-        const price  = q.regularMarketPrice;
-        const prev   = q.regularMarketPreviousClose;
-        const pct    = prev ? (((price - prev) / prev) * 100) : null;
-        const pctStr = pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : 'אין נתון';
-        const flag   = pct != null && Math.abs(pct) >= 5 ? ' 🚨 תנועה קיצונית' : '';
-        const trend  = pct != null ? (price < prev ? '⚠ מתחת לבסיס' : '✓ מעל בסיס') : '';
-        return `${q.symbol}: ₪${price} (${pctStr}) ${trend}${flag}`;
-    }).join('\n') : 'אין נתוני מחיר זמינים';
+    // ── Live prices — portfolio stocks only + top movers ─────────────────────
+    const portfolioSymbols = new Set(
+        Object.keys(portfolioData.portfolio ?? {}).map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean)
+    );
+    const allWithPct = quotes.filter(q => q.regularMarketPreviousClose).map(q => {
+        const pct = ((q.regularMarketPrice - q.regularMarketPreviousClose) / q.regularMarketPreviousClose) * 100;
+        return { q, pct };
+    });
+    // Portfolio stocks always included; add top 3 and bottom 3 movers
+    const topMovers = [...allWithPct].sort((a,b) => b.pct - a.pct).slice(0,3).map(x => x.q.symbol);
+    const botMovers = [...allWithPct].sort((a,b) => a.pct - b.pct).slice(0,3).map(x => x.q.symbol);
+    const showSymbols = new Set([...portfolioSymbols, ...topMovers, ...botMovers]);
+    const liveData = quotes.length ? quotes
+        .filter(q => showSymbols.has(q.symbol) || !q.regularMarketPreviousClose)
+        .map(q => {
+            const price  = q.regularMarketPrice;
+            const prev   = q.regularMarketPreviousClose;
+            const pct    = prev ? (((price - prev) / prev) * 100) : null;
+            const pctStr = pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : 'אין נתון';
+            const flag   = pct != null && Math.abs(pct) >= 5 ? ' 🚨' : '';
+            const trend  = pct != null ? (price < prev ? '⚠' : '✓') : '';
+            return `${q.symbol}: ₪${price} (${pctStr}) ${trend}${flag}`;
+        }).join('\n') : 'אין נתוני מחיר זמינים';
 
     // ── Extreme movers ────────────────────────────────────────────────────────
     const extremes = quotes
@@ -419,12 +520,16 @@ function buildRAGContext(query, quotes) {
         .map(m => `${m.symbol}: ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(2)}% — ${Math.abs(m.pct) >= 7 ? 'בדוק אירוע ספציפי לחברה' : 'חולשת/חוזקת ענף'}`)
         .join('\n');
 
-    const retrieved = retrieveRelevantChunks(query, _knowledgeChunks);
+    const retrieved = retrieveRelevantChunks(query, _knowledgeChunks, 2);
     const knowledgeSection = retrieved.length
         ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}` : '';
 
     const newsSection = _cachedNews.length
-        ? `## חדשות פיננסיות אחרונות:\n${_cachedNews.map(n => `- [${n.source}] ${n.title}`).join('\n')}`
+        ? `## חדשות פיננסיות אחרונות:\n${_cachedNews.slice(0,6).map(n => `- [${n.source}] ${n.title}`).join('\n')}`
+        : '';
+
+    const xSection = _cachedXPosts.length
+        ? `## X / Twitter — פוסטים רלוונטיים:\n${_cachedXPosts.slice(0,6).map(n => `- [${n.source}] ${n.title}`).join('\n')}`
         : '';
 
     // ── System prompt ─────────────────────────────────────────────────────────
@@ -457,6 +562,7 @@ ${history || 'אין היסטוריה'}`;
     return `${systemPrompt}
 
 ${newsSection}
+${xSection}
 
 ${portfolioSection}
 
@@ -474,7 +580,7 @@ const _groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 let _chatBusy       = false;
 let _lastChatAt     = 0;
-const CHAT_MIN_GAP  = 1000;
+const CHAT_MIN_GAP  = 3000;    // 3s gap — 8b-instant has 30k TPM, no problem
 
 app.post('/api/chat', express.json(), async (req, res) => {
     if (_chatBusy) {
@@ -493,19 +599,93 @@ app.post('/api/chat', express.json(), async (req, res) => {
         const { messages = [], quotes: clientQuotes = [] } = req.body;
         const quotes    = clientQuotes.length ? clientQuotes : _cachedQuotes;
         const lastMsg   = messages[messages.length - 1]?.content || '';
-        await fetchNews();
+
+        // ── Fast-path: buy/sell commands bypass AI entirely ───────────────────
+        const buyMatch  = lastMsg.match(/קנ[הי]\s+(?:לי\s+)?(\d+)\s+(?:מניות?\s+(?:של\s+)?|יחידות?\s+(?:של\s+)?)?(.+)/);
+        const sellMatch = lastMsg.match(/מכ[ורר]\s+(?:לי\s+)?(\d+)\s+(?:מניות?\s+(?:של\s+)?|יחידות?\s+(?:של\s+)?)?(.+)/);
+        const tradeMatch = buyMatch || sellMatch;
+        const isBuy = !!buyMatch;
+
+        if (tradeMatch) {
+            const qty      = parseInt(tradeMatch[1], 10);
+            const rawName  = tradeMatch[2].trim().replace(/[.!?]$/, '');
+            // Fuzzy match Hebrew name
+            const allNames = Object.keys(STOCK_SYMBOLS_HE);
+            const stockName = allNames.find(n => rawName.includes(n) || n.includes(rawName)) ?? rawName;
+            const symbol   = STOCK_SYMBOLS_HE[stockName];
+            const quote    = symbol && quotes.find(q => q.symbol === symbol);
+            const price    = quote?.regularMarketPrice ?? null;
+
+            if (!symbol || !quote) {
+                return res.json({ reply: `לא מצאתי מניה בשם "${rawName}" ברשימת הניירות הזמינים. נסה שוב עם שם מדויק יותר.` });
+            }
+
+            const data = loadPortfolioFile();
+            const port = data.portfolio ?? {};
+
+            if (isBuy) {
+                const existing = port[stockName];
+                if (existing) {
+                    const totalQty   = (existing.qty ?? 0) + qty;
+                    const avgCost    = (((existing.qty ?? 0) * (existing.buyPrice ?? 0)) + (qty * price)) / totalQty;
+                    port[stockName]  = { qty: totalQty, buyPrice: parseFloat(avgCost.toFixed(2)), totalCost: parseFloat((totalQty * avgCost).toFixed(2)) };
+                } else {
+                    port[stockName] = { qty, buyPrice: price, totalCost: parseFloat((qty * price).toFixed(2)) };
+                }
+                data.portfolio = port;
+                data.transactionHistory = data.transactionHistory ?? [];
+                data.transactionHistory.push({ type: 'buy', name: stockName, qty, price, date: new Date().toISOString() });
+                fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(data, null, 2));
+                return res.json({
+                    reply: `✅ בוצע! קניתי ${qty} מניות ${stockName} במחיר ₪${price} ליחידה.\nעלות כוללת: ₪${(qty * price).toFixed(2)}\nהמניה נוספה לתיק שלך.`,
+                    action: { type: 'buy', name: stockName, qty, price }
+                });
+            } else {
+                // Sell
+                const existing = port[stockName];
+                const heldQty  = existing?.qty ?? 0;
+                if (!existing || heldQty === 0) {
+                    return res.json({ reply: `אין לך מניות ${stockName} בתיק למכירה.` });
+                }
+                if (qty > heldQty) {
+                    return res.json({ reply: `יש לך רק ${heldQty} מניות ${stockName} — לא ניתן למכור ${qty}.` });
+                }
+                const buyPrice = existing.buyPrice ?? 0;
+                const pl       = ((price - buyPrice) * qty).toFixed(2);
+                const plPct    = buyPrice > 0 ? (((price - buyPrice) / buyPrice) * 100).toFixed(2) : '0';
+                if (qty === heldQty) {
+                    delete port[stockName];
+                } else {
+                    port[stockName].qty = heldQty - qty;
+                }
+                data.portfolio = port;
+                data.transactionHistory = data.transactionHistory ?? [];
+                data.transactionHistory.push({ type: 'sell', name: stockName, qty, price, date: new Date().toISOString() });
+                fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(data, null, 2));
+                const plStr = parseFloat(pl) >= 0 ? `+₪${pl}` : `-₪${Math.abs(pl)}`;
+                return res.json({
+                    reply: `✅ בוצע! מכרתי ${qty} מניות ${stockName} במחיר ₪${price}.\nרווח/הפסד: ${plStr} (${plPct >= 0 ? '+' : ''}${plPct}%)\n${port[stockName] ? `נשארו ${port[stockName].qty} מניות בתיק.` : 'כל המניות נמכרו.'}`,
+                    action: { type: 'sell', name: stockName, qty, price }
+                });
+            }
+        }
+        // ── End fast-path ──────────────────────────────────────────────────────
+
+        await Promise.all([fetchNews(), fetchXPosts()]);
         const systemCtx = buildRAGContext(lastMsg, quotes);
         console.log('[chat] quotes used:', quotes.length, '| portfolio:', systemCtx.slice(systemCtx.indexOf('## תיק'), systemCtx.indexOf('## תיק') + 200));
 
+        // Keep only last 4 history turns to save tokens
+        const historyTurns = messages.slice(0, -1).slice(-4);
         const groqMessages = [
             { role: 'system', content: systemCtx },
-            ...messages.slice(0, -1).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+            ...historyTurns.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
             { role: 'user', content: lastMsg },
         ];
 
         const result = await _groq.chat.completions.create({
-            model:      'llama-3.3-70b-versatile',
-            max_tokens: 1024,
+            model:      'llama-3.1-8b-instant',
+            max_tokens: 380,
             messages:   groqMessages,
         });
 
@@ -533,8 +713,8 @@ function loadPortfolioFile() {
 }
 
 app.get('/api/news', async (req, res) => {
-    await fetchNews();
-    res.json({ news: _cachedNews });
+    await Promise.all([fetchNews(), fetchXPosts()]);
+    res.json({ news: _cachedNews, xPosts: _cachedXPosts });
 });
 
 app.get('/api/portfolio', (req, res) => res.json(loadPortfolioFile()));

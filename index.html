@@ -22,17 +22,28 @@
 <body class="bg-white text-gray-900">
     <div class="main-wrapper">
         <!-- Header Bar -->
-        <header class="top-bar px-2" style="justify-content:space-between">
-            <h1 style="font-size:0.75rem;font-weight:700;color:#202124;display:flex;align-items:center;gap:6px">
-                בורסת תל אביב
-                <span id="market-status" style="font-size:8px">●</span>
-                <span id="market-label" style="font-size:8px;font-family:monospace;font-weight:700"></span>
-                <span id="data-status" style="font-size:8px;font-family:monospace;padding:1px 5px;border-radius:4px;background:#f1f3f4;color:#5f6368">SIM</span>
-            </h1>
-            <div style="display:flex;align-items:center;gap:10px" dir="ltr">
-                <button onclick="resetWindows()" style="font-size:10px;background:#f1f3f4;border:1px solid rgba(0,0,0,0.12);color:#5f6368;padding:2px 10px;border-radius:20px;cursor:pointer;display:flex;align-items:center;gap:4px;font-weight:600">↺ Reset</button>
-                <span style="font-size:11px;font-family:'Inter',sans-serif;color:#9aa0a6;letter-spacing:0.01em">נתונים מעוכבים ~15 דק׳</span>
-                <span id="last-update" style="font-size:11px;font-family:'Inter',sans-serif;color:#5f6368;font-weight:500"></span>
+        <header class="top-bar">
+            <!-- Logo -->
+            <div class="hdr-logo">
+                <span class="hdr-logo-mark">B</span>
+                <span class="hdr-logo-text">בורסת תל אביב</span>
+                <span id="market-status-pill" class="hdr-status-pill">
+                    <span id="market-status" class="hdr-dot">●</span>
+                    <span id="market-label" class="hdr-label"></span>
+                </span>
+                <span id="data-status" class="hdr-badge">SIM</span>
+            </div>
+
+            <!-- Center: clock + delay -->
+            <div class="hdr-center">
+                <span class="hdr-delay">נתונים מעוכבים ~15 דק׳</span>
+                <span class="hdr-sep">|</span>
+                <span id="last-update" class="hdr-time"></span>
+            </div>
+
+            <!-- Actions -->
+            <div class="hdr-actions" dir="ltr">
+                <button onclick="resetWindows()" class="hdr-btn">&#8635; Reset</button>
             </div>
         </header>
 
@@ -42,6 +53,22 @@
                 <div id="ticker-content" class="ticker-scroll"></div>
             </div>
         </div>
+
+        <!-- Mobile Tab Bar -->
+        <nav id="mobile-tabs" class="mobile-tab-bar">
+            <button class="mob-tab active" data-tab="market" onclick="switchMobileTab('market')">
+                <span class="mob-tab-icon">📊</span>
+                <span class="mob-tab-label">שוק</span>
+            </button>
+            <button class="mob-tab" data-tab="portfolio" onclick="switchMobileTab('portfolio')">
+                <span class="mob-tab-icon">💼</span>
+                <span class="mob-tab-label">תיק</span>
+            </button>
+            <button class="mob-tab" data-tab="ai" onclick="switchMobileTab('ai')">
+                <span class="mob-tab-icon">🤖</span>
+                <span class="mob-tab-label">AI</span>
+            </button>
+        </nav>
 
         <!-- Dashboard Area -->
         <div id="dashboard" class="dashboard-grid">
@@ -115,6 +142,7 @@
                     </div>
                     <div class="window-controls">
                         <div class="timeframe-buttons" id="main-tf-btns">
+                            <button onclick="updateMainTimeframe('intraday')">I</button>
                             <button class="active" onclick="updateMainTimeframe('daily')">D</button>
                             <button onclick="updateMainTimeframe('weekly')">W</button>
                             <button onclick="updateMainTimeframe('monthly')">M</button>
@@ -175,8 +203,16 @@
                 </div>
                 <div class="card-body" dir="ltr">
                     <div style="display:flex;gap:6px;margin-bottom:6px">
-                        <input type="text" id="sim-symbol" placeholder="סימול / שם" style="background:#f1f3f4;border:1px solid rgba(0,0,0,0.15);color:#202124;padding:5px 8px;border-radius:8px;font-size:12px;width:100%;outline:none" onkeydown="if(event.key==='Enter') buyStock()">
-                        <input type="number" id="sim-qty" placeholder="כמות" min="1" style="background:#f1f3f4;border:1px solid rgba(0,0,0,0.15);color:#202124;padding:5px 8px;border-radius:8px;font-size:12px;width:100%;outline:none" onkeydown="if(event.key==='Enter') buyStock()">
+                        <div style="position:relative;flex:1">
+                            <input type="text" id="sim-symbol" placeholder="חפש מניה בעברית..." dir="rtl"
+                                style="background:#f1f3f4;border:1px solid rgba(0,0,0,0.15);color:#202124;padding:5px 8px;border-radius:8px;font-size:12px;width:100%;outline:none"
+                                oninput="stockAutocomplete(this.value)"
+                                onkeydown="handleAutocompleteKey(event)"
+                                onblur="setTimeout(()=>document.getElementById('ac-dropdown').style.display='none',150)"
+                                onfocus="stockAutocomplete(this.value)">
+                            <div id="ac-dropdown" style="display:none;position:absolute;top:100%;right:0;left:0;z-index:9999;background:#fff;border:1px solid rgba(0,0,0,0.15);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:160px;overflow-y:auto;margin-top:2px"></div>
+                        </div>
+                        <input type="number" id="sim-qty" placeholder="כמות" min="1" style="background:#f1f3f4;border:1px solid rgba(0,0,0,0.15);color:#202124;padding:5px 8px;border-radius:8px;font-size:12px;width:72px;outline:none" onkeydown="if(event.key==='Enter') buyStock()">
                     </div>
                     <div style="display:flex;gap:6px;margin-bottom:8px">
                         <button id="buy-btn" style="flex:1;background:#34a853;color:#fff;padding:6px 0;border-radius:20px;font-weight:700;font-size:12px;border:none;cursor:pointer">קנה</button>
@@ -240,13 +276,11 @@
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
-                <div id="ai-messages" style="flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;min-height:0"></div>
-                <div style="display:flex;gap:6px;padding:6px 8px;border-top:1px solid rgba(0,0,0,0.08)">
-                    <input id="ai-input" type="text" placeholder="שאל על התיק שלך..." dir="rtl"
-                        style="flex:1;background:#f1f3f4;border:1px solid rgba(0,0,0,0.1);border-radius:20px;padding:0 12px;font-size:12px;color:#202124;outline:none;height:28px"
+                <div id="ai-messages" class="chat-messages"></div>
+                <div class="chat-input-row">
+                    <input id="ai-input" class="chat-input" type="text" placeholder="שאל על התיק שלך..." dir="rtl"
                         onkeydown="if(event.key==='Enter') sendAIMessage()" />
-                    <button onclick="sendAIMessage()" id="ai-send-btn"
-                        style="background:#1a73e8;color:#fff;padding:0 14px;border-radius:20px;font-size:12px;font-weight:600;border:none;cursor:pointer;height:28px">שלח</button>
+                    <button onclick="sendAIMessage()" id="ai-send-btn" class="chat-send-btn">שלח</button>
                 </div>
             </div>
         </div>
