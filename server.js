@@ -434,8 +434,48 @@ app.get('/api/stock/history', async (req, res) => {
 
 const CONTEXT_IQ_PATH = path.join(__dirname, '..', 'ContextIQ');
 
-// Load all .txt files from ContextIQ/data and split into chunks
-function loadKnowledgeChunks() {
+// ── MongoDB Atlas (optional — set MONGODB_URI env var to enable) ───────────
+const MONGODB_URI = process.env.MONGODB_URI;
+let _ragCol = null;   // MongoDB collection handle
+
+async function initMongoDB() {
+    if (!MONGODB_URI) return;
+    try {
+        const { MongoClient } = require('mongodb');
+        const client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+        await client.connect();
+        const db  = client.db('bursa');
+        _ragCol   = db.collection('knowledge');
+        // Full-text index (created once, idempotent)
+        await _ragCol.createIndex({ text: 'text', tags: 1 }, { default_language: 'none' });
+        console.log('[MongoDB] Connected to Atlas — RAG collection ready');
+        await _syncLocalChunksToMongo();
+    } catch(e) {
+        console.warn('[MongoDB] Connection failed, falling back to local RAG:', e.message);
+        _ragCol = null;
+    }
+}
+
+// Sync local .txt files to MongoDB on startup (upsert by content hash)
+async function _syncLocalChunksToMongo() {
+    const local = _loadLocalChunks();
+    if (!local.length) return;
+    const { createHash } = require('crypto');
+    let synced = 0;
+    for (const text of local) {
+        const hash = createHash('md5').update(text).digest('hex');
+        const res  = await _ragCol.updateOne(
+            { hash },
+            { $setOnInsert: { hash, text, source: 'local', tags: [], createdAt: new Date() } },
+            { upsert: true }
+        );
+        if (res.upsertedCount) synced++;
+    }
+    if (synced) console.log(`[MongoDB] Synced ${synced} new chunks from local files`);
+}
+
+// Load local .txt files into memory (used as fallback and for initial sync)
+function _loadLocalChunks() {
     const dataDir = path.join(CONTEXT_IQ_PATH, 'data');
     if (!fs.existsSync(dataDir)) return [];
     const chunks = [];
@@ -449,25 +489,68 @@ function loadKnowledgeChunks() {
     return chunks;
 }
 
-// Simple TF-IDF style keyword retrieval
-function retrieveRelevantChunks(query, chunks, topK = 4) {
+// Keyword search — MongoDB full-text or in-memory fallback
+async function retrieveRelevantChunks(query, topK = 4) {
+    if (_ragCol) {
+        try {
+            const results = await _ragCol.find(
+                { $text: { $search: query } },
+                { projection: { text: 1, score: { $meta: 'textScore' }, _id: 0 } }
+            ).sort({ score: { $meta: 'textScore' } }).limit(topK).toArray();
+            if (results.length) return results.map(r => r.text);
+        } catch(e) { console.warn('[RAG] MongoDB search failed:', e.message); }
+    }
+    // In-memory fallback
     const queryWords = query.toLowerCase().split(/\s+/);
-    const scored = chunks.map(chunk => {
-        const lower = chunk.toLowerCase();
-        const score = queryWords.reduce((acc, w) => acc + (lower.includes(w) ? 1 : 0), 0);
-        return { chunk, score };
-    });
-    return scored
+    return _knowledgeChunks
+        .map(chunk => ({ chunk, score: queryWords.reduce((a, w) => a + (chunk.toLowerCase().includes(w) ? 1 : 0), 0) }))
         .filter(s => s.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, topK)
         .map(s => s.chunk);
 }
 
-const _knowledgeChunks = loadKnowledgeChunks();
+const _knowledgeChunks = _loadLocalChunks();
 console.log(`[RAG] Loaded ${_knowledgeChunks.length} knowledge chunks`);
 
-function buildRAGContext(query, quotes) {
+// ── RAG management API ────────────────────────────────────────────────────
+// GET  /api/rag          — list all chunks (MongoDB only)
+// POST /api/rag          — add a new chunk  { text, tags[] }
+// DELETE /api/rag/:id    — delete a chunk by _id
+
+app.get('/api/rag', async (req, res) => {
+    if (!_ragCol) return res.json({ source: 'memory', chunks: _knowledgeChunks.map((text, i) => ({ id: i, text })) });
+    const chunks = await _ragCol.find({}, { projection: { hash: 0 } }).sort({ createdAt: -1 }).limit(200).toArray();
+    res.json({ source: 'mongodb', chunks });
+});
+
+app.post('/api/rag', express.json(), async (req, res) => {
+    const { text, tags = [] } = req.body ?? {};
+    if (!text || text.trim().length < 10) return res.status(400).json({ error: 'text חייב להכיל לפחות 10 תווים' });
+    if (!_ragCol) {
+        _knowledgeChunks.push(text.trim());
+        return res.json({ ok: true, source: 'memory' });
+    }
+    const { createHash } = require('crypto');
+    const hash = createHash('md5').update(text.trim()).digest('hex');
+    await _ragCol.updateOne(
+        { hash },
+        { $setOnInsert: { hash, text: text.trim(), tags, source: 'api', createdAt: new Date() } },
+        { upsert: true }
+    );
+    res.json({ ok: true, source: 'mongodb' });
+});
+
+app.delete('/api/rag/:id', async (req, res) => {
+    if (!_ragCol) return res.status(400).json({ error: 'MongoDB לא מחובר' });
+    const { ObjectId } = require('mongodb');
+    try {
+        await _ragCol.deleteOne({ _id: new ObjectId(req.params.id) });
+        res.json({ ok: true });
+    } catch { res.status(400).json({ error: 'מזהה לא תקין' }); }
+});
+
+async function buildRAGContext(query, quotes) {
     const read = f => { try { return fs.readFileSync(path.join(CONTEXT_IQ_PATH, f), 'utf8'); } catch { return ''; } };
     const history = read('history.txt');
 
@@ -599,7 +682,7 @@ function buildRAGContext(query, quotes) {
         .map(m => `${m.symbol}: ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(2)}% — ${Math.abs(m.pct) >= 7 ? 'בדוק אירוע ספציפי לחברה' : 'חולשת/חוזקת ענף'}`)
         .join('\n');
 
-    const retrieved = retrieveRelevantChunks(query, _knowledgeChunks, 2);
+    const retrieved = await retrieveRelevantChunks(query, 2);
     const knowledgeSection = retrieved.length
         ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}` : '';
 
@@ -751,7 +834,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
         // ── End fast-path ──────────────────────────────────────────────────────
 
         await Promise.all([fetchNews(), fetchXPosts()]);
-        const systemCtx = buildRAGContext(lastMsg, quotes);
+        const systemCtx = await buildRAGContext(lastMsg, quotes);
         console.log('[chat] quotes used:', quotes.length, '| portfolio:', systemCtx.slice(systemCtx.indexOf('## תיק'), systemCtx.indexOf('## תיק') + 200));
 
         // Keep only last 4 history turns to save tokens
@@ -837,8 +920,9 @@ app.post('/api/portfolio', express.json(), async (req, res) => {
 
 // ── Start ──────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Trading Station server running at http://localhost:${PORT}`);
+    await initMongoDB();
     refreshFxRates();
     setInterval(refreshFxRates, 3600_000);
 });
