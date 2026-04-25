@@ -481,81 +481,62 @@ function initStockSuggestions() {
     });
 }
 
+let _tickerReady  = false;
+let _tickerRaf    = null;
 let _tickerOffset = 0;
-let _tickerLastTs = null;
-let _tickerRAF    = null;
-const TICKER_PPS  = 60;
+let _tickerHalfW  = 0;
 
-function initTicker() {
-    const ticker = document.getElementById('ticker-content');
-    if (!ticker) return;
-
-    const names = Object.keys(stocksData).filter(n => stocksData[n]?.price);
-    if (!names.length) return;   // wait until data arrives
-
-    // Rebuild only if stock list changed or DOM is empty
-    const existing = ticker.querySelectorAll('[data-stock]');
-    const needsBuild = existing.length === 0 ||
-        existing[0].dataset.stock !== names[0]; // data changed
-
-    if (needsBuild) {
-        ticker.innerHTML = '';
-        const frag = document.createDocumentFragment();
-        // 3 identical copies for seamless loop
-        for (let copy = 0; copy < 3; copy++) {
-            names.forEach(name => {
-                const item = document.createElement('span');
-                item.dataset.stock = name;
-                item.style.cssText = 'padding:0 22px;white-space:nowrap;font-family:"Inter",sans-serif;font-size:0.72rem;font-weight:500;display:inline-flex;align-items:center;gap:4px';
-                const lbl = document.createElement('span');
-                lbl.className  = 'tick-lbl';
-                lbl.textContent = name;
-                lbl.style.color = '#5f6368';
-                const val = document.createElement('span');
-                val.className = 'tick-val';
-                val.dir = 'ltr';
-                item.appendChild(lbl);
-                item.appendChild(val);
-                frag.appendChild(item);
-            });
-        }
-        ticker.appendChild(frag);
-        // Reset offset so we don't jump on rebuild
-        _tickerOffset = 0;
-        _tickerLastTs = null;
-    }
-
-    // Update prices (text only — no DOM structure change)
-    ticker.querySelectorAll('[data-stock]').forEach(item => {
+function _updateTickerPrices() {
+    document.querySelectorAll('#ticker-content [data-stock]').forEach(item => {
         const stock = stocksData[item.dataset.stock];
         if (!stock) return;
         const pct = calculatePctChange(parseFloat(stock.price), stock.initial);
         const up  = parseFloat(pct) >= 0;
         const val = item.querySelector('.tick-val');
-        if (val) {
-            val.textContent = `${up ? '▲' : '▼'} ${pct}%`;
-            val.style.color = pctColor(pct).text;
-        }
+        if (val) { val.textContent = `${up?'▲':'▼'} ${pct}%`; val.style.color = pctColor(pct).text; }
     });
-
-    // Start RAF loop once — never restart it
-    if (!_tickerRAF) _startTickerRAF(ticker);
 }
 
-function _startTickerRAF(ticker) {
-    function step(ts) {
-        if (_tickerLastTs !== null) {
-            const dt   = Math.min((ts - _tickerLastTs) / 1000, 0.1);
-            const third = ticker.scrollWidth / 3;
-            if (third > 0) {
-                _tickerOffset = (_tickerOffset + TICKER_PPS * dt) % third;
-                ticker.style.transform = `translateX(-${_tickerOffset}px)`;
-            }
+function _tickerStep() {
+    const ticker = document.getElementById('ticker-content');
+    if (!ticker || !_tickerHalfW) { _tickerRaf = requestAnimationFrame(_tickerStep); return; }
+    _tickerOffset += 1;
+    if (_tickerOffset >= _tickerHalfW) _tickerOffset -= _tickerHalfW;
+    ticker.style.transform = `translateX(-${_tickerOffset}px)`;
+    _tickerRaf = requestAnimationFrame(_tickerStep);
+}
+
+function initTicker() {
+    const ticker = document.getElementById('ticker-content');
+    if (!ticker) return;
+    const names = Object.keys(stocksData).filter(n => stocksData[n]?.price > 0);
+    if (!names.length) return;
+
+    if (!_tickerReady) {
+        _tickerReady = true;
+        ticker.innerHTML = '';
+        for (let copy = 0; copy < 2; copy++) {
+            names.forEach(name => {
+                const item = document.createElement('span');
+                item.dataset.stock = name;
+                item.style.cssText = 'padding:0 22px;white-space:nowrap;font-family:"Inter",sans-serif;font-size:0.72rem;font-weight:500;display:inline-flex;align-items:center;gap:4px';
+                const lbl = document.createElement('span'); lbl.className = 'tick-lbl'; lbl.textContent = name; lbl.style.color = '#5f6368';
+                const val = document.createElement('span'); val.className = 'tick-val'; val.dir = 'ltr';
+                item.append(lbl, val);
+                ticker.appendChild(item);
+            });
         }
-        _tickerLastTs = ts;
-        _tickerRAF = requestAnimationFrame(step);
+        _updateTickerPrices();
+        // Wait 2 frames so the browser has laid out the items, then measure & start loop
+        if (_tickerRaf) cancelAnimationFrame(_tickerRaf);
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            _tickerHalfW  = ticker.scrollWidth / 2;
+            _tickerOffset = 0;
+            if (_tickerHalfW > 0) _tickerRaf = requestAnimationFrame(_tickerStep);
+        }));
+    } else {
+        _updateTickerPrices();
     }
-    _tickerRAF = requestAnimationFrame(step);
 }
 
 let activeStockWindows = {};
@@ -1191,7 +1172,7 @@ let highestZIndex = 100;
 // ── Mobile Tabs ─────────────────────────────────────────────────────────────
 const MOB_TABS = {
     market:    ['win-indices-tase', 'win-stocks', 'win-search'],
-    portfolio: ['win-portfolio', 'win-simulator'],
+    portfolio: ['win-portfolio', 'win-simulator', 'win-portfolio-chart'],
     ai:        ['win-ai-chat'],
 };
 const MOB_ALL = Object.values(MOB_TABS).flat();
@@ -1575,6 +1556,35 @@ function setPortfolioTf(tf) {
     drawPortfolioChart();
 }
 
+async function buildIntradayPortfolio() {
+    const symbols = Object.keys(portfolio);
+    if (!symbols.length) return [];
+    const results = await Promise.all(symbols.map(name => {
+        const sym = STOCK_SYMBOLS[name];
+        if (!sym) return Promise.resolve({ closes: [], timestamps: [] });
+        return fetchHistoricalWithTs(sym, '5d', '2m');
+    }));
+    // find last trading day with data
+    const allTs = results[0]?.timestamps ?? [];
+    if (!allTs.length) return [];
+    const lastTs   = allTs[allTs.length - 1];
+    const lastDay  = new Date(lastTs * 1000); lastDay.setHours(0,0,0,0);
+    const dayStart = lastDay.getTime() / 1000;
+    const dayEnd   = dayStart + 86400;
+    const ref = allTs.filter(t => t >= dayStart && t < dayEnd);
+    if (!ref.length) return [];
+    return ref.map(t => {
+        let total = 0;
+        symbols.forEach((name, i) => {
+            const { closes, timestamps } = results[i];
+            const idx = timestamps.findIndex(ts => ts === t || Math.abs(ts - t) < 120);
+            const price = idx >= 0 ? closes[idx] : (stocksData[name]?.price ?? 0);
+            total += (portfolio[name]?.qty ?? 0) * price;
+        });
+        return { time: t, value: total };
+    }).filter(p => p.value > 0);
+}
+
 function drawPortfolioChart() {
     const el = document.getElementById('portfolioChart');
     if (!el || document.getElementById('win-portfolio-chart')?.style.display === 'none') return;
@@ -1582,40 +1592,71 @@ function drawPortfolioChart() {
     const cutoff = _portfolioTf === 'day'  ? (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime()/1000; })()
                  : _portfolioTf === 'week' ? now - 7 * 86400
                  : 0;
-    const data = _portfolioHistory.filter(p => p.value > 0 && p.time >= cutoff);
-    if (data.length < 2) {
-        el.innerHTML = '<div style="color:#9aa0a6;font-size:11px;text-align:center;padding-top:30px">אין מספיק נתונים עדיין — נתונים נאספים כל 5 דקות</div>';
+
+    // For day view: always build from intraday prices
+    if (_portfolioTf === 'day') {
+        el.innerHTML = '<div style="color:#9aa0a6;font-size:12px;text-align:center;padding-top:40px">טוען נתונים...</div>';
+        buildIntradayPortfolio().then(data => {
+            if (data.length < 2) {
+                el.innerHTML = '<div style="color:#9aa0a6;font-size:11px;text-align:center;padding-top:30px">אין נתונים להיום</div>';
+                return;
+            }
+            _renderPortfolioChart(el, data);
+        });
         return;
     }
-    if (_lwPortfolio) { _lwPortfolio.remove(); _lwPortfolio = null; }
-    const lastVal  = data[data.length - 1].value;
-    const baseVal  = (_portfolioTf === 'day' && window._portfolioOpenVal > 0)
-                   ? window._portfolioOpenVal
-                   : data[0].value;
-    const upColor  = lastVal >= baseVal ? '#34a853' : '#ea4335';
-    const pctData  = data.map(p => ({ time: p.time, value: parseFloat(((p.value - baseVal) / baseVal * 100).toFixed(3)) }));
-    const lastPct  = pctData[pctData.length - 1].value;
 
+    const data = _portfolioHistory.filter(p => p.value > 0 && p.time >= cutoff);
+    if (data.length < 2) {
+        el.innerHTML = '<div style="color:#9aa0a6;font-size:11px;text-align:center;padding-top:30px">אין מספיק נתונים</div>';
+        return;
+    }
+    _renderPortfolioChart(el, data);
+}
+
+function _renderPortfolioChart(el, data) {
+    if (_lwPortfolio) { _lwPortfolio.remove(); _lwPortfolio = null; }
+    el.innerHTML = '';
+    const lastVal = data[data.length - 1].value;
+    const baseVal = window._portfolioOpenVal > 0 ? window._portfolioOpenVal : data[0].value;
+    const upColor = lastVal >= baseVal ? '#34a853' : '#ea4335';
+    const pctData = data.map(p => ({ time: p.time, value: parseFloat(((p.value - baseVal) / baseVal * 100).toFixed(3)) }));
+    const lastPct = pctData[pctData.length - 1].value;
+
+    const _fmtTime = t => {
+        const d = new Date(t * 1000);
+        const hh = String(d.getHours()).padStart(2,'0');
+        const mm = String(d.getMinutes()).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        const mo = String(d.getMonth()+1).padStart(2,'0');
+        return `${dd}/${mo} ${hh}:${mm}`;
+    };
     _lwPortfolio = LightweightCharts.createChart(el, {
+        width:  el.clientWidth  || 400,
+        height: Math.max((el.clientHeight || 280) - 32, 200),
         layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
         grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
         rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)' },
-        timeScale: { borderColor: 'rgba(0,0,0,0.1)', timeVisible: true },
+        localization: { timeFormatter: _fmtTime },
+        timeScale: {
+            borderColor: 'rgba(0,0,0,0.1)',
+            timeVisible: true,
+            secondsVisible: false,
+            tickMarkFormatter: _fmtTime,
+        },
         handleScroll: true, handleScale: true,
     });
     const series = _lwPortfolio.addAreaSeries({
         lineColor: upColor,
-        topColor: lastVal >= baseVal ? 'rgba(52,168,83,0.2)' : 'rgba(234,67,53,0.2)',
+        topColor: upColor === '#34a853' ? 'rgba(52,168,83,0.2)' : 'rgba(234,67,53,0.2)',
         bottomColor: 'rgba(0,0,0,0)',
         lineWidth: 2,
         priceFormat: { type: 'custom', formatter: v => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` },
     });
     series.setData(pctData);
-    // baseline at 0
     series.createPriceLine({ price: 0, color: 'rgba(0,0,0,0.15)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
     _lwPortfolio.timeScale().fitContent();
 
-    // summary below chart
     const summaryEl = document.getElementById('portfolio-chart-summary');
     if (summaryEl) {
         const sign = lastPct >= 0 ? '+' : '';
@@ -1628,12 +1669,16 @@ function drawPortfolioChart() {
 function togglePortfolioChart() {
     const win = document.getElementById('win-portfolio-chart');
     if (!win) return;
-    if (win.style.display === 'none' || win.style.display === '') {
+    const isHidden = win.style.display === 'none' || win.classList.contains('mob-hidden') || getComputedStyle(win).display === 'none';
+    if (isHidden) {
         win.style.display = '';
+        win.classList.remove('mob-hidden');
         win.style.zIndex = ++highestZIndex;
-        drawPortfolioChart();
+        if (_lwPortfolio) { _lwPortfolio.remove(); _lwPortfolio = null; }
+        requestAnimationFrame(() => drawPortfolioChart());
     } else {
         win.style.display = 'none';
+        win.classList.add('mob-hidden');
     }
 }
 
