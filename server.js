@@ -447,7 +447,7 @@ async function initMongoDB() {
         const db  = client.db('bursa');
         _ragCol   = db.collection('knowledge');
         // Full-text index (created once, idempotent)
-        await _ragCol.createIndex({ text: 'text', tags: 1 }, { default_language: 'none' });
+        await _ragCol.createIndex({ text: 'text' }, { default_language: 'none' });
         console.log('[MongoDB] Connected to Atlas — RAG collection ready');
         await _syncLocalChunksToMongo();
     } catch(e) {
