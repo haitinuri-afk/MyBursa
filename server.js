@@ -868,6 +868,42 @@ app.post('/api/chat', express.json(), async (req, res) => {
 
 app.get('/api/rate', (req, res) => res.json({ usdIls: _usdIlsRate, usdIlsPrev: _usdIlsPrev, eurIls: _eurIlsRate, eurIlsPrev: _eurIlsPrev }));
 
+// ── Agentic Workflow ──────────────────────────────────────────────────────────
+const { analyzeReport, screenStocks } = require('./agent');
+
+// POST /api/analyze-report  { report: "טקסט הדוח..." }
+app.post('/api/analyze-report', express.json(), async (req, res) => {
+    try {
+        const { report } = req.body ?? {};
+        if (!report) return res.status(400).json({ error: 'שדה report חסר' });
+        const result = await analyzeReport(report, {
+            groq:    _groq,
+            ragCol:  _ragCol,
+            usdRate: _usdIlsRate,
+        });
+        res.json(result);
+    } catch(e) {
+        console.error('[agent] analyze-report:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/screen  { query: "מצא מניות עם מכפיל נמוך מ-15" }
+app.post('/api/screen', express.json(), async (req, res) => {
+    try {
+        const { query } = req.body ?? {};
+        if (!query) return res.status(400).json({ error: 'שדה query חסר' });
+        const result = await screenStocks(query, {
+            groq:   _groq,
+            quotes: _cachedQuotes,
+        });
+        res.json(result);
+    } catch(e) {
+        console.error('[agent] screen:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ── Portfolio persistence (local file or GCS) ─────────────────────────────
 
 const PORTFOLIO_FILE = path.join(__dirname, 'portfolio.json');
