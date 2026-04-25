@@ -52,6 +52,10 @@ app.get('/sw.js', (req, res) => {
 
 app.use(express.static(path.join(__dirname)));
 
+// Root → mobile chat (full dashboard at /dashboard)
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'mobile.html')));
+app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
 // ── Yahoo Finance helpers ─────────────────────────────────────────────────
 
 const SYMBOL_FALLBACKS = { '^TA35':'TA35.TA', '^TA125':'TA125.TA', '^TA90':'TA90.TA' };
