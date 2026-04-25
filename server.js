@@ -37,8 +37,8 @@ const STOCK_SYMBOLS_HE = {
     "שטראוס":"STRS.TA","שופרסל":"SAE.TA","פוקס":"FOX.TA","רמי לוי":"RMLI.TA",
 };
 
-let _usdIlsRate = 3.65;
-let _eurIlsRate = 4.10;
+let _usdIlsRate = 3.00;
+let _eurIlsRate = 3.50;
 
 async function refreshFxRates() {
     // USD/ILS — Primary: Yahoo Finance
