@@ -717,13 +717,38 @@ app.post('/api/chat', express.json(), async (req, res) => {
 
 app.get('/api/rate', (req, res) => res.json({ usdIls: _usdIlsRate, usdIlsPrev: _usdIlsPrev, eurIls: _eurIlsRate, eurIlsPrev: _eurIlsPrev }));
 
-// ── Portfolio persistence ──────────────────────────────────────────────────
+// ── Portfolio persistence (local file or GCS) ─────────────────────────────
 
 const PORTFOLIO_FILE = path.join(__dirname, 'portfolio.json');
+const GCS_BUCKET     = process.env.GCS_BUCKET;   // set this env var in Cloud Run
+const GCS_OBJECT     = 'portfolio.json';
 
-function loadPortfolioFile() {
+let _gcsStorage = null;
+if (GCS_BUCKET) {
+    try {
+        const { Storage } = require('@google-cloud/storage');
+        _gcsStorage = new Storage();
+        console.log(`[gcs] Using bucket: ${GCS_BUCKET}`);
+    } catch(e) { console.warn('[gcs] @google-cloud/storage not installed, falling back to local file'); }
+}
+
+async function loadPortfolio() {
+    if (_gcsStorage) {
+        try {
+            const [contents] = await _gcsStorage.bucket(GCS_BUCKET).file(GCS_OBJECT).download();
+            return JSON.parse(contents.toString());
+        } catch(e) { return { portfolio: {}, transactionHistory: [] }; }
+    }
     try { return JSON.parse(fs.readFileSync(PORTFOLIO_FILE, 'utf8')); }
     catch { return { portfolio: {}, transactionHistory: [] }; }
+}
+
+async function savePortfolio(data) {
+    if (_gcsStorage) {
+        await _gcsStorage.bucket(GCS_BUCKET).file(GCS_OBJECT).save(JSON.stringify(data, null, 2), { contentType: 'application/json' });
+    } else {
+        fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(data, null, 2));
+    }
 }
 
 app.get('/api/news', async (req, res) => {
@@ -731,11 +756,14 @@ app.get('/api/news', async (req, res) => {
     res.json({ news: _cachedNews, xPosts: _cachedXPosts });
 });
 
-app.get('/api/portfolio', (req, res) => res.json(loadPortfolioFile()));
+app.get('/api/portfolio', async (req, res) => {
+    try { res.json(await loadPortfolio()); }
+    catch(e) { res.status(500).json({ error: e.message }); }
+});
 
-app.post('/api/portfolio', express.json(), (req, res) => {
+app.post('/api/portfolio', express.json(), async (req, res) => {
     try {
-        fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(req.body, null, 2));
+        await savePortfolio(req.body);
         res.json({ ok: true });
     } catch(e) {
         res.status(500).json({ error: e.message });
