@@ -37,19 +37,30 @@ const STOCK_SYMBOLS_HE = {
     "שטראוס":"STRS.TA","שופרסל":"SAE.TA","פוקס":"FOX.TA","רמי לוי":"RMLI.TA",
 };
 
-let _usdIlsRate = 2.98;
-async function refreshUsdIlsRate() {
-    // Primary: Yahoo Finance live rate
+let _usdIlsRate = 3.65;
+let _eurIlsRate = 4.10;
+
+async function refreshFxRates() {
+    // USD/ILS — Primary: Yahoo Finance
     try {
         const { meta } = await fetchChartMeta('USDILS=X', '1d');
         const val = parseFloat(meta?.regularMarketPrice);
-        if (val > 0) { _usdIlsRate = parseFloat(val.toFixed(4)); console.log(`[rate] USD/ILS = ${_usdIlsRate} (yahoo)`); return; }
-    } catch(e) { console.warn('[rate] yahoo failed:', e.message); }
-    // Fallback: open.er-api.com
+        if (val > 0) { _usdIlsRate = parseFloat(val.toFixed(4)); console.log(`[rate] USD/ILS = ${_usdIlsRate}`); }
+    } catch(e) { console.warn('[rate] USD yahoo failed:', e.message); }
+
+    // EUR/ILS — Primary: Yahoo Finance
     try {
-        const { body } = await httpsGet('https://open.er-api.com/v6/latest/USD');
-        const ils = body?.rates?.ILS;
-        if (ils > 0) { _usdIlsRate = parseFloat(ils.toFixed(4)); console.log(`[rate] USD/ILS = ${_usdIlsRate} (er-api)`); }
+        const { meta } = await fetchChartMeta('EURILS=X', '1d');
+        const val = parseFloat(meta?.regularMarketPrice);
+        if (val > 0) { _eurIlsRate = parseFloat(val.toFixed(4)); console.log(`[rate] EUR/ILS = ${_eurIlsRate}`); return; }
+    } catch(e) { console.warn('[rate] EUR yahoo failed:', e.message); }
+
+    // Fallback: open.er-api.com (fetches both at once)
+    try {
+        const { body } = await httpsGet('https://open.er-api.com/v6/latest/ILS');
+        if (body?.rates?.USD > 0) _usdIlsRate = parseFloat((1 / body.rates.USD).toFixed(4));
+        if (body?.rates?.EUR > 0) _eurIlsRate = parseFloat((1 / body.rates.EUR).toFixed(4));
+        console.log(`[rate] fallback USD/ILS=${_usdIlsRate} EUR/ILS=${_eurIlsRate}`);
     } catch(e) { console.warn('[rate] er-api failed:', e.message); }
 }
 
@@ -702,7 +713,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
     }
 });
 
-app.get('/api/rate', (req, res) => res.json({ usdIls: _usdIlsRate }));
+app.get('/api/rate', (req, res) => res.json({ usdIls: _usdIlsRate, eurIls: _eurIlsRate }));
 
 // ── Portfolio persistence ──────────────────────────────────────────────────
 
@@ -733,6 +744,6 @@ app.post('/api/portfolio', express.json(), (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Trading Station server running at http://localhost:${PORT}`);
-    refreshUsdIlsRate();
-    setInterval(refreshUsdIlsRate, 3600_000);
+    refreshFxRates();
+    setInterval(refreshFxRates, 3600_000);
 });

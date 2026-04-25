@@ -485,6 +485,27 @@ let _tickerReady  = false;
 let _tickerRaf    = null;
 let _tickerOffset = 0;
 let _tickerHalfW  = 0;
+let _fxRates      = { usdIls: 0, eurIls: 0 };
+
+async function refreshFxRates() {
+    try {
+        const r = await fetch('/api/rate');
+        if (!r.ok) return;
+        const data = await r.json();
+        _fxRates.usdIls = data.usdIls ?? 0;
+        _fxRates.eurIls = data.eurIls ?? 0;
+        _updateTickerFx();
+    } catch(e) {}
+}
+
+function _updateTickerFx() {
+    ['USD', 'EUR'].forEach(cur => {
+        const el = document.querySelector(`#ticker-content [data-fx="${cur}"] .tick-val`);
+        if (!el) return;
+        const rate = cur === 'USD' ? _fxRates.usdIls : _fxRates.eurIls;
+        if (rate > 0) el.textContent = `₪${rate.toFixed(3)}`;
+    });
+}
 
 function _updateTickerPrices() {
     document.querySelectorAll('#ticker-content [data-stock]').forEach(item => {
@@ -515,7 +536,31 @@ function initTicker() {
     if (!_tickerReady) {
         _tickerReady = true;
         ticker.innerHTML = '';
+
+        const fxItems = [
+            { fx: 'USD', label: '🇺🇸 דולר' },
+            { fx: 'EUR', label: '🇪🇺 יורו'  },
+        ];
+        const sep = () => {
+            const s = document.createElement('span');
+            s.style.cssText = 'padding:0 8px;color:#bbb;font-size:0.7rem';
+            s.textContent = '|';
+            return s;
+        };
+
         for (let copy = 0; copy < 2; copy++) {
+            // FX rates first
+            fxItems.forEach(({ fx, label }) => {
+                const item = document.createElement('span');
+                item.dataset.fx = fx;
+                item.style.cssText = 'padding:0 18px;white-space:nowrap;font-family:"Inter",sans-serif;font-size:0.72rem;font-weight:600;display:inline-flex;align-items:center;gap:5px';
+                const lbl = document.createElement('span'); lbl.textContent = label; lbl.style.color = '#5f6368';
+                const val = document.createElement('span'); val.className = 'tick-val'; val.dir = 'ltr'; val.style.color = '#202124';
+                item.append(lbl, val);
+                ticker.appendChild(item);
+            });
+            ticker.appendChild(sep());
+            // Stocks
             names.forEach(name => {
                 const item = document.createElement('span');
                 item.dataset.stock = name;
@@ -527,6 +572,8 @@ function initTicker() {
             });
         }
         _updateTickerPrices();
+        _updateTickerFx();
+        refreshFxRates();
         // Wait 2 frames so the browser has laid out the items, then measure & start loop
         if (_tickerRaf) cancelAnimationFrame(_tickerRaf);
         requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -1214,6 +1261,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Refresh intraday session bars every 5 minutes
     setInterval(loadSessionHistory, 5 * 60 * 1000);
+
+    // Refresh FX rates every hour
+    setInterval(refreshFxRates, 3600_000);
 
     // Sync portfolio from server every 30 seconds
     setInterval(async () => {
