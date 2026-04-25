@@ -1,8 +1,28 @@
+/* ── Tailwind replacements ── */
+.flex          { display: flex; }
+.flex-1        { flex: 1; }
+.flex-grow     { flex-grow: 1; }
+.items-center  { align-items: center; }
+.overflow-hidden { overflow: hidden; }
+.relative      { position: relative; }
+.w-full        { width: 100%; }
+.h-full        { height: 100%; }
+.text-right    { text-align: right; }
+.text-left     { text-align: left; }
+.text-center   { text-align: center; }
+.whitespace-nowrap { white-space: nowrap; }
+.inline-block  { display: inline-block; }
+.hidden        { display: none !important; }
+
 .ticker-scroll {
-    display: inline-flex;
+    display: flex;
     white-space: nowrap;
     will-change: transform;
+    direction: ltr;
+    flex-shrink: 0;
+    width: max-content;
 }
+
 
 /* ── CSS Variables (light default) ── */
 :root {
@@ -817,6 +837,8 @@ MOBILE RESPONSIVE  (≤ 768px)
 
     .card-body { min-height: 200px; }
     #win-main-chart .card-body, #win-indices-tase .card-body { min-height: 260px; }
+    #win-portfolio-chart .card-body { min-height: 50vh; }
+    #win-portfolio-chart #portfolioChart { min-height: 40vh; }
     #win-simulator .card-body, #win-history .card-body { min-height: 100px; }
 
     /* ── Disable nested scroll on mobile — let the page scroll freely ── */
