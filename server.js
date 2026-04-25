@@ -758,7 +758,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
     _lastChatAt = Date.now();
 
     try {
-        const { messages = [], quotes: clientQuotes = [] } = req.body;
+        const { messages = [], quotes: clientQuotes = [], mobile = false } = req.body;
         const quotes    = clientQuotes.length ? clientQuotes : _cachedQuotes;
         const lastMsg   = messages[messages.length - 1]?.content || '';
 
@@ -847,7 +847,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
 
         const result = await _groq.chat.completions.create({
             model:      'llama-3.1-8b-instant',
-            max_tokens: 380,
+            max_tokens: mobile ? 220 : 380,   // shorter on mobile
             messages:   groqMessages,
         });
 
