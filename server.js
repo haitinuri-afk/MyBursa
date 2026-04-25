@@ -1,12 +1,43 @@
 require('dotenv').config({ path: require('path').join(__dirname, '.env'), override: true });
-const express   = require('express');
-const path      = require('path');
-const https     = require('https');
-const fs        = require('fs');
-const Groq = require('groq-sdk');
+const express      = require('express');
+const path         = require('path');
+const https        = require('https');
+const fs           = require('fs');
+const Groq         = require('groq-sdk');
+const cors         = require('cors');
+const rateLimit    = require('express-rate-limit');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+
+// ── CORS ──────────────────────────────────────────────────────────────────
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+
+app.use(cors({
+    origin: (origin, cb) => {
+        // Allow same-origin, local dev, and explicitly allowed origins
+        if (!origin || origin.includes('localhost') || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+        cb(new Error(`CORS blocked: ${origin}`));
+    },
+    credentials: true,
+}));
+
+// ── Rate limiting ─────────────────────────────────────────────────────────
+const apiLimiter = rateLimit({
+    windowMs: 60_000,         // 1 minute
+    max: 60,                  // 60 requests per minute per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'יותר מדי בקשות, נסה שוב עוד דקה.' },
+});
+const chatLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 10,                  // chat is heavy — 10/min
+    message: { error: 'נסה שוב עוד דקה.' },
+});
+app.use('/api/', apiLimiter);
+app.use('/api/chat', chatLimiter);
 
 const BUILD_VERSION = `bursa-${Date.now()}`;
 
@@ -40,13 +71,42 @@ const STOCK_SYMBOLS_HE = {
 let _usdIlsRate = 3.00; let _usdIlsPrev = 3.00;
 let _eurIlsRate = 3.50; let _eurIlsPrev = 3.50;
 
+// ── Anomaly Detection ─────────────────────────────────────────────────────
+// Returns true if a new value is a suspicious outlier vs the last known value.
+// Blocks values that differ by more than MAX_DAILY_MOVE from the previous close.
+const ANOMALY_RULES = {
+    'USD/ILS': { min: 2.0,  max: 6.0,  maxDailyMove: 0.10 },  // max 10% daily move
+    'EUR/ILS': { min: 2.0,  max: 7.0,  maxDailyMove: 0.10 },
+    'STOCK':   { min: 0.01, max: 1e6,  maxDailyMove: 0.20 },  // stocks: max 20% daily (circuit breaker)
+};
+
+function isAnomaly(key, newVal, prevVal) {
+    const rule = ANOMALY_RULES[key] ?? ANOMALY_RULES['STOCK'];
+    if (newVal < rule.min || newVal > rule.max) {
+        console.warn(`[anomaly] ${key}: ${newVal} out of absolute range [${rule.min}, ${rule.max}]`);
+        return true;
+    }
+    if (prevVal > 0) {
+        const move = Math.abs(newVal - prevVal) / prevVal;
+        if (move > rule.maxDailyMove) {
+            console.warn(`[anomaly] ${key}: daily move ${(move*100).toFixed(1)}% exceeds threshold`);
+            return true;
+        }
+    }
+    return false;
+}
+
 async function refreshFxRates() {
     // USD/ILS
     try {
         const { meta } = await fetchChartMeta('USDILS=X', '1d');
         const val  = parseFloat(meta?.regularMarketPrice);
         const prev = parseFloat(meta?.chartPreviousClose ?? meta?.previousClose ?? 0);
-        if (val > 0) { _usdIlsRate = parseFloat(val.toFixed(4)); if (prev > 0) _usdIlsPrev = parseFloat(prev.toFixed(4)); console.log(`[rate] USD/ILS = ${_usdIlsRate}`); }
+        if (val > 0 && !isAnomaly('USD/ILS', val, _usdIlsPrev)) {
+            _usdIlsRate = parseFloat(val.toFixed(4));
+            if (prev > 0) _usdIlsPrev = parseFloat(prev.toFixed(4));
+            console.log(`[rate] USD/ILS = ${_usdIlsRate}`);
+        }
     } catch(e) { console.warn('[rate] USD yahoo failed:', e.message); }
 
     // EUR/ILS
@@ -54,7 +114,12 @@ async function refreshFxRates() {
         const { meta } = await fetchChartMeta('EURILS=X', '1d');
         const val  = parseFloat(meta?.regularMarketPrice);
         const prev = parseFloat(meta?.chartPreviousClose ?? meta?.previousClose ?? 0);
-        if (val > 0) { _eurIlsRate = parseFloat(val.toFixed(4)); if (prev > 0) _eurIlsPrev = parseFloat(prev.toFixed(4)); console.log(`[rate] EUR/ILS = ${_eurIlsRate}`); return; }
+        if (val > 0 && !isAnomaly('EUR/ILS', val, _eurIlsPrev)) {
+            _eurIlsRate = parseFloat(val.toFixed(4));
+            if (prev > 0) _eurIlsPrev = parseFloat(prev.toFixed(4));
+            console.log(`[rate] EUR/ILS = ${_eurIlsRate}`);
+            return;
+        }
     } catch(e) { console.warn('[rate] EUR yahoo failed:', e.message); }
 
     // Fallback: open.er-api.com
