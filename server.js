@@ -52,9 +52,8 @@ app.get('/sw.js', (req, res) => {
 
 app.use(express.static(path.join(__dirname)));
 
-// Root → mobile chat (full dashboard at /dashboard)
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'mobile.html')));
-app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+// Root → full dashboard
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 // ── Yahoo Finance helpers ─────────────────────────────────────────────────
 
