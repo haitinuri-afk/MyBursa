@@ -37,25 +37,27 @@ const STOCK_SYMBOLS_HE = {
     "שטראוס":"STRS.TA","שופרסל":"SAE.TA","פוקס":"FOX.TA","רמי לוי":"RMLI.TA",
 };
 
-let _usdIlsRate = 3.00;
-let _eurIlsRate = 3.50;
+let _usdIlsRate = 3.00; let _usdIlsPrev = 3.00;
+let _eurIlsRate = 3.50; let _eurIlsPrev = 3.50;
 
 async function refreshFxRates() {
-    // USD/ILS — Primary: Yahoo Finance
+    // USD/ILS
     try {
         const { meta } = await fetchChartMeta('USDILS=X', '1d');
-        const val = parseFloat(meta?.regularMarketPrice);
-        if (val > 0) { _usdIlsRate = parseFloat(val.toFixed(4)); console.log(`[rate] USD/ILS = ${_usdIlsRate}`); }
+        const val  = parseFloat(meta?.regularMarketPrice);
+        const prev = parseFloat(meta?.chartPreviousClose ?? meta?.previousClose ?? 0);
+        if (val > 0) { _usdIlsRate = parseFloat(val.toFixed(4)); if (prev > 0) _usdIlsPrev = parseFloat(prev.toFixed(4)); console.log(`[rate] USD/ILS = ${_usdIlsRate}`); }
     } catch(e) { console.warn('[rate] USD yahoo failed:', e.message); }
 
-    // EUR/ILS — Primary: Yahoo Finance
+    // EUR/ILS
     try {
         const { meta } = await fetchChartMeta('EURILS=X', '1d');
-        const val = parseFloat(meta?.regularMarketPrice);
-        if (val > 0) { _eurIlsRate = parseFloat(val.toFixed(4)); console.log(`[rate] EUR/ILS = ${_eurIlsRate}`); return; }
+        const val  = parseFloat(meta?.regularMarketPrice);
+        const prev = parseFloat(meta?.chartPreviousClose ?? meta?.previousClose ?? 0);
+        if (val > 0) { _eurIlsRate = parseFloat(val.toFixed(4)); if (prev > 0) _eurIlsPrev = parseFloat(prev.toFixed(4)); console.log(`[rate] EUR/ILS = ${_eurIlsRate}`); return; }
     } catch(e) { console.warn('[rate] EUR yahoo failed:', e.message); }
 
-    // Fallback: open.er-api.com (fetches both at once)
+    // Fallback: open.er-api.com
     try {
         const { body } = await httpsGet('https://open.er-api.com/v6/latest/ILS');
         if (body?.rates?.USD > 0) _usdIlsRate = parseFloat((1 / body.rates.USD).toFixed(4));
@@ -713,7 +715,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
     }
 });
 
-app.get('/api/rate', (req, res) => res.json({ usdIls: _usdIlsRate, eurIls: _eurIlsRate }));
+app.get('/api/rate', (req, res) => res.json({ usdIls: _usdIlsRate, usdIlsPrev: _usdIlsPrev, eurIls: _eurIlsRate, eurIlsPrev: _eurIlsPrev }));
 
 // ── Portfolio persistence ──────────────────────────────────────────────────
 

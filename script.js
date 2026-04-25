@@ -485,25 +485,37 @@ let _tickerReady  = false;
 let _tickerRaf    = null;
 let _tickerOffset = 0;
 let _tickerHalfW  = 0;
-let _fxRates      = { usdIls: 0, eurIls: 0 };
+let _fxRates      = { usdIls: 0, usdIlsPrev: 0, eurIls: 0, eurIlsPrev: 0 };
 
 async function refreshFxRates() {
     try {
         const r = await fetch('/api/rate');
         if (!r.ok) return;
         const data = await r.json();
-        _fxRates.usdIls = data.usdIls ?? 0;
-        _fxRates.eurIls = data.eurIls ?? 0;
+        _fxRates.usdIls     = data.usdIls     ?? 0;
+        _fxRates.usdIlsPrev = data.usdIlsPrev ?? 0;
+        _fxRates.eurIls     = data.eurIls     ?? 0;
+        _fxRates.eurIlsPrev = data.eurIlsPrev ?? 0;
         _updateTickerFx();
     } catch(e) {}
 }
 
 function _updateTickerFx() {
     ['USD', 'EUR'].forEach(cur => {
-        const el = document.querySelector(`#ticker-content [data-fx="${cur}"] .tick-val`);
-        if (!el) return;
-        const rate = cur === 'USD' ? _fxRates.usdIls : _fxRates.eurIls;
-        if (rate > 0) el.textContent = `₪${rate.toFixed(3)}`;
+        const els  = document.querySelectorAll(`#ticker-content [data-fx="${cur}"] .tick-val`);
+        if (!els.length) return;
+        const rate = cur === 'USD' ? _fxRates.usdIls     : _fxRates.eurIls;
+        const prev = cur === 'USD' ? _fxRates.usdIlsPrev : _fxRates.eurIlsPrev;
+        if (!rate) return;
+        const pct = prev > 0 ? ((rate - prev) / prev * 100).toFixed(2) : null;
+        const up  = pct !== null ? parseFloat(pct) >= 0 : true;
+        const txt = pct !== null
+            ? `₪${rate.toFixed(3)}  ${up ? '▲' : '▼'} ${up ? '+' : ''}${pct}%`
+            : `₪${rate.toFixed(3)}`;
+        els.forEach(el => {
+            el.textContent = txt;
+            el.style.color = pct !== null ? pctColor(pct).text : '#202124';
+        });
     });
 }
 
