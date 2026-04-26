@@ -54,6 +54,12 @@ app.get('/sw.js', (req, res) => {
     res.send(sw);
 });
 
+// JS / CSS — always fresh, no browser cache
+app.get(/\.(js|css)$/, (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    next();
+});
+
 app.use(express.static(path.join(__dirname)));
 
 // Root → full dashboard
