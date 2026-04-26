@@ -1797,7 +1797,7 @@ function _renderPortfolioChart(el, data) {
     }
 
     if (window.innerWidth <= 768) {
-        _renderPortfolioSVG(el, data, pctVals, color);
+        _renderPortfolioSVG(el, data, pctVals, color, isUp);
         return;
     }
 
@@ -1837,7 +1837,7 @@ function _renderPortfolioChart(el, data) {
     }
 }
 
-function _renderPortfolioSVG(el, data, pctVals, color) {
+function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     // Virtual coordinate space — SVG scales to fill container via width/height 100%
     const VW = 400, VH = 280;
     const PAD = { top: 14, right: 52, bottom: 36, left: 8 };
@@ -1877,6 +1877,10 @@ function _renderPortfolioSVG(el, data, pctVals, color) {
     const pLabels = [hi, (hi+lo)/2, lo].map(v => ({ y: yS(v), label: `${v>=0?'+':''}${v.toFixed(1)}%` }));
 
     const gid = `g${Date.now()}`;
+    // Gradient: opaque at the data line, transparent toward the zero baseline
+    // For positive charts (fill goes DOWN from line to zero): gradient top→bottom
+    // For negative charts (fill goes UP from line to zero): gradient bottom→top
+    const [gy1, gy2] = isUp ? ['0','1'] : ['1','0'];
 
     // Restore absolute positioning — let CSS control container size, SVG fills it
     el.style.cssText = 'position:absolute;inset:0;overflow:visible';
@@ -1886,9 +1890,9 @@ function _renderPortfolioSVG(el, data, pctVals, color) {
     el.innerHTML = `
 <svg width="100%" height="100%" viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none" style="display:block;overflow:visible">
   <defs>
-    <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"   stop-color="${color}" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
+    <linearGradient id="${gid}" x1="0" y1="${gy1}" x2="0" y2="${gy2}">
+      <stop offset="0%"   stop-color="${color}" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0.01"/>
     </linearGradient>
   </defs>
   ${pLabels.map(p=>`<line x1="${PAD.left}" y1="${p.y.toFixed(1)}" x2="${VW-PAD.right}" y2="${p.y.toFixed(1)}" stroke="rgba(0,0,0,0.055)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join('')}
