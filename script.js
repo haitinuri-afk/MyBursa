@@ -1838,13 +1838,13 @@ function _renderPortfolioChart(el, data) {
 }
 
 function _renderPortfolioSVG(el, data, pctVals, color) {
-    const W   = window.innerWidth;
-    const H   = window.innerHeight - 110;   // subtract header + summary + safe area
-    const PAD = { top: 20, right: 52, bottom: 32, left: 10 };
-    const iW  = W - PAD.left - PAD.right;
-    const iH  = H - PAD.top  - PAD.bottom;
+    // Virtual coordinate space — SVG scales to fill container via width/height 100%
+    const VW = 400, VH = 260;
+    const PAD = { top: 18, right: 50, bottom: 28, left: 8 };
+    const iW  = VW - PAD.left - PAD.right;
+    const iH  = VH - PAD.top  - PAD.bottom;
 
-    // Value range with padding
+    // Value range
     const minV = Math.min(...pctVals, 0);
     const maxV = Math.max(...pctVals, 0);
     const vPad = (maxV - minV) * 0.12 || 0.5;
@@ -1864,59 +1864,44 @@ function _renderPortfolioSVG(el, data, pctVals, color) {
     }
     const fill = line + ` L${pts[pts.length-1][0].toFixed(1)},${zeroY.toFixed(1)} L${pts[0][0].toFixed(1)},${zeroY.toFixed(1)}Z`;
 
-    // Time labels (5 evenly spaced)
+    // Time labels
     const fmtT = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
     const tLabels = Array.from({ length: 5 }, (_, i) => {
         const idx = Math.round(i * (data.length-1) / 4);
         return { x: xS(idx), label: fmtT(data[idx].time) };
     });
 
-    // Price labels (3 levels on right axis)
-    const pLabels = [hi, (hi+lo)/2, lo].map(v => ({ y: yS(v), label: `${v>=0?'+':''}${v.toFixed(1)}%` }))
-        .filter(p => p.y >= PAD.top - 2 && p.y <= PAD.top + iH + 2);
+    // Price labels
+    const pLabels = [hi, (hi+lo)/2, lo].map(v => ({ y: yS(v), label: `${v>=0?'+':''}${v.toFixed(1)}%` }));
 
     const gid = `g${Date.now()}`;
 
-    el.style.cssText = 'width:100%;overflow:hidden;display:block';
+    // Restore absolute positioning — let CSS control container size, SVG fills it
+    el.style.cssText = 'position:absolute;inset:0;overflow:visible';
     const trEl = document.getElementById('portfolio-chart-timerange');
     if (trEl) trEl.style.display = 'none';
 
     el.innerHTML = `
-<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block">
+<svg width="100%" height="100%" viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none" style="display:block;overflow:visible">
   <defs>
     <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"   stop-color="${color}" stop-opacity="0.38"/>
-      <stop offset="100%" stop-color="${color}" stop-opacity="0.01"/>
+      <stop offset="0%"   stop-color="${color}" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
     </linearGradient>
   </defs>
-
-  <!-- Grid lines -->
-  ${pLabels.map(p=>`<line x1="${PAD.left}" y1="${p.y.toFixed(1)}" x2="${W-PAD.right}" y2="${p.y.toFixed(1)}" stroke="rgba(0,0,0,0.055)" stroke-width="1"/>`).join('')}
-
-  <!-- Zero baseline -->
-  <line x1="${PAD.left}" y1="${zeroY.toFixed(1)}" x2="${W-PAD.right}" y2="${zeroY.toFixed(1)}"
-        stroke="rgba(0,0,0,0.2)" stroke-width="1" stroke-dasharray="4,3"/>
-
-  <!-- Area fill -->
+  ${pLabels.map(p=>`<line x1="${PAD.left}" y1="${p.y.toFixed(1)}" x2="${VW-PAD.right}" y2="${p.y.toFixed(1)}" stroke="rgba(0,0,0,0.055)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join('')}
+  <line x1="${PAD.left}" y1="${zeroY.toFixed(1)}" x2="${VW-PAD.right}" y2="${zeroY.toFixed(1)}"
+        stroke="rgba(0,0,0,0.18)" stroke-width="1" stroke-dasharray="4,3" vector-effect="non-scaling-stroke"/>
   <path d="${fill}" fill="url(#${gid})"/>
-
-  <!-- Line -->
-  <path d="${line}" fill="none" stroke="${color}" stroke-width="2.5"
+  <path d="${line}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"
         stroke-linejoin="round" stroke-linecap="round"/>
-
-  <!-- Last-point dot -->
   <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}"
-          r="4" fill="${color}" stroke="#fff" stroke-width="2"/>
-
-  <!-- Right price labels -->
-  ${pLabels.map(p=>`<text x="${W-PAD.right+5}" y="${(p.y+3.5).toFixed(1)}"
-    font-size="9.5" font-family="Inter,monospace" fill="#9aa0a6"
-    font-variant-numeric="tabular-nums">${p.label}</text>`).join('')}
-
-  <!-- Bottom time labels -->
-  ${tLabels.map((t,i)=>`<text x="${t.x.toFixed(1)}" y="${H-7}"
+          r="5" fill="${color}" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>
+  ${pLabels.map(p=>`<text x="${VW-PAD.right+3}" y="${(p.y+3).toFixed(1)}"
+    font-size="11" font-family="Inter,monospace" fill="#9aa0a6">${p.label}</text>`).join('')}
+  ${tLabels.map((t,i)=>`<text x="${t.x.toFixed(1)}" y="${VH-5}"
     text-anchor="${i===0?'start':i===4?'end':'middle'}"
-    font-size="10" font-family="Inter,sans-serif" fill="#9aa0a6">${t.label}</text>`).join('')}
+    font-size="11" font-family="Inter,sans-serif" fill="#9aa0a6">${t.label}</text>`).join('')}
 </svg>`;
 }
 

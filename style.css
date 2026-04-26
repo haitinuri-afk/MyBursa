@@ -937,12 +937,19 @@ MOBILE RESPONSIVE  (≤ 768px)
     #win-portfolio-chart .card-body {
         flex: 1 !important;
         min-height: 0 !important;
-        height: calc(100vh - 48px) !important;
+        padding: 4px 0 0 !important;
     }
-    #win-portfolio-chart .card-body > div {
-        height: 100% !important;
+    #win-portfolio-chart .card-body > div.flex-1 {
+        position: relative !important;
+        flex: 1 !important;
+        min-height: 0 !important;
+        height: auto !important;
     }
-    #win-portfolio-chart #portfolioChart { min-height: 60vh !important; }
+    #win-portfolio-chart #portfolioChart {
+        position: absolute !important;
+        inset: 0 !important;
+        overflow: visible !important;
+    }
 
     /* ── Transaction history ── */
     #win-simulator .scroll-container { max-height: none !important; overflow-y: visible !important; }
