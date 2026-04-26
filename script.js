@@ -1839,13 +1839,23 @@ function _renderPortfolioChart(el, data) {
 
 function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const dpr  = window.devicePixelRatio || 1;
-    const W    = window.innerWidth;
-    const H    = window.innerHeight - 130;
-    const PAD  = { top: 16, right: 56, bottom: 34, left: 10 };
-    const iW   = W - PAD.left - PAD.right;
-    const iH   = H - PAD.top  - PAD.bottom;
 
-    // Value range — tight, no forced zero padding at top/bottom
+    // Measure real available space from the fixed card
+    const win     = document.getElementById('win-portfolio-chart');
+    const hdr     = win?.querySelector('.window-header');
+    const sumEl   = document.getElementById('portfolio-chart-summary');
+    const cardBody = win?.querySelector('.card-body');
+    const winH    = win?.clientHeight  || window.innerHeight;
+    const hdrH    = hdr?.clientHeight  || 48;
+    const sumH    = sumEl?.offsetHeight || 30;
+
+    const W   = window.innerWidth;
+    const H   = winH - hdrH - sumH - 12;   // canvas height in CSS px
+    const PAD = { top: 16, right: 56, bottom: 34, left: 10 };
+    const iW  = W - PAD.left - PAD.right;
+    const iH  = H - PAD.top  - PAD.bottom;
+
+    // Value range
     const minV = Math.min(...pctVals);
     const maxV = Math.max(...pctVals);
     const span = maxV - minV || 0.5;
@@ -1858,14 +1868,25 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const yS    = v => PAD.top  + iH - ((v - lo) / rng) * iH;
     const zeroY = Math.min(Math.max(yS(0), PAD.top), PAD.top + iH);
 
-    // Build canvas
+    // Build canvas — attach directly to card-body to bypass flex sizing issues
+    el.innerHTML = '';
     const canvas = document.createElement('canvas');
     canvas.width  = W * dpr;
     canvas.height = H * dpr;
     canvas.style.cssText = `width:${W}px;height:${H}px;display:block`;
-    el.style.cssText = 'position:absolute;inset:0;overflow:hidden';
-    el.innerHTML = '';
-    el.appendChild(canvas);
+
+    if (cardBody) {
+        // Remove any previous canvas
+        cardBody.querySelectorAll('canvas.ptf-cv').forEach(c => c.remove());
+        canvas.className = 'ptf-cv';
+        canvas.style.cssText += ';position:absolute;left:0;bottom:0';
+        cardBody.style.position = 'relative';
+        cardBody.style.overflow = 'hidden';
+        cardBody.appendChild(canvas);
+    } else {
+        el.style.cssText = 'position:absolute;inset:0;overflow:hidden';
+        el.appendChild(canvas);
+    }
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
 
