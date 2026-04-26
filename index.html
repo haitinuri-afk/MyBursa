@@ -263,12 +263,12 @@
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
-                <div class="card-body" style="display:flex;flex-direction:column;gap:0">
-                    <div id="portfolio-chart-summary" style="text-align:center;padding:2px 0 4px"></div>
-                    <div style="flex:1;min-height:0;position:relative;overflow:hidden;border-radius:6px 6px 0 0;background:#fff">
-                        <div id="portfolioChart" style="position:absolute;inset:0"></div>
+                <div class="card-body" style="display:flex;flex-direction:column;gap:4px">
+                    <div id="portfolio-chart-summary" style="text-align:center;padding:2px 0"></div>
+                    <div id="ptf-chart-wrap" style="flex:1;min-height:0;position:relative;overflow:hidden;background:#fff;border-radius:8px">
+                        <div id="portfolioChart" style="position:absolute;top:0;left:0;right:0;bottom:24px"></div>
+                        <div id="portfolio-chart-timerange" style="position:absolute;bottom:0;left:0;right:0;height:24px;display:none;align-items:center;justify-content:space-between;padding:0 56px 0 22px;font-size:11px;color:#9aa0a6;font-family:Inter,sans-serif;direction:ltr;border-top:1px solid rgba(0,0,0,0.07)"></div>
                     </div>
-                    <div id="portfolio-chart-timerange" style="height:24px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:0 56px 0 22px;font-size:11px;color:#9aa0a6;font-family:Inter,sans-serif;direction:ltr;border-top:1px solid rgba(0,0,0,0.07);background:#fff;border-radius:0 0 6px 6px"></div>
                 </div>
             </div>
 
@@ -342,7 +342,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=14"></script>
+    <script src="script.js?v=15"></script>
     <script>
       if ('serviceWorker' in navigator) {
         // Unregister old service workers, then re-register fresh

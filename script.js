@@ -1843,30 +1843,21 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     }
 
     const isMobile = window.innerWidth <= 768;
-    const chartContainer = el.parentElement;  // the position:relative div
+    const chartWrap = document.getElementById('ptf-chart-wrap') || el.parentElement;
 
-    let W, H;
-    if (isMobile) {
-        H = Math.round(window.innerHeight * 0.72);
-        W = window.innerWidth;
-        if (chartContainer) { chartContainer.style.height = H + 'px'; chartContainer.style.flex = 'none'; }
-    } else {
-        // Derive H from the card's actual rendered height
-        const card      = document.getElementById('win-portfolio-chart');
-        const winHdr    = card?.querySelector('.window-header');
-        const summaryEl = document.getElementById('portfolio-chart-summary');
-        const cardH     = card?.offsetHeight    || Math.round(window.innerHeight * 0.55);
-        const hdrH      = winHdr?.offsetHeight  || 38;
-        const sumH      = summaryEl?.offsetHeight || 24;
-        const LBAR      = 24;   // time-label bar height
-        const CBPAD     = 16;   // card-body padding (8px × 2)
-        H = Math.max(80, cardH - hdrH - sumH - LBAR - CBPAD);
-        W = chartContainer?.offsetWidth || card?.offsetWidth || 400;
-        // Force the chart container to exactly H so el (inset:0) fills it
-        if (chartContainer) { chartContainer.style.height = H + 'px'; chartContainer.style.flex = 'none'; }
-    }
+    // H = chart area height (excluding 24px label bar at bottom)
+    // Use viewport-based heights like mobile does — bypasses all flex/offset issues
+    const H = isMobile
+        ? Math.round(window.innerHeight * 0.72)
+        : Math.round(window.innerHeight * 0.42);
 
-    el.style.cssText = `position:absolute;inset:0;overflow:hidden`;
+    // Force the wrapper to an explicit height so el (bottom:24px) gets correct offsetHeight
+    chartWrap.style.cssText = `flex:none;height:${H + 24}px;position:relative;overflow:hidden;background:#fff;border-radius:8px`;
+
+    // el occupies top portion, leaving 24px at bottom for labels
+    el.style.cssText = `position:absolute;top:0;left:0;right:0;bottom:24px;overflow:hidden`;
+
+    const W = el.offsetWidth || chartWrap.offsetWidth || (isMobile ? window.innerWidth : Math.round(window.innerWidth * 0.28));
 
     // Time labels go into the sibling #portfolio-chart-timerange (outside overflow:hidden)
     const trEl = document.getElementById('portfolio-chart-timerange');
@@ -1877,7 +1868,8 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
             const idx = Math.round(i * (data.length - 1) / (tCount - 1));
             return `<span>${fmtT(data[idx].time)}</span>`;
         }).join('');
-        trEl.style.display = 'flex';
+        // Ensure it's visible and positioned correctly (sibling of el, bottom of wrap)
+        trEl.style.cssText = `position:absolute;bottom:0;left:0;right:0;height:24px;display:flex;align-items:center;justify-content:space-between;padding:0 56px 0 22px;font-size:11px;color:#9aa0a6;font-family:Inter,sans-serif;direction:ltr;border-top:1px solid rgba(0,0,0,0.07)`;
     }
 
     const PAD = { top: 14, right: 56, bottom: 6, left: 22 };
