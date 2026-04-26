@@ -6,6 +6,8 @@ const fs           = require('fs');
 const Groq         = require('groq-sdk');
 const cors         = require('cors');
 const rateLimit    = require('express-rate-limit');
+const multer       = require('multer');
+const pdfParse     = require('pdf-parse');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -879,12 +881,35 @@ app.get('/api/rate', (req, res) => res.json({ usdIls: _usdIlsRate, usdIlsPrev: _
 // ── Agentic Workflow ──────────────────────────────────────────────────────────
 const { analyzeReport, screenStocks } = require('./agent');
 
-// POST /api/analyze-report  { report: "טקסט הדוח..." }
-app.post('/api/analyze-report', express.json(), async (req, res) => {
+// multer — memory storage, PDF only, max 20MB
+const _upload = multer({
+    storage: multer.memoryStorage(),
+    limits:  { fileSize: 20 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        if (file.mimetype === 'application/pdf') cb(null, true);
+        else cb(new Error('קובץ חייב להיות PDF'));
+    },
+});
+
+// POST /api/analyze-report
+// Accepts: JSON { text } OR multipart/form-data { file: PDF, text? }
+app.post('/api/analyze-report', _upload.single('file'), express.json(), async (req, res) => {
     try {
-        const { report } = req.body ?? {};
-        if (!report) return res.status(400).json({ error: 'שדה report חסר' });
-        const result = await analyzeReport(report, {
+        let reportText = '';
+
+        if (req.file) {
+            // PDF uploaded — extract text
+            const parsed = await pdfParse(req.file.buffer);
+            reportText = parsed.text?.trim() ?? '';
+            if (!reportText) return res.status(422).json({ error: 'לא ניתן לחלץ טקסט מה-PDF' });
+        } else {
+            // JSON body
+            const body = req.body ?? {};
+            reportText = (body.text ?? body.report ?? '').trim();
+            if (!reportText) return res.status(400).json({ error: 'יש לשלוח טקסט או קובץ PDF' });
+        }
+
+        const result = await analyzeReport(reportText, {
             groq:    _groq,
             ragCol:  _ragCol,
             usdRate: _usdIlsRate,

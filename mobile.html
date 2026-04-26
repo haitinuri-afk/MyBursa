@@ -221,6 +221,10 @@
 </div>
 
 <div id="input-bar">
+  <label id="pdf-btn" title="העלה דוח PDF" style="width:40px;height:40px;border-radius:50%;background:var(--surface);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.1rem;flex-shrink:0">
+    📄
+    <input type="file" accept="application/pdf" style="display:none" onchange="uploadPDF(this)">
+  </label>
   <textarea id="question" placeholder="שאל שאלה..." rows="1"></textarea>
   <button id="send-btn" onclick="sendQuestion()">➤</button>
 </div>
@@ -354,6 +358,86 @@ function saveServer() {
 
 // Show server button label
 document.getElementById('server-btn').title = SERVER || 'לא מוגדר';
+
+// ── PDF Upload ────────────────────────────────────────────────────────────────
+async function uploadPDF(input) {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = '';   // reset so same file can be re-selected
+
+    if (!SERVER) { openModal(); return; }
+
+    const btn = document.getElementById('pdf-btn');
+    btn.style.opacity = '0.5';
+    btn.style.pointerEvents = 'none';
+
+    addMsg(`📄 מנתח: ${file.name}`, 'system');
+    const typing = addTyping();
+
+    try {
+        const form = new FormData();
+        form.append('file', file);
+
+        const res = await fetch(`${SERVER}/api/analyze-report`, {
+            method: 'POST',
+            body: form,
+            signal: AbortSignal.timeout(60_000),
+        });
+
+        typing.remove();
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            addMsg(err.error || `שגיאה ${res.status}`, 'error');
+            return;
+        }
+
+        const data = await res.json();
+        const reply = _formatReportResult(data);
+        addMsg(reply, 'ai');
+
+    } catch(e) {
+        typing.remove();
+        if (e.name === 'TimeoutError') addMsg('הניתוח לקח יותר מדי זמן. נסה שוב.', 'error');
+        else addMsg(`שגיאה: ${e.message}`, 'error');
+    } finally {
+        btn.style.opacity = '';
+        btn.style.pointerEvents = '';
+    }
+}
+
+function _formatReportResult(a) {
+    if (!a || typeof a !== 'object') return JSON.stringify(a);
+    const rec = a.recommendation ?? '—';
+    const conf = a.confidence ?? 0;
+    const m = a.metrics ?? {};
+    const metric = (label, val, sfx='') => val != null ? `${label}: ${val}${sfx}` : null;
+    const metrics = [
+        metric('הכנסות', m.revenue != null ? Number(m.revenue).toLocaleString('he-IL') : null, ' ₪'),
+        metric('EBITDA', m.ebitda != null ? Number(m.ebitda).toLocaleString('he-IL') : null, ' ₪'),
+        metric('רווח נקי', m.netProfit != null ? Number(m.netProfit).toLocaleString('he-IL') : null, ' ₪'),
+        metric('EPS', m.eps),
+        metric('P/E', m.peRatio),
+        metric('ROE', m.roe, '%'),
+    ].filter(Boolean).join(' | ');
+
+    const swot = [
+        a.swot?.strengths?.length   ? `💪 ${a.swot.strengths.join(', ')}`      : null,
+        a.swot?.weaknesses?.length  ? `⚠️ ${a.swot.weaknesses.join(', ')}`     : null,
+        a.swot?.opportunities?.length ? `🚀 ${a.swot.opportunities.join(', ')}` : null,
+        a.swot?.threats?.length     ? `🔴 ${a.swot.threats.join(', ')}`        : null,
+    ].filter(Boolean).join('\n');
+
+    const recIcon = rec === 'קנייה' ? '🟢' : rec === 'מכירה' ? '🔴' : '🟡';
+    return [
+        `**${a.company ?? '—'}** ${a.period ?? ''}`,
+        `${recIcon} **${rec}** (ביטחון: ${conf}%)`,
+        a.summary ?? '',
+        metrics ? `\n${metrics}` : '',
+        swot ? `\n${swot}` : '',
+        a.fxImpact?.explanation ? `\n💱 ${a.fxImpact.explanation}` : '',
+    ].filter(Boolean).join('\n');
+}
 </script>
 </body>
 </html>
