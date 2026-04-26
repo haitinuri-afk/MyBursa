@@ -1838,77 +1838,127 @@ function _renderPortfolioChart(el, data) {
 }
 
 function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
-    // Virtual coordinate space — SVG scales to fill container via width/height 100%
-    const VW = 400, VH = 280;
-    const PAD = { top: 14, right: 52, bottom: 36, left: 8 };
-    const iW  = VW - PAD.left - PAD.right;
-    const iH  = VH - PAD.top  - PAD.bottom;
+    const dpr  = window.devicePixelRatio || 1;
+    const W    = window.innerWidth;
+    const H    = window.innerHeight - 130;
+    const PAD  = { top: 16, right: 56, bottom: 34, left: 10 };
+    const iW   = W - PAD.left - PAD.right;
+    const iH   = H - PAD.top  - PAD.bottom;
 
-    // Value range — tight fit around data, zero shown as line but not forcing big blank space
+    // Value range — tight, no forced zero padding at top/bottom
     const minV = Math.min(...pctVals);
     const maxV = Math.max(...pctVals);
     const span = maxV - minV || 0.5;
-    const vPad = span * 0.12 + 0.1;
+    const vPad = span * 0.12 + 0.08;
     const lo   = minV - vPad;
-    const hi   = maxV + vPad * 0.4;   // small top padding only
+    const hi   = maxV + vPad * 0.5;
     const rng  = hi - lo;
 
-    const xS = i => PAD.left + (i / (pctVals.length - 1)) * iW;
-    const yS = v => PAD.top  + iH - ((v - lo) / rng) * iH;
+    const xS    = i => PAD.left + (i / (pctVals.length - 1)) * iW;
+    const yS    = v => PAD.top  + iH - ((v - lo) / rng) * iH;
     const zeroY = Math.min(Math.max(yS(0), PAD.top), PAD.top + iH);
 
-    // Smooth bezier path
-    const pts = pctVals.map((v, i) => [xS(i), yS(v)]);
-    let line  = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
-    for (let i = 1; i < pts.length; i++) {
-        const cpx = ((pts[i-1][0] + pts[i][0]) / 2).toFixed(1);
-        line += ` C${cpx},${pts[i-1][1].toFixed(1)} ${cpx},${pts[i][1].toFixed(1)} ${pts[i][0].toFixed(1)},${pts[i][1].toFixed(1)}`;
-    }
-    const fill = line + ` L${pts[pts.length-1][0].toFixed(1)},${zeroY.toFixed(1)} L${pts[0][0].toFixed(1)},${zeroY.toFixed(1)}Z`;
+    // Build canvas
+    const canvas = document.createElement('canvas');
+    canvas.width  = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.cssText = `width:${W}px;height:${H}px;display:block`;
+    el.style.cssText = 'position:absolute;inset:0;overflow:hidden';
+    el.innerHTML = '';
+    el.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
 
-    // Time labels
-    const fmtT = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
-    const tLabels = Array.from({ length: 5 }, (_, i) => {
-        const idx = Math.round(i * (data.length-1) / 4);
-        return { x: xS(idx), label: fmtT(data[idx].time) };
+    // Grid lines (3 price levels)
+    const pLevels = [hi, (hi+lo)/2, lo];
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+    ctx.lineWidth = 1;
+    pLevels.forEach(v => {
+        const y = yS(v);
+        ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(W - PAD.right, y); ctx.stroke();
     });
 
-    // Price labels
-    const pLabels = [hi, (hi+lo)/2, lo].map(v => ({ y: yS(v), label: `${v>=0?'+':''}${v.toFixed(1)}%` }));
+    // Zero line
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(PAD.left, zeroY); ctx.lineTo(W - PAD.right, zeroY); ctx.stroke();
+    ctx.setLineDash([]);
 
-    const gid = `g${Date.now()}`;
-    // Gradient: opaque at the data line, transparent toward the zero baseline
-    // For positive charts (fill goes DOWN from line to zero): gradient top→bottom
-    // For negative charts (fill goes UP from line to zero): gradient bottom→top
-    const [gy1, gy2] = isUp ? ['0','1'] : ['1','0'];
+    // Build smooth path points
+    const pts = pctVals.map((v, i) => [xS(i), yS(v)]);
 
-    // Restore absolute positioning — let CSS control container size, SVG fills it
-    el.style.cssText = 'position:absolute;inset:0;overflow:visible';
+    // Fill area (line → zero baseline)
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) {
+        const cpx = (pts[i-1][0] + pts[i][0]) / 2;
+        ctx.bezierCurveTo(cpx, pts[i-1][1], cpx, pts[i][1], pts[i][0], pts[i][1]);
+    }
+    ctx.lineTo(pts[pts.length-1][0], zeroY);
+    ctx.lineTo(pts[0][0], zeroY);
+    ctx.closePath();
+    // Gradient: strong at line, transparent at zero
+    const grad = ctx.createLinearGradient(0, isUp ? zeroY : PAD.top + iH, 0, isUp ? PAD.top : zeroY);
+    grad.addColorStop(0,   color.replace('#', 'rgba(').replace(/(..)(..)(..)/, (_, r, g, b) =>
+        `${parseInt(r,16)},${parseInt(g,16)},${parseInt(b,16)}`) + ',0.35)');
+    grad.addColorStop(1, color.replace('#', 'rgba(').replace(/(..)(..)(..)/, (_, r, g, b) =>
+        `${parseInt(r,16)},${parseInt(g,16)},${parseInt(b,16)}`) + ',0.01)');
+
+    // Simple color conversion
+    const rgba = (hex, a) => {
+        const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+        return `rgba(${r},${g},${b},${a})`;
+    };
+    const fillGrad = ctx.createLinearGradient(0, isUp ? zeroY : PAD.top+iH, 0, isUp ? PAD.top : zeroY);
+    fillGrad.addColorStop(0, rgba(color, 0.35));
+    fillGrad.addColorStop(1, rgba(color, 0.01));
+    ctx.fillStyle = fillGrad;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) {
+        const cpx = (pts[i-1][0] + pts[i][0]) / 2;
+        ctx.bezierCurveTo(cpx, pts[i-1][1], cpx, pts[i][1], pts[i][0], pts[i][1]);
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // Last point dot
+    const lx = pts[pts.length-1][0], ly = pts[pts.length-1][1];
+    ctx.beginPath(); ctx.arc(lx, ly, 4, 0, Math.PI*2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+
+    // Price labels (right axis)
+    ctx.font = '11px Inter, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#9aa0a6';
+    pLevels.forEach(v => {
+        const y = yS(v);
+        const lbl = `${v>=0?'+':''}${v.toFixed(1)}%`;
+        ctx.fillText(lbl, W - PAD.right + 4, y + 4);
+    });
+
+    // Time labels (bottom)
+    const fmtT = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillStyle = '#9aa0a6';
+    for (let i = 0; i <= 4; i++) {
+        const idx = Math.round(i * (data.length-1) / 4);
+        const lbl = fmtT(data[idx].time);
+        const x   = xS(idx);
+        ctx.textAlign = i === 0 ? 'left' : i === 4 ? 'right' : 'center';
+        ctx.fillText(lbl, x, H - 8);
+    }
+
     const trEl = document.getElementById('portfolio-chart-timerange');
     if (trEl) trEl.style.display = 'none';
-
-    el.innerHTML = `
-<svg width="100%" height="100%" viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none" style="display:block;overflow:visible">
-  <defs>
-    <linearGradient id="${gid}" x1="0" y1="${gy1}" x2="0" y2="${gy2}">
-      <stop offset="0%"   stop-color="${color}" stop-opacity="0.4"/>
-      <stop offset="100%" stop-color="${color}" stop-opacity="0.01"/>
-    </linearGradient>
-  </defs>
-  ${pLabels.map(p=>`<line x1="${PAD.left}" y1="${p.y.toFixed(1)}" x2="${VW-PAD.right}" y2="${p.y.toFixed(1)}" stroke="rgba(0,0,0,0.055)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join('')}
-  <line x1="${PAD.left}" y1="${zeroY.toFixed(1)}" x2="${VW-PAD.right}" y2="${zeroY.toFixed(1)}"
-        stroke="rgba(0,0,0,0.18)" stroke-width="1" stroke-dasharray="4,3" vector-effect="non-scaling-stroke"/>
-  <path d="${fill}" fill="url(#${gid})"/>
-  <path d="${line}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"
-        stroke-linejoin="round" stroke-linecap="round"/>
-  <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}"
-          r="5" fill="${color}" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>
-  ${pLabels.map(p=>`<text x="${VW-PAD.right+3}" y="${(p.y+3).toFixed(1)}"
-    font-size="11" font-family="Inter,monospace" fill="#9aa0a6">${p.label}</text>`).join('')}
-  ${tLabels.map((t,i)=>`<text x="${t.x.toFixed(1)}" y="${VH-10}"
-    text-anchor="${i===0?'start':i===4?'end':'middle'}"
-    font-size="11" font-family="Inter,sans-serif" fill="#9aa0a6">${t.label}</text>`).join('')}
-</svg>`;
 }
 
 function togglePortfolioChart() {
