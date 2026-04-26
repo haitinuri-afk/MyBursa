@@ -1788,7 +1788,7 @@ function _renderPortfolioChart(el, data) {
         height: Math.max((el.clientHeight || 280) - 32, 200),
         layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
         grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
-        rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)' },
+        rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.08, bottom: 0.04 } },
         timeScale: { visible: false },
         handleScroll: true, handleScale: true,
     });
