@@ -1836,19 +1836,37 @@ function _renderPortfolioChart(el, data) {
 }
 
 function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
-    const isMobile = window.innerWidth <= 768;
-
-    el.style.cssText = `position:absolute;inset:0;overflow:hidden`;
-    const flex1 = el.parentElement;
-
-    if (isMobile && flex1) {
-        const mH = Math.round(window.innerHeight * 0.72);
-        flex1.style.height = mH + 'px';
-        flex1.style.flex = 'none';
+    // Ensure chronological order (oldest first = left side of chart)
+    if (data.length > 1 && data[0].time > data[data.length - 1].time) {
+        data    = data.slice().reverse();
+        pctVals = pctVals.slice().reverse();
     }
 
-    const W = el.offsetWidth  || el.parentElement?.offsetWidth  || 400;
-    const H = el.offsetHeight || el.parentElement?.offsetHeight || Math.round(window.innerHeight * 0.42);
+    const isMobile = window.innerWidth <= 768;
+    const chartContainer = el.parentElement;  // the position:relative div
+
+    let W, H;
+    if (isMobile) {
+        H = Math.round(window.innerHeight * 0.72);
+        W = window.innerWidth;
+        if (chartContainer) { chartContainer.style.height = H + 'px'; chartContainer.style.flex = 'none'; }
+    } else {
+        // Derive H from the card's actual rendered height
+        const card      = document.getElementById('win-portfolio-chart');
+        const winHdr    = card?.querySelector('.window-header');
+        const summaryEl = document.getElementById('portfolio-chart-summary');
+        const cardH     = card?.offsetHeight    || Math.round(window.innerHeight * 0.55);
+        const hdrH      = winHdr?.offsetHeight  || 38;
+        const sumH      = summaryEl?.offsetHeight || 24;
+        const LBAR      = 24;   // time-label bar height
+        const CBPAD     = 16;   // card-body padding (8px × 2)
+        H = Math.max(80, cardH - hdrH - sumH - LBAR - CBPAD);
+        W = chartContainer?.offsetWidth || card?.offsetWidth || 400;
+        // Force the chart container to exactly H so el (inset:0) fills it
+        if (chartContainer) { chartContainer.style.height = H + 'px'; chartContainer.style.flex = 'none'; }
+    }
+
+    el.style.cssText = `position:absolute;inset:0;overflow:hidden`;
 
     // Time labels go into the sibling #portfolio-chart-timerange (outside overflow:hidden)
     const trEl = document.getElementById('portfolio-chart-timerange');
