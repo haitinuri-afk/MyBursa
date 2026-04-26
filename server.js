@@ -1050,7 +1050,7 @@ app.listen(PORT, async () => {
     setInterval(refreshFxRates, 3600_000);
 
     // ── Maya cron: every hour Sun–Thu 10:00–18:00 Israel time ─────────────────
-    cron.schedule('0 10-18 * * 0-4', async () => {
+    cron.schedule('0 10-18 * * 1-5', async () => {
         console.log('[maya] Hourly scan triggered by cron');
         try {
             const results = await runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate });
@@ -1060,5 +1060,5 @@ app.listen(PORT, async () => {
         }
     }, { timezone: 'Asia/Jerusalem' });
 
-    console.log('[maya] Cron scheduled: every hour Sun–Thu 10:00–18:00 Israel time');
+    console.log('[maya] Cron scheduled: every hour Mon–Fri 10:00–18:00 Israel time');
 });
