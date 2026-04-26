@@ -1845,32 +1845,33 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const isMobile = window.innerWidth <= 768;
     const chartWrap = document.getElementById('ptf-chart-wrap') || el.parentElement;
 
-    // H = chart area height (excluding 24px label bar at bottom)
-    // Use viewport-based heights like mobile does — bypasses all flex/offset issues
+    const LBAR = 24; // time-label bar height px
     const H = isMobile
         ? Math.round(window.innerHeight * 0.72)
         : Math.round(window.innerHeight * 0.42);
 
-    // Force the wrapper to an explicit height so el (bottom:24px) gets correct offsetHeight
-    chartWrap.style.cssText = `flex:none;height:${H + 24}px;position:relative;overflow:hidden;background:#fff;border-radius:8px`;
+    // Give chartWrap an explicit height; read its width BEFORE restyling el
+    chartWrap.style.height    = (H + LBAR) + 'px';
+    chartWrap.style.flex      = 'none';
+    chartWrap.style.position  = 'relative';
+    chartWrap.style.overflow  = 'hidden';
 
-    // el occupies top portion, leaving 24px at bottom for labels
-    el.style.cssText = `position:absolute;top:0;left:0;right:0;bottom:24px;overflow:hidden`;
+    const W = chartWrap.offsetWidth || (isMobile ? window.innerWidth : 400);
 
-    const W = el.offsetWidth || chartWrap.offsetWidth || (isMobile ? window.innerWidth : Math.round(window.innerWidth * 0.28));
+    // el fills the full wrap area; labels sit inside at the bottom
+    el.style.cssText = `position:absolute;top:0;left:0;width:${W}px;height:${H + LBAR}px`;
 
-    // Time labels go into the sibling #portfolio-chart-timerange (outside overflow:hidden)
-    const trEl = document.getElementById('portfolio-chart-timerange');
+    // Hide the old sibling timerange div (no longer used)
+    const oldTr = document.getElementById('portfolio-chart-timerange');
+    if (oldTr) oldTr.style.display = 'none';
+
+    // Time labels
     const fmtT = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
     const tCount = Math.min(5, data.length);
-    if (trEl) {
-        trEl.innerHTML = Array.from({length: tCount}, (_, i) => {
-            const idx = Math.round(i * (data.length - 1) / (tCount - 1));
-            return `<span>${fmtT(data[idx].time)}</span>`;
-        }).join('');
-        // Ensure it's visible and positioned correctly (sibling of el, bottom of wrap)
-        trEl.style.cssText = `position:absolute;bottom:0;left:0;right:0;height:24px;display:flex;align-items:center;justify-content:space-between;padding:0 56px 0 22px;font-size:11px;color:#9aa0a6;font-family:Inter,sans-serif;direction:ltr;border-top:1px solid rgba(0,0,0,0.07)`;
-    }
+    const tSpans = Array.from({length: tCount}, (_, i) => {
+        const idx = Math.round(i * (data.length - 1) / (tCount - 1));
+        return `<span>${fmtT(data[idx].time)}</span>`;
+    }).join('');
 
     const PAD = { top: 14, right: 56, bottom: 6, left: 22 };
     const iW  = W - PAD.left - PAD.right;
@@ -1901,7 +1902,8 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const gY1  = Math.min(...pts.map(p=>p[1]));
     const gY2  = baseY;
 
-    el.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block">
+    el.innerHTML = `
+<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="position:absolute;top:0;left:0;display:block">
   <defs>
     <linearGradient id="${gid}" x1="0" y1="${gY1}" x2="0" y2="${gY2}" gradientUnits="userSpaceOnUse">
       <stop offset="0%"   stop-color="${color}" stop-opacity="0.38"/>
@@ -1914,7 +1916,8 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
   <path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
   <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="5" fill="${color}" stroke="#fff" stroke-width="2"/>
   ${pLabels.map(p=>`<text x="${(W-PAD.right+4).toFixed(1)}" y="${(p.y+4).toFixed(1)}" font-size="11" font-family="Inter,sans-serif" fill="#9aa0a6">${p.label}</text>`).join('')}
-</svg>`;
+</svg>
+<div style="position:absolute;top:${H}px;left:0;width:${W}px;height:${LBAR}px;display:flex;align-items:center;justify-content:space-between;padding:0 ${PAD.right}px 0 ${PAD.left}px;font-size:11px;color:#9aa0a6;font-family:Inter,sans-serif;direction:ltr;border-top:1px solid rgba(0,0,0,0.08);box-sizing:border-box">${tSpans}</div>`;
 }
 
 function togglePortfolioChart() {
