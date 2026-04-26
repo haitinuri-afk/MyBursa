@@ -1807,15 +1807,6 @@ function _renderPortfolioChart(el, data) {
     const tsShift    = todayBase - dataBase;
     const pctData    = data.map((p, i) => ({ time: p.time + tsShift, value: pctVals[i] }));
 
-    // Build time labels overlay BEFORE LW (so it's in the DOM)
-    const fmtT2 = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
-    const t0 = data[0].time, t1 = data[data.length-1].time;
-    const tlabels = Array.from({length:5}, (_,i) => fmtT2(t0 + Math.round((t1-t0)*i/4)));
-    const labelsBar = document.createElement('div');
-    labelsBar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;height:22px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;font-size:0.65rem;color:#9aa0a6;pointer-events:none;direction:ltr;z-index:5;font-family:Inter,sans-serif;font-variant-numeric:tabular-nums;border-top:1px solid rgba(0,0,0,0.06);background:#fff';
-    labelsBar.innerHTML = tlabels.map(l => `<span>${l}</span>`).join('');
-    el.appendChild(labelsBar);
-
     // LW renders inside el; leave 22px at bottom for our labels bar
     const elH = el.clientHeight || 280;
     _lwPortfolio = LightweightCharts.createChart(el, {
@@ -1837,6 +1828,14 @@ function _renderPortfolioChart(el, data) {
     series.setData(pctData);
     series.createPriceLine({ price: 0, color: 'rgba(0,0,0,0.15)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
     _lwPortfolio.timeScale().fitContent();
+
+    // Append time labels AFTER LW init (LW clears el on createChart)
+    const fmtT2 = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
+    const t0 = data[0].time, t1 = data[data.length-1].time;
+    const labelsBar = document.createElement('div');
+    labelsBar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;height:22px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;font-size:0.65rem;color:#9aa0a6;pointer-events:none;direction:ltr;z-index:5;font-family:Inter,sans-serif;font-variant-numeric:tabular-nums;border-top:1px solid rgba(0,0,0,0.06);background:#fff';
+    labelsBar.innerHTML = Array.from({length:5}, (_,i) => `<span>${fmtT2(t0 + Math.round((t1-t0)*i/4))}</span>`).join('');
+    el.appendChild(labelsBar);
 }
 
 function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
@@ -1862,7 +1861,9 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
         const cpx = ((pts[i-1][0] + pts[i][0]) / 2).toFixed(1);
         line += ` C${cpx},${pts[i-1][1].toFixed(1)} ${cpx},${pts[i][1].toFixed(1)} ${pts[i][0].toFixed(1)},${pts[i][1].toFixed(1)}`;
     }
-    const fill = line + ` L${pts[pts.length-1][0].toFixed(1)},${zeroY.toFixed(1)} L${pts[0][0].toFixed(1)},${zeroY.toFixed(1)}Z`;
+    // Positive: fill toward zero below line. Negative: fill toward chart bottom below line.
+    const baseY = isUp ? zeroY : (PAD.top + iH);
+    const fill = line + ` L${pts[pts.length-1][0].toFixed(1)},${baseY.toFixed(1)} L${pts[0][0].toFixed(1)},${baseY.toFixed(1)}Z`;
 
     const fmtT = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
     const tLabels = Array.from({length:5}, (_,i) => {
@@ -1871,8 +1872,8 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     });
     const pLabels = [hi,(hi+lo)/2,lo].map(v => ({ y: yS(v), label: `${v>=0?'+':''}${v.toFixed(1)}%` }));
     const gid = `g${Date.now()}`;
-    // Gradient: opaque at data line, transparent toward zero
-    const [gy1, gy2] = isUp ? ['0','1'] : ['1','0'];
+    // Gradient: always opaque at line (top of fill), transparent at baseline (bottom)
+    const [gy1, gy2] = ['0', '1'];
 
     // Explicit pixel dimensions — SVG scales to fill screen, no flex height issues
     const W = window.innerWidth;
