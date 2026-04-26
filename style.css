@@ -935,15 +935,15 @@ MOBILE RESPONSIVE  (≤ 768px)
         border-radius: 0 !important;
     }
     #win-portfolio-chart .card-body {
-        flex: 1 !important;
+        flex: 1 1 0px !important;
         min-height: 0 !important;
+        overflow: hidden !important;
         padding: 4px 0 0 !important;
     }
-    #win-portfolio-chart .card-body > div.flex-1 {
-        position: relative !important;
-        flex: 1 !important;
+    #win-portfolio-chart .card-body > .flex-1 {
+        flex: 1 1 0px !important;
         min-height: 0 !important;
-        height: auto !important;
+        position: relative !important;
     }
     #win-portfolio-chart #portfolioChart {
         position: absolute !important;
