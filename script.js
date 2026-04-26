@@ -1840,17 +1840,10 @@ function _renderPortfolioChart(el, data) {
 function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const dpr  = window.devicePixelRatio || 1;
 
-    // Measure real available space from the fixed card
-    const win     = document.getElementById('win-portfolio-chart');
-    const hdr     = win?.querySelector('.window-header');
-    const sumEl   = document.getElementById('portfolio-chart-summary');
+    const win      = document.getElementById('win-portfolio-chart');
     const cardBody = win?.querySelector('.card-body');
-    const winH    = win?.clientHeight  || window.innerHeight;
-    const hdrH    = hdr?.clientHeight  || 48;
-    const sumH    = sumEl?.offsetHeight || 30;
-
-    const W   = window.innerWidth;
-    const H   = winH - hdrH - sumH - 12;   // canvas height in CSS px
+    const W = window.innerWidth;
+    const H = Math.floor(window.innerHeight * 0.72); // safe fraction, always positive
     const PAD = { top: 16, right: 56, bottom: 34, left: 10 };
     const iW  = W - PAD.left - PAD.right;
     const iH  = H - PAD.top  - PAD.bottom;
