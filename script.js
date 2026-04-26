@@ -1843,10 +1843,6 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const win      = document.getElementById('win-portfolio-chart');
     const cardBody = win?.querySelector('.card-body');
     const W = window.innerWidth;
-    const H = Math.floor(window.innerHeight * 0.72); // safe fraction, always positive
-    const PAD = { top: 16, right: 56, bottom: 34, left: 10 };
-    const iW  = W - PAD.left - PAD.right;
-    const iH  = H - PAD.top  - PAD.bottom;
 
     // Value range
     const minV = Math.min(...pctVals);
@@ -1861,25 +1857,28 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const yS    = v => PAD.top  + iH - ((v - lo) / rng) * iH;
     const zeroY = Math.min(Math.max(yS(0), PAD.top), PAD.top + iH);
 
-    // Build canvas — attach directly to card-body to bypass flex sizing issues
+    // Canvas fixed on body — bypasses all flex/overflow issues
+    document.getElementById('ptf-cv')?.remove();
     el.innerHTML = '';
-    const canvas = document.createElement('canvas');
-    canvas.width  = W * dpr;
-    canvas.height = H * dpr;
-    canvas.style.cssText = `width:${W}px;height:${H}px;display:block`;
 
-    if (cardBody) {
-        // Remove any previous canvas
-        cardBody.querySelectorAll('canvas.ptf-cv').forEach(c => c.remove());
-        canvas.className = 'ptf-cv';
-        canvas.style.cssText += ';position:absolute;left:0;bottom:0';
-        cardBody.style.position = 'relative';
-        cardBody.style.overflow = 'hidden';
-        cardBody.appendChild(canvas);
-    } else {
-        el.style.cssText = 'position:absolute;inset:0;overflow:hidden';
-        el.appendChild(canvas);
-    }
+    // Find top offset: below the window header + summary
+    const winEl  = document.getElementById('win-portfolio-chart');
+    const hdrEl  = winEl?.querySelector('.window-header');
+    const sumEl2 = document.getElementById('portfolio-chart-summary');
+    const topOffset = (hdrEl?.getBoundingClientRect().bottom ?? 48) +
+                      (sumEl2?.offsetHeight ?? 30) + 4;
+    const canH = window.innerHeight - topOffset - 4;
+
+    const canvas = document.createElement('canvas');
+    canvas.id = 'ptf-cv';
+    canvas.width  = W * dpr;
+    canvas.height = canH * dpr;
+    canvas.style.cssText = `position:fixed;left:0;top:${topOffset}px;width:${W}px;height:${canH}px;z-index:210;pointer-events:none`;
+    document.body.appendChild(canvas);
+
+    const PAD = { top: 16, right: 56, bottom: 34, left: 10 };
+    const iW  = W   - PAD.left - PAD.right;
+    const iH  = canH - PAD.top  - PAD.bottom;
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
 
@@ -1962,7 +1961,7 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
         const lbl = fmtT(data[idx].time);
         const x   = xS(idx);
         ctx.textAlign = i === 0 ? 'left' : i === 4 ? 'right' : 'center';
-        ctx.fillText(lbl, x, H - 8);
+        ctx.fillText(lbl, x, canH - 8);
     }
 
     const trEl = document.getElementById('portfolio-chart-timerange');
@@ -1983,6 +1982,7 @@ function togglePortfolioChart() {
     } else {
         win.style.display = 'none';
         win.classList.add('mob-hidden');
+        document.getElementById('ptf-cv')?.remove();
     }
 }
 
