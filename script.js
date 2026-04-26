@@ -1837,22 +1837,34 @@ function _renderPortfolioChart(el, data) {
 
 function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const isMobile = window.innerWidth <= 768;
-    const W = isMobile ? window.innerWidth : (el.offsetWidth  || el.parentElement?.offsetWidth  || 400);
-    const H = isMobile ? Math.round(window.innerHeight * 0.72) : (el.offsetHeight || el.parentElement?.offsetHeight || Math.round(window.innerHeight * 0.42));
 
-    // flex column: SVG fills top, label bar is normal-flow at bottom (never clipped)
-    el.style.cssText = `position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden`;
+    el.style.cssText = `position:absolute;inset:0;overflow:hidden`;
     const flex1 = el.parentElement;
-    if (isMobile && flex1) { flex1.style.height = H + 'px'; flex1.style.flex = 'none'; }
 
+    if (isMobile && flex1) {
+        const mH = Math.round(window.innerHeight * 0.72);
+        flex1.style.height = mH + 'px';
+        flex1.style.flex = 'none';
+    }
+
+    const W = el.offsetWidth  || el.parentElement?.offsetWidth  || 400;
+    const H = el.offsetHeight || el.parentElement?.offsetHeight || Math.round(window.innerHeight * 0.42);
+
+    // Time labels go into the sibling #portfolio-chart-timerange (outside overflow:hidden)
     const trEl = document.getElementById('portfolio-chart-timerange');
-    if (trEl) trEl.style.display = 'none';
+    const fmtT = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
+    const tCount = Math.min(5, data.length);
+    if (trEl) {
+        trEl.innerHTML = Array.from({length: tCount}, (_, i) => {
+            const idx = Math.round(i * (data.length - 1) / (tCount - 1));
+            return `<span>${fmtT(data[idx].time)}</span>`;
+        }).join('');
+        trEl.style.display = 'flex';
+    }
 
-    const LBAR = 22;                          // label bar height px
-    const cH   = H - LBAR;                   // chart SVG height
-    const PAD  = { top: 14, right: 56, bottom: 6, left: 22 };
-    const iW   = W - PAD.left - PAD.right;
-    const iH   = cH - PAD.top - PAD.bottom;
+    const PAD = { top: 14, right: 56, bottom: 6, left: 22 };
+    const iW  = W - PAD.left - PAD.right;
+    const iH  = H - PAD.top  - PAD.bottom;
 
     const minV = Math.min(...pctVals);
     const maxV = Math.max(...pctVals);
@@ -1874,21 +1886,14 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const baseY = isUp ? zeroY : (PAD.top + iH);
     const fill  = line + ` L${pts[pts.length-1][0].toFixed(1)},${baseY.toFixed(1)} L${pts[0][0].toFixed(1)},${baseY.toFixed(1)}Z`;
 
-    const fmtT  = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
-    const tCount = Math.min(5, data.length);
-    const tLabels = Array.from({length: tCount}, (_, i) => {
-        const idx = Math.round(i * (data.length - 1) / (tCount - 1));
-        return fmtT(data[idx].time);
-    });
     const pLabels = [hi, (hi+lo)/2, lo].map(v => ({ y: yS(v), label: `${v>=0?'+':''}${v.toFixed(1)}%` }));
-    const gid = `pg${Date.now()}`;
-    const gradY1 = Math.min(...pts.map(p=>p[1]));
-    const gradY2 = baseY;
+    const gid  = `pg${Date.now()}`;
+    const gY1  = Math.min(...pts.map(p=>p[1]));
+    const gY2  = baseY;
 
-    el.innerHTML = `
-<svg width="${W}" height="${cH}" viewBox="0 0 ${W} ${cH}" style="display:block;flex-shrink:0">
+    el.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block">
   <defs>
-    <linearGradient id="${gid}" x1="0" y1="${gradY1}" x2="0" y2="${gradY2}" gradientUnits="userSpaceOnUse">
+    <linearGradient id="${gid}" x1="0" y1="${gY1}" x2="0" y2="${gY2}" gradientUnits="userSpaceOnUse">
       <stop offset="0%"   stop-color="${color}" stop-opacity="0.38"/>
       <stop offset="100%" stop-color="${color}" stop-opacity="0.01"/>
     </linearGradient>
@@ -1899,8 +1904,7 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
   <path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
   <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="5" fill="${color}" stroke="#fff" stroke-width="2"/>
   ${pLabels.map(p=>`<text x="${(W-PAD.right+4).toFixed(1)}" y="${(p.y+4).toFixed(1)}" font-size="11" font-family="Inter,sans-serif" fill="#9aa0a6">${p.label}</text>`).join('')}
-</svg>
-<div style="height:${LBAR}px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:0 ${PAD.right}px 0 ${PAD.left}px;font-size:11px;color:#9aa0a6;font-family:Inter,sans-serif;direction:ltr;border-top:1px solid rgba(0,0,0,0.06)">${tLabels.map(t=>`<span>${t}</span>`).join('')}</div>`;
+</svg>`;
 }
 
 function togglePortfolioChart() {
