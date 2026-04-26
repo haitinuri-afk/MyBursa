@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body class="bg-white text-gray-900">
     <div class="main-wrapper">
@@ -42,6 +42,7 @@
 
             <!-- Actions -->
             <div class="hdr-actions" dir="ltr">
+                <button onclick="toggleReportPanel()" class="hdr-btn" id="report-toggle-btn">📋 דוח</button>
                 <button onclick="resetWindows()" class="hdr-btn">&#8635; Reset</button>
             </div>
         </header>
@@ -66,6 +67,10 @@
             <button class="mob-tab" data-tab="ai" onclick="switchMobileTab('ai')">
                 <span class="mob-tab-icon">🤖</span>
                 <span class="mob-tab-label">AI</span>
+            </button>
+            <button class="mob-tab" data-tab="report" onclick="switchMobileTab('report')">
+                <span class="mob-tab-icon">📋</span>
+                <span class="mob-tab-label">דוח</span>
             </button>
         </nav>
 
@@ -127,6 +132,7 @@
                             <tbody id="stock-list"></tbody>
                         </table>
                     </div>
+                    <button id="stock-show-more-btn" onclick="_stockShowAll=!_stockShowAll;updateStockList()" style="display:none;margin-top:4px;font-size:10px;padding:4px 0;width:100%;background:#f1f3f4;border:1px solid rgba(0,0,0,0.12);border-radius:8px;color:#1a73e8;font-weight:600;cursor:pointer"></button>
                     <button id="refresh-btn" style="margin-top:4px;font-size:10px;padding:4px 0;width:100%;background:#f1f3f4;border:1px solid rgba(0,0,0,0.12);border-radius:8px;color:#3c4043;cursor:pointer">רענן</button>
                 </div>
             </div>
@@ -138,6 +144,7 @@
                         <bdi style="font-size:0.8rem;color:#202124;font-weight:600;font-family:inherit" id="main-chart-title">לאומי</bdi>
                         <span id="main-chart-price" style="font-family:'Inter',sans-serif;font-size:13px;font-weight:600;color:#202124;font-variant-numeric:tabular-nums"></span>
                         <span id="main-chart-pct"   style="font-family:'Inter',sans-serif;font-size:11px;font-weight:500;font-variant-numeric:tabular-nums"></span>
+                        <span id="main-chart-date"  style="font-family:'Inter',sans-serif;font-size:10px;color:#9aa0a6;font-variant-numeric:tabular-nums"></span>
                     </div>
                     <div class="window-controls">
                         <div class="timeframe-buttons" id="main-tf-btns">
@@ -255,6 +262,7 @@
                     <div class="flex-1 w-full overflow-hidden relative" style="min-height:0;position:relative;background:#ffffff;border-radius:8px">
                         <div id="portfolioChart" style="position:absolute;inset:0"></div>
                     </div>
+                    <div id="portfolio-chart-timerange" style="display:flex;justify-content:space-between;font-size:0.7rem;color:#9aa0a6;padding:0 4px;font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums"></div>
                 </div>
             </div>
 
@@ -289,12 +297,42 @@
                     <button onclick="sendAIMessage()" id="ai-send-btn" class="chat-send-btn">שלח</button>
                 </div>
             </div>
+
+            <!-- Report Analyzer Card -->
+            <div id="win-report" class="card">
+                <div class="window-header">
+                    <h3>📋 ניתוח דוח כספי</h3>
+                    <div class="window-controls">
+                        <button onclick="clearReport()" style="font-size:9px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#9aa0a6;padding:0 8px;border-radius:20px;height:18px;line-height:1;cursor:pointer">נקה</button>
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-report')"></button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
+                    </div>
+                </div>
+
+                <!-- Input area -->
+                <div id="report-input-area" style="padding:12px;display:flex;flex-direction:column;gap:8px">
+                    <textarea id="report-text" placeholder="הדבק כאן טקסט של דוח כספי..." dir="rtl"
+                        style="width:100%;min-height:120px;max-height:200px;border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;font-size:0.85rem;background:var(--bg);color:var(--text);resize:vertical;font-family:inherit;line-height:1.5;outline:none"></textarea>
+                    <button onclick="analyzeReport()" id="report-analyze-btn"
+                        style="align-self:flex-end;padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:20px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:opacity .15s">
+                        🔍 נתח דוח
+                    </button>
+                </div>
+
+                <!-- Results area -->
+                <div id="report-result" style="flex:1;overflow-y:auto;padding:0 12px 12px"></div>
+            </div>
+
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script src="script.js?v=3"></script>
     <script>
       if ('serviceWorker' in navigator) {
+        // Unregister old service workers, then re-register fresh
+        navigator.serviceWorker.getRegistrations().then(regs => {
+          regs.forEach(r => r.unregister());
+        });
         navigator.serviceWorker.register('/sw.js');
       }
     </script>

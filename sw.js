@@ -1,4 +1,4 @@
-const CACHE = 'bursa-v1';
+const CACHE = 'bursa-v2';
 const STATIC = ['/', '/style.css', '/script.js', '/manifest.json'];
 
 self.addEventListener('install', e => {

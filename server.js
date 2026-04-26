@@ -53,7 +53,10 @@ app.get('/sw.js', (req, res) => {
 app.use(express.static(path.join(__dirname)));
 
 // Root → full dashboard
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // ── Yahoo Finance helpers ─────────────────────────────────────────────────
 
@@ -582,7 +585,7 @@ async function buildRAGContext(query, quotes) {
     };
 
     // ── Portfolio with P&L, DAY%, support/resistance ───────────────────────────
-    const portfolioData = loadPortfolioFile();
+    const portfolioData = await loadPortfolio();
     const portfolioLines = Object.entries(portfolioData.portfolio ?? {}).map(([name, h]) => {
         const qty      = h.qty      ?? h.quantity ?? 0;
         const avgCost  = h.buyPrice ?? h.avgCost  ?? h.purchasePrice ?? 0;
@@ -698,22 +701,27 @@ async function buildRAGContext(query, quotes) {
         : '';
 
     // ── System prompt ─────────────────────────────────────────────────────────
-    const systemPrompt = `אתה אנליסט שוק הון בכיר המתמחה בבורסת תל אביב. הטון שלך: מקצועי, חד, ישיר — כמו יועץ בחדר מסחר אמיתי.
-ענה תמיד בעברית. השתמש במושגים מקצועיים: "מימוש רווחים", "רוטציה סקטוריאלית", "שבירת מומנטום", "איזון תיק", "לחץ מכירות".
-**אורך תגובה: ממוקד ומועיל — עד 8-10 שורות. השתמש בנקודות כשיש מספר נקודות. שאלה מכווינה אחת בסוף.**
+    const systemPrompt = `אתה יועץ השקעות אישי לשוק ההון הישראלי. הטון שלך: ידידותי, ברור, ישיר — כאילו מסביר לחבר חכם שלא בהכרח מקצוען.
+ענה תמיד בעברית. הימנע מז'רגון מיותר — אם משתמש במושג מקצועי, הסבר אותו בסוגריים בפעם הראשונה.
 
-## כללי דיוק — חובה:
-- פעל אך ורק לפי הנתונים שמופיעים ב-Context שלמטה. אל תסתמך על ידע אימון לגבי מחירים ספציפיים.
-- אם נתון רלוונטי (כגון מחיר, P/L, שינוי יומי) מסומן "אין נתון" — ציין זאת במפורש. אל תמציא מספרים.
+## כללי תשובה — חובה:
+- **תן תשובה ישירה ראשית** — בשורה הראשונה, ענה על מה שנשאלת. לא על התהליך.
+- **היה תמציתי** — עד 6 שורות. אם צריך רשימה, עד 5 פריטים בלבד.
+- **אל תסביר מה אתה עושה** — פשוט עשה את זה ותן תוצאה. "סקאן", "מחפש", "בודק" — לא.
+- **אם אין לך נתון מדויק, אמור זאת בשורה אחת** ותציע מה כן אתה יודע.
+- **אל תמציא מספרים** — רק נתונים שמופיעים ב-Context למטה.
 
-## כללי ניתוח:
-1. **חדשות ודוחות:** אם ישנן כותרות חדשות ב-Context — השתמש בהן כדי לתת הקשר לתנועות המחיר. ציין את המקור. אם אין חדשות רלוונטיות, אמור זאת בכנות.
-2. **זיהוי רוטציה סקטוריאלית:** כאשר ענף שלם עולה או יורד יחד, ציין זאת — "חוזקה במגזר הבנקים", "לחץ רוחבי בנדל"ן" וכו׳.
-2. **שבירת תמיכה:** מניה שמחירה מתחת לבסיס היומי (prevClose) נמצאת בשבירת מומנטום. אל תמליץ "Buy the Dip" אוטומטית — בדוק תחילה האם זה אירוע חברה או לחץ סקטוריאלי רוחבי.
-3. **רמות פסיכולוגיות:** ירידה מתחת למספר עגול (כגון 92.50 → 91.99) היא שבירת מומנטום פסיכולוגי — הזהר מפני תנודתיות מוגברת.
-4. **תנועה קיצונית (±5%+):** זהה אם זה אירוע ספציפי לחברה (דוחות, רגולציה) או ירידה/עלייה סקטוריאלית.
-5. **ניהול תיק:** כאשר סקטור בתיק חזק, הצע בחינת מימוש חלקי כדי לאזן חשיפה לסקטורים חלשים יותר.
-6. **שאלה מכווינה:** בסוף כל ניתוח שמתייחס לתיק, הוסף שאלת המשך אחת שמעודדת החלטה — לדוגמה: "האם תרצה שנבדוק אם כדאי לממש חלק מהרווח ב[מניה] כדי להקטין חשיפה?" או "האם נבחן חלופות בסקטור [X] שמראה חוזקה יחסית?".
+## כשמשאלות על מניות ספציפיות:
+- ציין: מחיר נוכחי, שינוי יומי %, האם בעלייה/ירידה ביחס לאתמול.
+- אם המניה בתיק: הוסף רווח/הפסד כולל.
+
+## כשמשאלות "מצא מניות":
+- הצג רשימה נקייה: שם חברה (סימול) — נתון רלוונטי
+- לא יותר מ-5 מניות
+- לא "נקודות חשיפה", לא "סקאן DB" — רק שמות וארגונים ברורים
+
+## שאלה מכווינה (אופציונלי):
+אם רלוונטי — שאלה אחת קצרה בסוף.
 
 ${knowledgeSection}
 
@@ -785,7 +793,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
                 return res.json({ reply: `לא מצאתי מניה בשם "${rawName}" ברשימת הניירות הזמינים. נסה שוב עם שם מדויק יותר.` });
             }
 
-            const data = loadPortfolioFile();
+            const data = await loadPortfolio();
             const port = data.portfolio ?? {};
 
             if (isBuy) {
@@ -800,7 +808,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
                 data.portfolio = port;
                 data.transactionHistory = data.transactionHistory ?? [];
                 data.transactionHistory.push({ type: 'buy', name: stockName, qty, price, date: new Date().toISOString() });
-                fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(data, null, 2));
+                await savePortfolio(data);
                 return res.json({
                     reply: `✅ בוצע! קניתי ${qty} מניות ${stockName} במחיר ₪${price} ליחידה.\nעלות כוללת: ₪${(qty * price).toFixed(2)}\nהמניה נוספה לתיק שלך.`,
                     action: { type: 'buy', name: stockName, qty, price }
@@ -826,7 +834,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
                 data.portfolio = port;
                 data.transactionHistory = data.transactionHistory ?? [];
                 data.transactionHistory.push({ type: 'sell', name: stockName, qty, price, date: new Date().toISOString() });
-                fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(data, null, 2));
+                await savePortfolio(data);
                 const plStr = parseFloat(pl) >= 0 ? `+₪${pl}` : `-₪${Math.abs(pl)}`;
                 return res.json({
                     reply: `✅ בוצע! מכרתי ${qty} מניות ${stockName} במחיר ₪${price}.\nרווח/הפסד: ${plStr} (${plPct >= 0 ? '+' : ''}${plPct}%)\n${port[stockName] ? `נשארו ${port[stockName].qty} מניות בתיק.` : 'כל המניות נמכרו.'}`,

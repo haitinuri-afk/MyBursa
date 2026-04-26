@@ -252,10 +252,25 @@ ta.addEventListener('keydown', e => {
 });
 
 // ── Messages ──────────────────────────────────────────────────────────────
+function renderMarkdown(text) {
+    let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
+    s = s.replace(/^(\d+)\.\s+(.+)$/gm, '<div style="margin:.2em 0"><strong>$1.</strong> $2</div>');
+    s = s.replace(/^[-•]\s+(.+)$/gm, '<div style="margin:.2em 0">• $1</div>');
+    s = s.replace(/\n/g, '<br>');
+    return s;
+}
+
 function addMsg(text, cls) {
     const div = document.createElement('div');
     div.className = `msg ${cls}`;
-    div.textContent = text;
+    if (cls === 'ai') {
+        div.innerHTML = renderMarkdown(text);
+    } else {
+        div.textContent = text;
+    }
     document.getElementById('messages').appendChild(div);
     div.scrollIntoView({ behavior: 'smooth', block: 'end' });
     return div;

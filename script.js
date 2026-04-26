@@ -517,6 +517,18 @@ function _updateTickerFx() {
             el.style.color = pct !== null ? pctColor(pct).text : '#202124';
         });
     });
+    // Re-measure ticker width after FX values are injected
+    requestAnimationFrame(() => {
+        const ticker = document.getElementById('ticker-content');
+        if (ticker && _tickerHalfW > 0) {
+            const newHalf = ticker.scrollWidth / 2;
+            if (newHalf > _tickerHalfW) {
+                // Keep same relative position, scale offset proportionally
+                _tickerOffset = (_tickerOffset / _tickerHalfW) * newHalf;
+                _tickerHalfW = newHalf;
+            }
+        }
+    });
 }
 
 function _updateTickerPrices() {
@@ -873,6 +885,11 @@ async function drawChart() {
     if (!container) return;
     const stockName = currentStock || Object.keys(stocksData)[0];
     document.getElementById('main-chart-title').innerText = stockName;
+    const _dateEl = document.getElementById('main-chart-date');
+    if (_dateEl) {
+        const now = new Date();
+        _dateEl.textContent = now.toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'numeric' });
+    }
     const sym = STOCK_SYMBOLS[stockName];
     if (!sym) return;
 
@@ -895,11 +912,16 @@ async function drawChart() {
     const chartTx = dark ? '#9aa0a6' : '#5f6368';
     const gridV   = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
     const gridH   = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    const _fmtTick = (t, _type, _locale) => {
+        const d = new Date(t * 1000);
+        return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    };
     _lwChart = LightweightCharts.createChart(container, {
         width: w, height: h,
         layout:   { background: { color: chartBg }, textColor: chartTx },
         grid:     { vertLines: { color: gridV }, horzLines: { color: gridH } },
-        timeScale:      { borderColor: 'rgba(0,0,0,0.1)', timeVisible: true, secondsVisible: false, fixRightEdge: true },
+        localization: { timeFormatter: _fmtTick },
+        timeScale:      { borderColor: 'rgba(0,0,0,0.1)', timeVisible: true, secondsVisible: false, fixRightEdge: true, tickMarkFormatter: _fmtTick },
         rightPriceScale:{ borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.06, bottom: 0.26 } },
         crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
     });
@@ -1013,7 +1035,8 @@ function drawIndexChart(tf = currentTf) {
             height: container.clientHeight || 200,
             layout:   { background: { color: '#ffffff' }, textColor: '#5f6368' },
             grid:     { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.06)' } },
-            timeScale:       { borderColor: '#1e2430', timeVisible: true, secondsVisible: false, fixRightEdge: true },
+            localization: { timeFormatter: t => { const d = new Date(t*1000); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; } },
+            timeScale:       { borderColor: '#1e2430', timeVisible: true, secondsVisible: false, fixRightEdge: true, tickMarkFormatter: t => { const d = new Date(t*1000); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; } },
             rightPriceScale: { borderColor: '#1e2430', scaleMargins: { top: 0.08, bottom: 0.06 } },
             crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
         });
@@ -1055,28 +1078,55 @@ async function updateTimeframe(tf) {
 
 // ── List Renderers ─────────────────────────────────────────────────────────
 
+let _pinnedStock = null;
+let _stockShowAll = false;
+const STOCK_LIST_LIMIT = 10;
+
 function updateStockList() {
-    const list = document.getElementById('stock-list');
+    const list    = document.getElementById('stock-list');
+    const showBtn = document.getElementById('stock-show-more-btn');
     if (!list) return;
-    list.innerHTML = "";
-    Object.keys(stocksData).forEach(name => {
+    list.innerHTML = '';
+
+    // Build ordered array: pinned first, then rest
+    let names = Object.keys(stocksData);
+    if (_pinnedStock && names.includes(_pinnedStock)) {
+        names = [_pinnedStock, ...names.filter(n => n !== _pinnedStock)];
+    }
+
+    const visible = _stockShowAll ? names : names.slice(0, STOCK_LIST_LIMIT);
+    const hasMore = names.length > STOCK_LIST_LIMIT;
+
+    visible.forEach(name => {
         const stock = stocksData[name];
         const price = parseFloat(stock.price);
         const pct   = calculatePctChange(price, stock.initial);
         const up    = parseFloat(pct) >= 0;
-        const color = up ? '#16a34a' : '#dc2626';
-        const arrow = up ? '▲' : '▼';
         const priceStr = price > 0 ? `₪${price.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+        const isPinned = name === _pinnedStock;
         const tr = document.createElement('tr');
         tr.className = 'stock-row';
+        if (isPinned) tr.style.cssText = 'background:rgba(26,115,232,0.06);border-right:2px solid #1a73e8';
         tr.innerHTML = `
-            <td class="text-right" style="font-size:0.82rem;color:#202124;white-space:nowrap;cursor:pointer">${name}</td>
+            <td class="text-right" style="font-size:0.82rem;color:#202124;white-space:nowrap;cursor:pointer">${isPinned ? '📌 ' : ''}${name}</td>
             <td class="text-right" style="font-size:0.82rem;color:#202124;font-variant-numeric:tabular-nums;white-space:nowrap" dir="ltr">${priceStr}</td>
             <td class="pct-col"><span dir="ltr" class="inline-block" style="color:${pctColor(pct).text};background:${pctColor(pct).bg};padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700">${up ? '+' : ''}${pct}%</span></td>
             <td class="text-center"><button onclick="event.stopPropagation();quickBuy('${name}')" style="background:#16a34a;color:#fff;border:none;border-radius:4px;font-size:9px;font-weight:700;padding:2px 5px;cursor:pointer">קנה</button></td>`;
-        tr.onclick = () => { currentStock = name; _lwStock = null; drawChart(); openStockWindow(name); };
+        tr.onclick = () => {
+            _pinnedStock = (_pinnedStock === name) ? null : name; // toggle pin
+            currentStock = name; _lwStock = null; drawChart(); openStockWindow(name);
+            updateStockList();
+        };
         list.appendChild(tr);
     });
+
+    // Show more / less button
+    if (showBtn) {
+        showBtn.style.display = hasMore ? '' : 'none';
+        showBtn.textContent   = _stockShowAll
+            ? `▲ הצג פחות`
+            : `▼ הצג עוד (${names.length - STOCK_LIST_LIMIT})`;
+    }
 }
 
 
@@ -1231,8 +1281,9 @@ let highestZIndex = 100;
 // ── Mobile Tabs ─────────────────────────────────────────────────────────────
 const MOB_TABS = {
     market:    ['win-indices-tase', 'win-stocks', 'win-search'],
-    portfolio: ['win-portfolio', 'win-simulator', 'win-portfolio-chart'],
+    portfolio: ['win-portfolio', 'win-simulator'],
     ai:        ['win-ai-chat'],
+    report:    ['win-report'],
 };
 const MOB_ALL = Object.values(MOB_TABS).flat();
 
@@ -1348,7 +1399,7 @@ function toggleDarkMode() {
     if (saved === '1') applyTheme(true);
 })();
 
-const POPUP_WINDOWS = ['win-portfolio-chart'];
+const POPUP_WINDOWS = ['win-portfolio-chart', 'win-report'];
 
 function resetWindows() {
     const cards = document.querySelectorAll('.card');
@@ -1497,8 +1548,41 @@ function buildMoversBar() {
     return `<div style="margin-top:6px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.1);display:flex;flex-wrap:wrap;gap:4px">${tags}</div>`;
 }
 
+function renderMarkdown(text) {
+    const lines = text.split('\n');
+    const out = [];
+    for (const raw of lines) {
+        let s = raw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        // Inline: bold, italic, code
+        s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
+        s = s.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
+        s = s.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,.08);padding:1px 4px;border-radius:3px;font-size:.85em">$1</code>');
+        // Block: numbered list
+        const numMatch = s.match(/^(\d+)\.\s+(.+)$/);
+        if (numMatch) {
+            out.push(`<div style="margin:.15em 0"><span style="font-weight:600;color:var(--primary)">${numMatch[1]}.</span> ${numMatch[2]}</div>`);
+            continue;
+        }
+        // Block: bullet list (- or •)
+        const bulMatch = s.match(/^[-•]\s+(.+)$/);
+        if (bulMatch) {
+            out.push(`<div style="margin:.15em 0">• ${bulMatch[1]}</div>`);
+            continue;
+        }
+        // Empty line → paragraph break
+        if (s.trim() === '') { out.push('<br>'); continue; }
+        // Normal line
+        out.push(s + '<br>');
+    }
+    // Strip trailing <br>
+    while (out.length && out[out.length-1] === '<br>') out.pop();
+    // Collapse consecutive <br> into one
+    return out.join('').replace(/(<br>\s*){2,}/g, '<br>');
+}
+
 function tagStockMentions(text) {
-    const out = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const out = renderMarkdown(text);
     // Movers bar shown only if there are significant movers — as separate row below text
     const bar = buildMoversBar();
     return out + bar;
@@ -1682,30 +1766,30 @@ function _renderPortfolioChart(el, data) {
     const lastVal = data[data.length - 1].value;
     const baseVal = window._portfolioOpenVal > 0 ? window._portfolioOpenVal : data[0].value;
     const upColor = lastVal >= baseVal ? '#34a853' : '#ea4335';
-    const pctData = data.map(p => ({ time: p.time, value: parseFloat(((p.value - baseVal) / baseVal * 100).toFixed(3)) }));
+    // Shift all timestamps to today so LightweightCharts never adds "DD/MM" day-boundary ticks
+    const todayUTCBase = Math.floor(Date.now() / 86400000) * 86400;
+    const dataBase     = Math.floor(data[0].time / 86400) * 86400;
+    const tsShift      = todayUTCBase - dataBase;
+    const pctData = data.map(p => ({ time: p.time + tsShift, value: parseFloat(((p.value - baseVal) / baseVal * 100).toFixed(3)) }));
     const lastPct = pctData[pctData.length - 1].value;
 
-    const _fmtTime = t => {
-        const d = new Date(t * 1000);
+    const _onlyTime = function(t) {
+        const d = new Date(Number(t) * 1000);
         const hh = String(d.getHours()).padStart(2,'0');
         const mm = String(d.getMinutes()).padStart(2,'0');
-        const dd = String(d.getDate()).padStart(2,'0');
-        const mo = String(d.getMonth()+1).padStart(2,'0');
-        return `${dd}/${mo} ${hh}:${mm}`;
+        return hh + ':' + mm;
     };
+    const _tickFmt = function(t) {
+        return _onlyTime(t);
+    };
+
     _lwPortfolio = LightweightCharts.createChart(el, {
         width:  el.clientWidth  || 400,
         height: Math.max((el.clientHeight || 280) - 32, 200),
         layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
         grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
         rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)' },
-        localization: { timeFormatter: _fmtTime },
-        timeScale: {
-            borderColor: 'rgba(0,0,0,0.1)',
-            timeVisible: true,
-            secondsVisible: false,
-            tickMarkFormatter: _fmtTime,
-        },
+        timeScale: { visible: false },
         handleScroll: true, handleScale: true,
     });
     const series = _lwPortfolio.addAreaSeries({
@@ -1718,6 +1802,14 @@ function _renderPortfolioChart(el, data) {
     series.setData(pctData);
     series.createPriceLine({ price: 0, color: 'rgba(0,0,0,0.15)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
     _lwPortfolio.timeScale().fitContent();
+
+    // Custom time range label (since time axis is hidden)
+    const trEl = document.getElementById('portfolio-chart-timerange');
+    if (trEl && data.length) {
+        const fmt = t => { const d = new Date(t*1000); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+        const dateStr = new Date(data[0].time*1000).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'});
+        trEl.innerHTML = `<span>${dateStr}</span><span>${fmt(data[0].time)}</span><span>${fmt(data[data.length-1].time)}</span>`;
+    }
 
     const summaryEl = document.getElementById('portfolio-chart-summary');
     if (summaryEl) {
@@ -1733,11 +1825,12 @@ function togglePortfolioChart() {
     if (!win) return;
     const isHidden = win.style.display === 'none' || win.classList.contains('mob-hidden') || getComputedStyle(win).display === 'none';
     if (isHidden) {
-        win.style.display = '';
+        win.style.display = 'flex';
         win.classList.remove('mob-hidden');
-        win.style.zIndex = ++highestZIndex;
+        win.style.zIndex = window.innerWidth <= 768 ? 200 : ++highestZIndex;
         if (_lwPortfolio) { _lwPortfolio.remove(); _lwPortfolio = null; }
-        requestAnimationFrame(() => drawPortfolioChart());
+        // Two rAF to let the browser paint at correct dimensions before chart init
+        requestAnimationFrame(() => requestAnimationFrame(() => drawPortfolioChart()));
     } else {
         win.style.display = 'none';
         win.classList.add('mob-hidden');
@@ -1821,4 +1914,128 @@ function clearAIChat() {
     _aiHistory = [];
     localStorage.removeItem('aiHistory');
     document.getElementById('ai-messages').innerHTML = '';
+}
+
+// ── Report Analyzer ───────────────────────────────────────────────────────────
+
+function toggleReportPanel() {
+    const win = document.getElementById('win-report');
+    const btn = document.getElementById('report-toggle-btn');
+    if (!win) return;
+    const isOpen = getComputedStyle(win).display !== 'none';
+    win.style.display = isOpen ? 'none' : 'flex';
+    if (btn) btn.style.background = isOpen ? '' : 'rgba(26,115,232,0.2)';
+}
+
+function clearReport() {
+    document.getElementById('report-text').value = '';
+    document.getElementById('report-result').innerHTML = '';
+}
+
+async function analyzeReport() {
+    const text = document.getElementById('report-text').value.trim();
+    if (!text || text.length < 50) {
+        alert('יש להדביק טקסט דוח (לפחות 50 תווים)');
+        return;
+    }
+
+    const btn = document.getElementById('report-analyze-btn');
+    const resultEl = document.getElementById('report-result');
+    btn.disabled = true;
+    btn.textContent = '⏳ מנתח...';
+    resultEl.innerHTML = '<div style="color:var(--text2);font-size:0.85rem;padding:12px;text-align:center">מעבד דוח, אנא המתן...</div>';
+
+    try {
+        const res = await fetch('/api/analyze-report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+            signal: AbortSignal.timeout(45_000),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `שגיאה ${res.status}`);
+        resultEl.innerHTML = _renderReportCard(data);
+    } catch (e) {
+        resultEl.innerHTML = `<div style="color:#d93025;font-size:0.85rem;padding:12px">שגיאה: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 נתח דוח';
+    }
+}
+
+function _renderReportCard(a) {
+    const rec = a.recommendation ?? '—';
+    const recColor = rec === 'קנייה' ? '#1e8e3e' : rec === 'מכירה' ? '#d93025' : '#f9ab00';
+    const conf = a.confidence ?? 0;
+    const m = a.metrics ?? {};
+
+    const metricRow = (label, val, suffix = '') =>
+        val != null ? `<tr><td style="color:var(--text2);padding:3px 8px 3px 0">${label}</td><td style="font-weight:600;font-variant-numeric:tabular-nums">${val}${suffix}</td></tr>` : '';
+
+    const swotSection = (title, items, color) => {
+        if (!items?.length) return '';
+        return `<div style="margin-bottom:8px">
+            <div style="font-size:0.75rem;font-weight:700;color:${color};margin-bottom:4px">${title}</div>
+            ${items.map(i => `<div style="font-size:0.8rem;color:var(--text);padding:2px 0">• ${i}</div>`).join('')}
+        </div>`;
+    };
+
+    const fxDir = a.fxImpact?.direction ?? '';
+    const fxIcon = fxDir === 'חיובי' ? '📈' : fxDir === 'שלילי' ? '📉' : '➡️';
+
+    return `
+    <div style="font-size:0.82rem;line-height:1.6">
+
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 8px;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-weight:700;font-size:1rem">${a.company ?? '—'}</div>
+          <div style="color:var(--text2);font-size:0.78rem">${a.period ?? ''}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-weight:700;font-size:1.1rem;color:${recColor}">${rec}</div>
+          <div style="font-size:0.72rem;color:var(--text2)">ביטחון ${conf}%</div>
+          <div style="width:60px;height:4px;background:var(--border);border-radius:2px;margin-top:3px">
+            <div style="width:${conf}%;height:100%;background:${recColor};border-radius:2px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary -->
+      ${a.summary ? `<div style="padding:8px 0;color:var(--text);border-bottom:1px solid var(--border)">${a.summary}</div>` : ''}
+
+      <!-- Metrics -->
+      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="font-weight:600;font-size:0.78rem;color:var(--text2);margin-bottom:6px">מדדים פיננסיים</div>
+        <table style="width:100%;border-collapse:collapse">
+          ${metricRow('הכנסות', m.revenue != null ? Number(m.revenue).toLocaleString('he-IL') : null, ' ₪')}
+          ${metricRow('EBITDA', m.ebitda != null ? Number(m.ebitda).toLocaleString('he-IL') : null, ' ₪')}
+          ${metricRow('רווח נקי', m.netProfit != null ? Number(m.netProfit).toLocaleString('he-IL') : null, ' ₪')}
+          ${metricRow('EPS (רווח למניה)', m.eps)}
+          ${metricRow('מכפיל רווח (P/E)', m.peRatio)}
+          ${metricRow('חוב להון', m.debtToEquity)}
+          ${metricRow('תשואת הון (ROE)', m.roe, '%')}
+        </table>
+      </div>
+
+      <!-- FX -->
+      ${a.fxImpact?.explanation ? `
+      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="font-weight:600;font-size:0.78rem;color:var(--text2);margin-bottom:4px">חשיפת מט"ח ${fxIcon}</div>
+        <div style="color:var(--text)">${a.fxImpact.explanation}</div>
+        <div style="font-size:0.75rem;color:var(--text2);margin-top:2px">רמה: ${a.fxImpact.exposure ?? '—'} | כיוון: ${fxDir}</div>
+      </div>` : ''}
+
+      <!-- SWOT -->
+      <div style="padding:8px 0">
+        <div style="font-weight:600;font-size:0.78rem;color:var(--text2);margin-bottom:8px">SWOT</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div>${swotSection('💪 חוזקות', a.swot?.strengths, '#1e8e3e')}</div>
+          <div>${swotSection('⚠️ חולשות', a.swot?.weaknesses, '#d93025')}</div>
+          <div>${swotSection('🚀 הזדמנויות', a.swot?.opportunities, '#1a73e8')}</div>
+          <div>${swotSection('🔴 סיכונים', a.swot?.threats, '#f9ab00')}</div>
+        </div>
+      </div>
+
+    </div>`;
 }
