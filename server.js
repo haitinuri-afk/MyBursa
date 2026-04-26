@@ -8,6 +8,8 @@ const cors         = require('cors');
 const rateLimit    = require('express-rate-limit');
 const multer       = require('multer');
 const pdfParse     = require('pdf-parse');
+const cron         = require('node-cron');
+const { runScan, getLatestScans } = require('./maya-scraper');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -992,9 +994,35 @@ app.post('/api/portfolio', express.json(), async (req, res) => {
 
 // ── Start ──────────────────────────────────────────────────────────────────
 
+// ── /api/latest-scans ─────────────────────────────────────────────────────────
+app.get('/api/latest-scans', (req, res) => {
+    res.json({ scans: getLatestScans(20), updatedAt: new Date().toISOString() });
+});
+
+// ── /api/trigger-scan (manual trigger) ───────────────────────────────────────
+app.post('/api/trigger-scan', apiLimiter, async (req, res) => {
+    res.json({ message: 'סריקה התחילה ברקע' });
+    runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate })
+        .catch(e => console.error('[maya] manual scan error:', e.message));
+});
+
+// ── Startup ───────────────────────────────────────────────────────────────────
 app.listen(PORT, async () => {
     console.log(`Trading Station server running at http://localhost:${PORT}`);
     await initMongoDB();
     refreshFxRates();
     setInterval(refreshFxRates, 3600_000);
+
+    // ── Maya cron: every hour Sun–Thu 10:00–18:00 Israel time ─────────────────
+    // Cron: minute=0, hour=10–18, day-of-week=0–4 (Sun=0 in node-cron)
+    cron.schedule('0 10-18 * * 0-4', async () => {
+        console.log('[maya] Hourly scan triggered by cron');
+        try {
+            await runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate });
+        } catch (e) {
+            console.error('[maya] cron scan error:', e.message);
+        }
+    }, { timezone: 'Asia/Jerusalem' });
+
+    console.log('[maya] Cron scheduled: every hour Sun–Thu 10:00–18:00 Israel time');
 });

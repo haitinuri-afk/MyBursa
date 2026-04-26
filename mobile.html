@@ -213,7 +213,10 @@
 
 <header>
   <h1>📈 בורסה AI</h1>
-  <button id="server-btn" onclick="openModal()">⚙️ שרת</button>
+  <div style="display:flex;gap:6px">
+    <button onclick="showLatestScans()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:5px 10px;border-radius:20px;font-size:0.75rem;cursor:pointer;white-space:nowrap">🔍 דוחות</button>
+    <button id="server-btn" onclick="openModal()">⚙️ שרת</button>
+  </div>
 </header>
 
 <div id="messages">
@@ -358,6 +361,30 @@ function saveServer() {
 
 // Show server button label
 document.getElementById('server-btn').title = SERVER || 'לא מוגדר';
+
+// ── Latest Scans ──────────────────────────────────────────────────────────────
+async function showLatestScans() {
+    if (!SERVER) { openModal(); return; }
+    addMsg('🔍 מביא דוחות אחרונים...', 'system');
+    try {
+        const res  = await fetch(`${SERVER}/api/latest-scans`, { signal: AbortSignal.timeout(10_000) });
+        const data = await res.json();
+        const scans = data.scans ?? [];
+        if (!scans.length) {
+            addMsg('אין דוחות שנסרקו עדיין. הסריקה פועלת כל שעה בשעות המסחר.', 'system');
+            return;
+        }
+        const recIcon = r => r === 'קנייה' ? '🟢' : r === 'מכירה' ? '🔴' : '🟡';
+        const lines = scans.map(s => {
+            const time = new Date(s.scannedAt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+            const rec  = s.recommendation ? ` ${recIcon(s.recommendation)} ${s.recommendation}` : '';
+            return `**${s.company}**${rec} — ${time}\n${s.summary ?? s.title ?? ''}`;
+        }).join('\n\n');
+        addMsg(lines, 'ai');
+    } catch(e) {
+        addMsg(`שגיאה: ${e.message}`, 'error');
+    }
+}
 
 // ── PDF Upload ────────────────────────────────────────────────────────────────
 async function uploadPDF(input) {
