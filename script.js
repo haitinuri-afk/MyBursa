@@ -193,7 +193,21 @@ function applyMarketStatus(marketState) {
     const dot   = document.getElementById('market-status');
     if (dot) dot.style.color = color;
     const label = document.getElementById('market-label');
-    if (label) { label.textContent = open ? 'מסחר רציף' : 'סגור'; label.style.color = color; }
+    if (label) {
+        let txt = 'סגור';
+        if (open) {
+            txt = 'מסחר רציף';
+        } else {
+            // Check if it's a weekday at all
+            const ilStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jerusalem' });
+            const [dp, tp] = ilStr.split(' ');
+            const [y, mo, d] = dp.split('-').map(Number);
+            const day = new Date(y, mo-1, d).getDay();
+            if (day === 0 || day === 6) txt = 'סוף שבוע';
+        }
+        label.textContent = txt;
+        label.style.color = color;
+    }
     const badge = document.getElementById('ta35-status');
     if (badge) badge.textContent = '';
     const statusEl = document.getElementById('data-status');
@@ -224,7 +238,7 @@ function isMarketOpen() {
     const [h, m] = timePart.split(':').map(Number);
     const day = new Date(y, mo - 1, d).getDay(); // 0=Sun..6=Sat
     const mins = h * 60 + m;
-    return day >= 0 && day <= 4 && mins >= 585 && mins < 1050;
+    return day >= 1 && day <= 5 && mins >= 585 && mins < 1050; // Mon–Fri 9:45–17:30
 }
 
 function scheduleFetch() {
@@ -1764,35 +1778,37 @@ function drawPortfolioChart() {
 function _renderPortfolioChart(el, data) {
     if (_lwPortfolio) { _lwPortfolio.remove(); _lwPortfolio = null; }
     el.innerHTML = '';
+
     const lastVal = data[data.length - 1].value;
     const baseVal = window._portfolioOpenVal > 0 ? window._portfolioOpenVal : data[0].value;
-    const upColor = lastVal >= baseVal ? '#34a853' : '#ea4335';
-    // Shift all timestamps to today so LightweightCharts never adds "DD/MM" day-boundary ticks
-    const todayUTCBase = Math.floor(Date.now() / 86400000) * 86400;
-    const dataBase     = Math.floor(data[0].time / 86400) * 86400;
-    const tsShift      = todayUTCBase - dataBase;
-    const pctData = data.map(p => ({ time: p.time + tsShift, value: parseFloat(((p.value - baseVal) / baseVal * 100).toFixed(3)) }));
-    const lastPct = pctData[pctData.length - 1].value;
+    const pctVals = data.map(p => parseFloat(((p.value - baseVal) / baseVal * 100).toFixed(3)));
+    const lastPct = pctVals[pctVals.length - 1];
+    const isUp    = lastPct >= 0;
+    const color   = isUp ? '#34a853' : '#ea4335';
 
-    const _onlyTime = function(t) {
-        const d = new Date(Number(t) * 1000);
-        const hh = String(d.getHours()).padStart(2,'0');
-        const mm = String(d.getMinutes()).padStart(2,'0');
-        return hh + ':' + mm;
-    };
-    const _tickFmt = function(t) {
-        return _onlyTime(t);
-    };
+    // Summary bar (shared desktop + mobile)
+    const summaryEl = document.getElementById('portfolio-chart-summary');
+    if (summaryEl) {
+        const sign   = lastPct >= 0 ? '+' : '';
+        const ilsChg = lastVal - baseVal;
+        const ilsS   = ilsChg >= 0 ? '+' : '';
+        summaryEl.innerHTML = `<span style="color:${color};font-weight:700;font-size:0.95rem">${sign}${lastPct.toFixed(2)}%</span>&nbsp;<span style="color:#9aa0a6;font-size:0.8rem">(${ilsS}₪${Math.round(ilsChg).toLocaleString('he-IL')})</span>`;
+    }
 
-    const isMobile  = window.innerWidth <= 768;
-    const chartW    = el.clientWidth  || (isMobile ? window.innerWidth  : 400);
-    const chartH    = isMobile
-        ? Math.round(window.innerHeight * 0.62)
-        : Math.max((el.clientHeight || 280) - 32, 200);
+    if (window.innerWidth <= 768) {
+        _renderPortfolioSVG(el, data, pctVals, color);
+        return;
+    }
+
+    // ── Desktop: LightweightCharts ────────────────────────────────────────
+    const todayBase  = Math.floor(Date.now() / 86400000) * 86400;
+    const dataBase   = Math.floor(data[0].time / 86400) * 86400;
+    const tsShift    = todayBase - dataBase;
+    const pctData    = data.map((p, i) => ({ time: p.time + tsShift, value: pctVals[i] }));
 
     _lwPortfolio = LightweightCharts.createChart(el, {
-        width:  chartW,
-        height: chartH,
+        width:  el.clientWidth  || 400,
+        height: Math.max((el.clientHeight || 280) - 32, 200),
         layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
         grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
         rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.08, bottom: 0.04 } },
@@ -1800,8 +1816,8 @@ function _renderPortfolioChart(el, data) {
         handleScroll: true, handleScale: true,
     });
     const series = _lwPortfolio.addAreaSeries({
-        lineColor: upColor,
-        topColor: upColor === '#34a853' ? 'rgba(52,168,83,0.2)' : 'rgba(234,67,53,0.2)',
+        lineColor: color,
+        topColor: isUp ? 'rgba(52,168,83,0.2)' : 'rgba(234,67,53,0.2)',
         bottomColor: 'rgba(0,0,0,0)',
         lineWidth: 2,
         priceFormat: { type: 'custom', formatter: v => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` },
@@ -1810,30 +1826,97 @@ function _renderPortfolioChart(el, data) {
     series.createPriceLine({ price: 0, color: 'rgba(0,0,0,0.15)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
     _lwPortfolio.timeScale().fitContent();
 
-    // Custom time axis (4 evenly-spaced labels)
     const trEl = document.getElementById('portfolio-chart-timerange');
     if (trEl && data.length) {
-        const fmt = t => {
-            const d = new Date(t * 1000);
-            return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
-        };
+        const fmt = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
         const t0 = data[0].time, t1 = data[data.length-1].time;
-        const steps = 4;
-        const labels = [];
-        for (let i = 0; i <= steps; i++) {
-            labels.push(fmt(t0 + Math.round((t1 - t0) * i / steps)));
-        }
+        const labels = Array.from({ length: 5 }, (_, i) => fmt(t0 + Math.round((t1-t0)*i/4)));
         trEl.style.cssText = 'display:flex;justify-content:space-between;font-size:0.68rem;color:#9aa0a6;padding:2px 6px 0;font-family:"Inter",sans-serif;font-variant-numeric:tabular-nums;border-top:1px solid rgba(0,0,0,0.06)';
         trEl.innerHTML = labels.map(l => `<span>${l}</span>`).join('');
     }
+}
 
-    const summaryEl = document.getElementById('portfolio-chart-summary');
-    if (summaryEl) {
-        const sign = lastPct >= 0 ? '+' : '';
-        const ilsChg = lastVal - baseVal;
-        const ilsSign = ilsChg >= 0 ? '+' : '';
-        summaryEl.innerHTML = `<span style="color:${upColor};font-weight:700;font-size:0.9rem">${sign}${lastPct.toFixed(2)}%</span> <span style="color:#9aa0a6;font-size:0.8rem">(${ilsSign}₪${Math.round(ilsChg).toLocaleString('he-IL')})</span>`;
+function _renderPortfolioSVG(el, data, pctVals, color) {
+    const W   = window.innerWidth;
+    const H   = window.innerHeight - 110;   // subtract header + summary + safe area
+    const PAD = { top: 20, right: 52, bottom: 32, left: 10 };
+    const iW  = W - PAD.left - PAD.right;
+    const iH  = H - PAD.top  - PAD.bottom;
+
+    // Value range with padding
+    const minV = Math.min(...pctVals, 0);
+    const maxV = Math.max(...pctVals, 0);
+    const vPad = (maxV - minV) * 0.12 || 0.5;
+    const lo   = minV - vPad, hi = maxV + vPad;
+    const rng  = hi - lo;
+
+    const xS = i => PAD.left + (i / (pctVals.length - 1)) * iW;
+    const yS = v => PAD.top  + iH - ((v - lo) / rng) * iH;
+    const zeroY = Math.min(Math.max(yS(0), PAD.top), PAD.top + iH);
+
+    // Smooth bezier path
+    const pts = pctVals.map((v, i) => [xS(i), yS(v)]);
+    let line  = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+    for (let i = 1; i < pts.length; i++) {
+        const cpx = ((pts[i-1][0] + pts[i][0]) / 2).toFixed(1);
+        line += ` C${cpx},${pts[i-1][1].toFixed(1)} ${cpx},${pts[i][1].toFixed(1)} ${pts[i][0].toFixed(1)},${pts[i][1].toFixed(1)}`;
     }
+    const fill = line + ` L${pts[pts.length-1][0].toFixed(1)},${zeroY.toFixed(1)} L${pts[0][0].toFixed(1)},${zeroY.toFixed(1)}Z`;
+
+    // Time labels (5 evenly spaced)
+    const fmtT = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
+    const tLabels = Array.from({ length: 5 }, (_, i) => {
+        const idx = Math.round(i * (data.length-1) / 4);
+        return { x: xS(idx), label: fmtT(data[idx].time) };
+    });
+
+    // Price labels (3 levels on right axis)
+    const pLabels = [hi, (hi+lo)/2, lo].map(v => ({ y: yS(v), label: `${v>=0?'+':''}${v.toFixed(1)}%` }))
+        .filter(p => p.y >= PAD.top - 2 && p.y <= PAD.top + iH + 2);
+
+    const gid = `g${Date.now()}`;
+
+    el.style.cssText = 'width:100%;overflow:hidden;display:block';
+    const trEl = document.getElementById('portfolio-chart-timerange');
+    if (trEl) trEl.style.display = 'none';
+
+    el.innerHTML = `
+<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block">
+  <defs>
+    <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="${color}" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0.01"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Grid lines -->
+  ${pLabels.map(p=>`<line x1="${PAD.left}" y1="${p.y.toFixed(1)}" x2="${W-PAD.right}" y2="${p.y.toFixed(1)}" stroke="rgba(0,0,0,0.055)" stroke-width="1"/>`).join('')}
+
+  <!-- Zero baseline -->
+  <line x1="${PAD.left}" y1="${zeroY.toFixed(1)}" x2="${W-PAD.right}" y2="${zeroY.toFixed(1)}"
+        stroke="rgba(0,0,0,0.2)" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- Area fill -->
+  <path d="${fill}" fill="url(#${gid})"/>
+
+  <!-- Line -->
+  <path d="${line}" fill="none" stroke="${color}" stroke-width="2.5"
+        stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- Last-point dot -->
+  <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}"
+          r="4" fill="${color}" stroke="#fff" stroke-width="2"/>
+
+  <!-- Right price labels -->
+  ${pLabels.map(p=>`<text x="${W-PAD.right+5}" y="${(p.y+3.5).toFixed(1)}"
+    font-size="9.5" font-family="Inter,monospace" fill="#9aa0a6"
+    font-variant-numeric="tabular-nums">${p.label}</text>`).join('')}
+
+  <!-- Bottom time labels -->
+  ${tLabels.map((t,i)=>`<text x="${t.x.toFixed(1)}" y="${H-7}"
+    text-anchor="${i===0?'start':i===4?'end':'middle'}"
+    font-size="10" font-family="Inter,sans-serif" fill="#9aa0a6">${t.label}</text>`).join('')}
+</svg>`;
 }
 
 function togglePortfolioChart() {
