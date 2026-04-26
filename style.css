@@ -250,6 +250,72 @@ header.top-bar {
     background: linear-gradient(to left, var(--ticker-bg), transparent);
 }
 
+/* ── Scan Strip ── */
+.scan-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    min-height: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0 10px;
+    overflow: hidden;
+}
+.scan-strip-label {
+    font-size: 11px;
+    color: var(--text3);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.scan-strip-items {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex: 1;
+    direction: rtl;
+}
+.scan-strip-items::-webkit-scrollbar { display: none; }
+.scan-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+.scan-chip:hover { opacity: 0.8; }
+.scan-chip.buy {
+    background: rgba(52,168,83,0.12);
+    color: #2d7a47;
+    border-color: rgba(52,168,83,0.25);
+}
+.scan-chip.sell {
+    background: rgba(234,67,53,0.12);
+    color: #c0392b;
+    border-color: rgba(234,67,53,0.25);
+}
+.scan-chip.hold {
+    background: rgba(251,188,4,0.12);
+    color: #8a6200;
+    border-color: rgba(251,188,4,0.25);
+}
+[data-theme="dark"] .scan-chip.buy  { color: #5dd97c; }
+[data-theme="dark"] .scan-chip.sell { color: #ff6b6b; }
+[data-theme="dark"] .scan-chip.hold { color: #ffd166; }
+@media (max-width: 768px) {
+    .scan-strip { height: 26px; min-height: 26px; padding: 0 8px; }
+    .scan-chip  { font-size: 11px; padding: 2px 7px; }
+}
+
 /* ── Dashboard Grid ── */
 .dashboard-grid {
     flex: 1;

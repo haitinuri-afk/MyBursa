@@ -1302,6 +1302,7 @@ document.addEventListener('DOMContentLoaded', () => {
     requestNotifPermission();
 
     initTicker(); initStockSuggestions(); updateStockList(); updatePortfolioList(); updateTransactionHistory();
+    fetchScanStrip();
     drawChart(); drawIndexChart();
 
     document.getElementById('buy-btn').onclick      = buyStock;
@@ -1945,6 +1946,64 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+// ── Scan Strip ───────────────────────────────────────────────────────────────
+
+async function fetchScanStrip() {
+    try {
+        const res  = await fetch('/api/latest-scans?limit=5');
+        if (!res.ok) return;
+        const data = await res.json();
+        const scans = Array.isArray(data) ? data : (data.scans ?? []);
+        if (!scans.length) return;
+
+        const strip = document.getElementById('scan-strip');
+        const items = document.getElementById('scan-strip-items');
+        if (!strip || !items) return;
+
+        items.innerHTML = scans.slice(0, 5).map(s => {
+            const rec = (s.recommendation || '').toLowerCase();
+            const isBuy  = rec.includes('buy')  || rec.includes('קנה');
+            const isSell = rec.includes('sell') || rec.includes('מכור');
+            const cls    = isBuy ? 'buy' : isSell ? 'sell' : 'hold';
+            const emoji  = isBuy ? '🟢' : isSell ? '🔴' : '🟡';
+            const name   = s.company || s.title || '—';
+            const tip    = s.summary ? s.summary.slice(0, 120) : '';
+            return `<span class="scan-chip ${cls}" title="${tip}" onclick="openScanDetail(${JSON.stringify(JSON.stringify(s))})">${emoji} ${name}</span>`;
+        }).join('');
+
+        strip.style.display = 'flex';
+    } catch (e) {
+        console.warn('[scan-strip]', e.message);
+    }
+}
+
+function openScanDetail(jsonStr) {
+    try {
+        const s   = JSON.parse(jsonStr);
+        const rec = s.recommendation || '—';
+        const isBuy  = rec.toLowerCase().includes('buy')  || rec.includes('קנה');
+        const isSell = rec.toLowerCase().includes('sell') || rec.includes('מכור');
+        const emoji  = isBuy ? '🟢' : isSell ? '🔴' : '🟡';
+        const msg    = `**${emoji} ${s.company || s.title}**\n` +
+                       `המלצה: ${rec}\n` +
+                       (s.summary ? `\n${s.summary}` : '') +
+                       (s.url ? `\n\n[מקור](${s.url})` : '');
+        const box = document.getElementById('chat-messages') || document.getElementById('ai-messages');
+        if (box) {
+            const div = document.createElement('div');
+            div.className = 'chat-msg ai';
+            div.innerHTML = tagStockMentions(msg);
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+            // Switch to AI tab on mobile
+            if (window.switchMobileTab) switchMobileTab('ai');
+        }
+    } catch {}
+}
+
+// Refresh strip every 10 minutes
+setInterval(fetchScanStrip, 10 * 60 * 1000);
 
 function toggleReportPanel() {
     const win = document.getElementById('win-report');
