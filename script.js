@@ -912,9 +912,9 @@ async function drawChart() {
     const chartTx = dark ? '#9aa0a6' : '#5f6368';
     const gridV   = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
     const gridH   = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-    const _fmtTick = (t, _type, _locale) => {
-        const d = new Date(t * 1000);
-        return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    const _fmtTick = function(t) {
+        var d = new Date(t * 1000);
+        return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
     };
     _lwChart = LightweightCharts.createChart(container, {
         width: w, height: h,
@@ -1789,7 +1789,21 @@ function _renderPortfolioChart(el, data) {
         layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
         grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
         rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)' },
-        timeScale: { visible: false },
+        localization: {
+            timeFormatter: function(t) {
+                var d = new Date(t * 1000);
+                return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
+            }
+        },
+        timeScale: {
+            borderColor: 'rgba(0,0,0,0.1)',
+            timeVisible: true,
+            secondsVisible: false,
+            tickMarkFormatter: function(t) {
+                var d = new Date(t * 1000);
+                return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
+            },
+        },
         handleScroll: true, handleScale: true,
     });
     const series = _lwPortfolio.addAreaSeries({
