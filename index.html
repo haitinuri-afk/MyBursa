@@ -311,11 +311,21 @@
 
                 <!-- Input area -->
                 <div id="report-input-area" style="padding:12px;display:flex;flex-direction:column;gap:8px">
+
+                    <!-- PDF upload zone -->
+                    <label id="report-pdf-zone" style="display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--border);border-radius:10px;padding:14px;cursor:pointer;color:var(--text2);font-size:0.82rem;transition:border-color .15s;background:var(--bg)" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+                        <span style="font-size:1.4rem">📄</span>
+                        <span>גרור PDF לכאן או <strong style="color:var(--primary)">לחץ לבחירה</strong></span>
+                        <input type="file" accept="application/pdf" style="display:none" onchange="analyzeReportPDF(this)">
+                    </label>
+
+                    <div style="text-align:center;font-size:0.75rem;color:var(--text2)">— או הדבק טקסט —</div>
+
                     <textarea id="report-text" placeholder="הדבק כאן טקסט של דוח כספי..." dir="rtl"
-                        style="width:100%;min-height:120px;max-height:200px;border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;font-size:0.85rem;background:var(--bg);color:var(--text);resize:vertical;font-family:inherit;line-height:1.5;outline:none"></textarea>
+                        style="width:100%;min-height:80px;max-height:160px;border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;font-size:0.85rem;background:var(--bg);color:var(--text);resize:vertical;font-family:inherit;line-height:1.5;outline:none"></textarea>
                     <button onclick="analyzeReport()" id="report-analyze-btn"
                         style="align-self:flex-end;padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:20px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:opacity .15s">
-                        🔍 נתח דוח
+                        🔍 נתח טקסט
                     </button>
                 </div>
 

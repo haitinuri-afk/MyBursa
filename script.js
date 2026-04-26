@@ -1927,6 +1927,25 @@ function clearAIChat() {
 
 // ── Report Analyzer ───────────────────────────────────────────────────────────
 
+// Drag & drop on PDF zone
+document.addEventListener('DOMContentLoaded', () => {
+    const zone = document.getElementById('report-pdf-zone');
+    if (!zone) return;
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor = 'var(--primary)'; });
+    zone.addEventListener('dragleave', () => { zone.style.borderColor = ''; });
+    zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.style.borderColor = '';
+        const file = e.dataTransfer?.files?.[0];
+        if (file?.type === 'application/pdf') {
+            const dt = new DataTransfer(); dt.items.add(file);
+            const inp = zone.querySelector('input[type=file]');
+            inp.files = dt.files;
+            analyzeReportPDF(inp);
+        }
+    });
+});
+
 function toggleReportPanel() {
     const win = document.getElementById('win-report');
     const btn = document.getElementById('report-toggle-btn');
@@ -1939,6 +1958,39 @@ function toggleReportPanel() {
 function clearReport() {
     document.getElementById('report-text').value = '';
     document.getElementById('report-result').innerHTML = '';
+}
+
+async function analyzeReportPDF(input) {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = '';
+
+    const btn     = document.getElementById('report-analyze-btn');
+    const zone    = document.getElementById('report-pdf-zone');
+    const resultEl = document.getElementById('report-result');
+
+    btn.disabled  = true;
+    zone.style.opacity = '0.5';
+    resultEl.innerHTML = `<div style="color:var(--text2);font-size:0.85rem;padding:12px;text-align:center">מחלץ טקסט מ-${file.name}...</div>`;
+
+    try {
+        const form = new FormData();
+        form.append('file', file);
+
+        const res = await fetch('/api/analyze-report', {
+            method: 'POST',
+            body:   form,
+            signal: AbortSignal.timeout(60_000),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `שגיאה ${res.status}`);
+        resultEl.innerHTML = _renderReportCard(data);
+    } catch(e) {
+        resultEl.innerHTML = `<div style="color:#d93025;font-size:0.85rem;padding:12px">שגיאה: ${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        zone.style.opacity = '';
+    }
 }
 
 async function analyzeReport() {
