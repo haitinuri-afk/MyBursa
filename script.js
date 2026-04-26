@@ -1784,9 +1784,15 @@ function _renderPortfolioChart(el, data) {
         return _onlyTime(t);
     };
 
+    const isMobile  = window.innerWidth <= 768;
+    const chartW    = el.clientWidth  || (isMobile ? window.innerWidth  : 400);
+    const chartH    = isMobile
+        ? Math.round(window.innerHeight * 0.62)
+        : Math.max((el.clientHeight || 280) - 32, 200);
+
     _lwPortfolio = LightweightCharts.createChart(el, {
-        width:  el.clientWidth  || 400,
-        height: Math.max((el.clientHeight || 280) - 32, 200),
+        width:  chartW,
+        height: chartH,
         layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
         grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
         rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.08, bottom: 0.04 } },

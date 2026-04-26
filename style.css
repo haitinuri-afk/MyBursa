@@ -934,7 +934,14 @@ MOBILE RESPONSIVE  (≤ 768px)
         z-index: 200 !important;
         border-radius: 0 !important;
     }
-    #win-portfolio-chart .card-body { min-height: 70vh !important; }
+    #win-portfolio-chart .card-body {
+        flex: 1 !important;
+        min-height: 0 !important;
+        height: calc(100vh - 48px) !important;
+    }
+    #win-portfolio-chart .card-body > div {
+        height: 100% !important;
+    }
     #win-portfolio-chart #portfolioChart { min-height: 60vh !important; }
 
     /* ── Transaction history ── */
