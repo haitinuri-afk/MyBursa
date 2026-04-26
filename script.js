@@ -1839,16 +1839,18 @@ function _renderPortfolioChart(el, data) {
 
 function _renderPortfolioSVG(el, data, pctVals, color) {
     // Virtual coordinate space — SVG scales to fill container via width/height 100%
-    const VW = 400, VH = 260;
-    const PAD = { top: 18, right: 50, bottom: 28, left: 8 };
+    const VW = 400, VH = 280;
+    const PAD = { top: 14, right: 52, bottom: 36, left: 8 };
     const iW  = VW - PAD.left - PAD.right;
     const iH  = VH - PAD.top  - PAD.bottom;
 
-    // Value range
-    const minV = Math.min(...pctVals, 0);
-    const maxV = Math.max(...pctVals, 0);
-    const vPad = (maxV - minV) * 0.12 || 0.5;
-    const lo   = minV - vPad, hi = maxV + vPad;
+    // Value range — tight fit around data, zero shown as line but not forcing big blank space
+    const minV = Math.min(...pctVals);
+    const maxV = Math.max(...pctVals);
+    const span = maxV - minV || 0.5;
+    const vPad = span * 0.12 + 0.1;
+    const lo   = minV - vPad;
+    const hi   = maxV + vPad * 0.4;   // small top padding only
     const rng  = hi - lo;
 
     const xS = i => PAD.left + (i / (pctVals.length - 1)) * iW;
@@ -1899,7 +1901,7 @@ function _renderPortfolioSVG(el, data, pctVals, color) {
           r="5" fill="${color}" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>
   ${pLabels.map(p=>`<text x="${VW-PAD.right+3}" y="${(p.y+3).toFixed(1)}"
     font-size="11" font-family="Inter,monospace" fill="#9aa0a6">${p.label}</text>`).join('')}
-  ${tLabels.map((t,i)=>`<text x="${t.x.toFixed(1)}" y="${VH-5}"
+  ${tLabels.map((t,i)=>`<text x="${t.x.toFixed(1)}" y="${VH-10}"
     text-anchor="${i===0?'start':i===4?'end':'middle'}"
     font-size="11" font-family="Inter,sans-serif" fill="#9aa0a6">${t.label}</text>`).join('')}
 </svg>`;
