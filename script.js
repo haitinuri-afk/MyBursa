@@ -1832,7 +1832,7 @@ function _renderPortfolioChart(el, data) {
         const fmt = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
         const t0 = data[0].time, t1 = data[data.length-1].time;
         const labels = Array.from({ length: 5 }, (_, i) => fmt(t0 + Math.round((t1-t0)*i/4)));
-        trEl.style.cssText = 'display:flex;justify-content:space-between;font-size:0.68rem;color:#9aa0a6;padding:2px 6px 0;font-family:"Inter",sans-serif;font-variant-numeric:tabular-nums;border-top:1px solid rgba(0,0,0,0.06)';
+        trEl.style.cssText = 'display:flex;justify-content:space-between;direction:ltr;font-size:0.68rem;color:#9aa0a6;padding:2px 6px 0;font-family:"Inter",sans-serif;font-variant-numeric:tabular-nums;border-top:1px solid rgba(0,0,0,0.06)';
         trEl.innerHTML = labels.map(l => `<span>${l}</span>`).join('');
     }
 }
