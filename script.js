@@ -1789,21 +1789,7 @@ function _renderPortfolioChart(el, data) {
         layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
         grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
         rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)' },
-        localization: {
-            timeFormatter: function(t) {
-                var d = new Date(t * 1000);
-                return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
-            }
-        },
-        timeScale: {
-            borderColor: 'rgba(0,0,0,0.1)',
-            timeVisible: true,
-            secondsVisible: false,
-            tickMarkFormatter: function(t) {
-                var d = new Date(t * 1000);
-                return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
-            },
-        },
+        timeScale: { visible: false },
         handleScroll: true, handleScale: true,
     });
     const series = _lwPortfolio.addAreaSeries({
@@ -1817,12 +1803,21 @@ function _renderPortfolioChart(el, data) {
     series.createPriceLine({ price: 0, color: 'rgba(0,0,0,0.15)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
     _lwPortfolio.timeScale().fitContent();
 
-    // Custom time range label (since time axis is hidden)
+    // Custom time axis (4 evenly-spaced labels)
     const trEl = document.getElementById('portfolio-chart-timerange');
     if (trEl && data.length) {
-        const fmt = t => { const d = new Date(t*1000); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
-        const dateStr = new Date(data[0].time*1000).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'});
-        trEl.innerHTML = `<span>${dateStr}</span><span>${fmt(data[0].time)}</span><span>${fmt(data[data.length-1].time)}</span>`;
+        const fmt = t => {
+            const d = new Date(t * 1000);
+            return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
+        };
+        const t0 = data[0].time, t1 = data[data.length-1].time;
+        const steps = 4;
+        const labels = [];
+        for (let i = 0; i <= steps; i++) {
+            labels.push(fmt(t0 + Math.round((t1 - t0) * i / steps)));
+        }
+        trEl.style.cssText = 'display:flex;justify-content:space-between;font-size:0.68rem;color:#9aa0a6;padding:2px 6px 0;font-family:"Inter",sans-serif;font-variant-numeric:tabular-nums;border-top:1px solid rgba(0,0,0,0.06)';
+        trEl.innerHTML = labels.map(l => `<span>${l}</span>`).join('');
     }
 
     const summaryEl = document.getElementById('portfolio-chart-summary');
