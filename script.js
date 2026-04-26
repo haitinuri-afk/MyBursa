@@ -1874,8 +1874,8 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
 
     // Use container dimensions (works for both mobile and desktop)
     const isMobile = window.innerWidth <= 768;
-    const W = isMobile ? window.innerWidth : (el.clientWidth  || el.parentElement?.clientWidth  || 400);
-    const H = isMobile ? Math.round(window.innerHeight * 0.72) : (el.clientHeight || el.parentElement?.clientHeight || 300);
+    const W = isMobile ? window.innerWidth : (el.offsetWidth  || el.parentElement?.offsetWidth  || 400);
+    const H = isMobile ? Math.round(window.innerHeight * 0.72) : (el.offsetHeight || el.parentElement?.offsetHeight || Math.round(window.innerHeight * 0.42));
     el.style.cssText = `position:absolute;inset:0;overflow:visible`;
     const flex1 = el.parentElement;
     if (isMobile && flex1) { flex1.style.height = H + 'px'; flex1.style.flex = 'none'; }
@@ -1900,7 +1900,7 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
   <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="5" fill="${color}" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>
   ${pLabels.map(p=>`<text x="${VW-PAD.right+3}" y="${(p.y+3).toFixed(1)}" font-size="11" font-family="Inter,monospace" fill="#9aa0a6">${p.label}</text>`).join('')}
 </svg>
-<div style="position:absolute;bottom:0;left:0;right:0;height:22px;display:flex;align-items:center;justify-content:space-between;padding:0 4px 0 ${Math.round(PAD.left/VW*W)}px;padding-right:${Math.round(PAD.right/VW*W)}px;font-size:11px;color:#9aa0a6;font-family:Inter,sans-serif;direction:ltr;border-top:1px solid rgba(0,0,0,0.06)">${tLabels.map((t,i)=>`<span>${t.label}</span>`).join('')}</div>`;
+<div style="position:absolute;bottom:0;left:0;right:0;height:22px;display:flex;align-items:center;justify-content:space-between;padding:0 ${Math.round(PAD.right/VW*W)}px 0 ${Math.round(PAD.left/VW*W)}px;font-size:11px;color:#555;font-family:Inter,sans-serif;direction:ltr;background:#f0f0f0;border-top:1px solid #ccc">${tLabels.map(t=>`<span>${t.label}</span>`).join('')}</div>`;
 }
 
 function togglePortfolioChart() {
