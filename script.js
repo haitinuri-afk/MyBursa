@@ -1796,10 +1796,8 @@ function _renderPortfolioChart(el, data) {
         summaryEl.innerHTML = `<span style="color:${color};font-weight:700;font-size:0.95rem">${sign}${lastPct.toFixed(2)}%</span>&nbsp;<span style="color:#9aa0a6;font-size:0.8rem">(${ilsS}₪${Math.round(ilsChg).toLocaleString('he-IL')})</span>`;
     }
 
-    if (window.innerWidth <= 768) {
-        _renderPortfolioSVG(el, data, pctVals, color, isUp);
-        return;
-    }
+    _renderPortfolioSVG(el, data, pctVals, color, isUp);
+    return;
 
     // ── Desktop: LightweightCharts ────────────────────────────────────────
     const todayBase  = Math.floor(Date.now() / 86400000) * 86400;
@@ -1874,12 +1872,13 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     // Gradient: always opaque at line (top of fill), transparent at baseline (bottom)
     const [gy1, gy2] = ['0', '1'];
 
-    // Explicit pixel dimensions — SVG scales to fill screen, no flex height issues
-    const W = window.innerWidth;
-    const H = Math.round(window.innerHeight * 0.72);
+    // Use container dimensions (works for both mobile and desktop)
+    const isMobile = window.innerWidth <= 768;
+    const W = isMobile ? window.innerWidth : (el.clientWidth  || el.parentElement?.clientWidth  || 400);
+    const H = isMobile ? Math.round(window.innerHeight * 0.72) : (el.clientHeight || el.parentElement?.clientHeight || 300);
     el.style.cssText = `position:absolute;inset:0;overflow:visible`;
     const flex1 = el.parentElement;
-    if (flex1) { flex1.style.height = H + 'px'; flex1.style.flex = 'none'; }
+    if (isMobile && flex1) { flex1.style.height = H + 'px'; flex1.style.flex = 'none'; }
 
     const trEl = document.getElementById('portfolio-chart-timerange');
     if (trEl) trEl.style.display = 'none';
