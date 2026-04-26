@@ -1807,20 +1807,24 @@ function _renderPortfolioChart(el, data) {
     const tsShift    = todayBase - dataBase;
     const pctData    = data.map((p, i) => ({ time: p.time + tsShift, value: pctVals[i] }));
 
+    // Build time labels overlay BEFORE LW (so it's in the DOM)
+    const fmtT2 = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
+    const t0 = data[0].time, t1 = data[data.length-1].time;
+    const tlabels = Array.from({length:5}, (_,i) => fmtT2(t0 + Math.round((t1-t0)*i/4)));
+    const labelsBar = document.createElement('div');
+    labelsBar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;height:22px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;font-size:0.65rem;color:#9aa0a6;pointer-events:none;direction:ltr;z-index:5;font-family:Inter,sans-serif;font-variant-numeric:tabular-nums;border-top:1px solid rgba(0,0,0,0.06);background:#fff';
+    labelsBar.innerHTML = tlabels.map(l => `<span>${l}</span>`).join('');
+    el.appendChild(labelsBar);
+
+    // LW renders inside el; leave 22px at bottom for our labels bar
+    const elH = el.clientHeight || 280;
     _lwPortfolio = LightweightCharts.createChart(el, {
         width:  el.clientWidth  || 400,
-        height: el.clientHeight || 280,
+        height: Math.max(elH - 22, 160),
         layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
         grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
         rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.08, bottom: 0.04 } },
-        timeScale: {
-            visible: true,
-            borderColor: 'rgba(0,0,0,0.1)',
-            tickMarkFormatter: t => {
-                const d = new Date(t * 1000);
-                return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
-            },
-        },
+        timeScale: { visible: false },
         handleScroll: true, handleScale: true,
     });
     const series = _lwPortfolio.addAreaSeries({
