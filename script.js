@@ -366,7 +366,8 @@ async function refreshRealData() {
 
     const { marketState = 'CLOSED', quotes: quoteList } = quotes;
     window._lastQuotes = quoteList;
-    const effectiveState = marketState;
+    // Local clock overrides Yahoo — if our schedule says closed, it's closed
+    const effectiveState = isMarketOpen() ? marketState : 'CLOSED';
     applyMarketStatus(effectiveState);
 
     let liveCount = 0;
