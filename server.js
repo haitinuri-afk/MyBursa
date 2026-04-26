@@ -446,7 +446,8 @@ const CONTEXT_IQ_PATH = path.join(__dirname, '..', 'ContextIQ');
 
 // ── MongoDB Atlas (optional — set MONGODB_URI env var to enable) ───────────
 const MONGODB_URI = process.env.MONGODB_URI;
-let _ragCol = null;   // MongoDB collection handle
+let _ragCol     = null;   // MongoDB collection handle
+let _scansCol   = null;   // Persistent scan results collection
 
 async function initMongoDB() {
     if (!MONGODB_URI) return;
@@ -456,9 +457,11 @@ async function initMongoDB() {
         await client.connect();
         const db  = client.db('bursa');
         _ragCol   = db.collection('knowledge');
+        _scansCol = db.collection('scan_results');
         // Full-text index (created once, idempotent)
         await _ragCol.createIndex({ text: 'text' }, { default_language: 'none' });
-        console.log('[MongoDB] Connected to Atlas — RAG collection ready');
+        await _scansCol.createIndex({ scannedAt: -1 });
+        console.log('[MongoDB] Connected to Atlas — RAG + scans collections ready');
         await _syncLocalChunksToMongo();
     } catch(e) {
         console.warn('[MongoDB] Connection failed, falling back to local RAG:', e.message);
@@ -995,14 +998,47 @@ app.post('/api/portfolio', express.json(), async (req, res) => {
 // ── Start ──────────────────────────────────────────────────────────────────
 
 // ── /api/latest-scans ─────────────────────────────────────────────────────────
-app.get('/api/latest-scans', (req, res) => {
-    res.json({ scans: getLatestScans(20), updatedAt: new Date().toISOString() });
+app.get('/api/latest-scans', async (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit) || 5, 20);
+    // Prefer in-memory cache; fall back to MongoDB for persistence across restarts
+    let scans = getLatestScans(limit);
+    if (!scans.length && _scansCol) {
+        try {
+            scans = await _scansCol.find({}, { projection: { _id: 0 } })
+                .sort({ scannedAt: -1 }).limit(limit).toArray();
+        } catch (e) { console.warn('[scans] MongoDB read error:', e.message); }
+    }
+    res.json({ scans, updatedAt: new Date().toISOString() });
 });
+
+// ── Persist scan results to MongoDB ──────────────────────────────────────────
+async function _persistScans(results) {
+    if (!_scansCol || !results?.length) return;
+    try {
+        const ops = results.map(r => ({
+            updateOne: {
+                filter: { url: r.url },
+                update: { $set: r },
+                upsert: true,
+            }
+        }));
+        await _scansCol.bulkWrite(ops);
+        // Keep only latest 100 documents
+        const total = await _scansCol.countDocuments();
+        if (total > 100) {
+            const oldest = await _scansCol.find({}, { projection: { _id: 1 } })
+                .sort({ scannedAt: 1 }).limit(total - 100).toArray();
+            const ids = oldest.map(d => d._id);
+            await _scansCol.deleteMany({ _id: { $in: ids } });
+        }
+    } catch (e) { console.warn('[scans] persist error:', e.message); }
+}
 
 // ── /api/trigger-scan (manual trigger) ───────────────────────────────────────
 app.post('/api/trigger-scan', apiLimiter, async (req, res) => {
     res.json({ message: 'סריקה התחילה ברקע' });
     runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate })
+        .then(results => _persistScans(results))
         .catch(e => console.error('[maya] manual scan error:', e.message));
 });
 
@@ -1014,11 +1050,11 @@ app.listen(PORT, async () => {
     setInterval(refreshFxRates, 3600_000);
 
     // ── Maya cron: every hour Sun–Thu 10:00–18:00 Israel time ─────────────────
-    // Cron: minute=0, hour=10–18, day-of-week=0–4 (Sun=0 in node-cron)
     cron.schedule('0 10-18 * * 0-4', async () => {
         console.log('[maya] Hourly scan triggered by cron');
         try {
-            await runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate });
+            const results = await runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate });
+            await _persistScans(results);
         } catch (e) {
             console.error('[maya] cron scan error:', e.message);
         }
