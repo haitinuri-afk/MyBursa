@@ -1898,18 +1898,12 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     ctx.lineTo(pts[pts.length-1][0], zeroY);
     ctx.lineTo(pts[0][0], zeroY);
     ctx.closePath();
-    // Gradient: strong at line, transparent at zero
-    const grad = ctx.createLinearGradient(0, isUp ? zeroY : PAD.top + iH, 0, isUp ? PAD.top : zeroY);
-    grad.addColorStop(0,   color.replace('#', 'rgba(').replace(/(..)(..)(..)/, (_, r, g, b) =>
-        `${parseInt(r,16)},${parseInt(g,16)},${parseInt(b,16)}`) + ',0.35)');
-    grad.addColorStop(1, color.replace('#', 'rgba(').replace(/(..)(..)(..)/, (_, r, g, b) =>
-        `${parseInt(r,16)},${parseInt(g,16)},${parseInt(b,16)}`) + ',0.01)');
 
-    // Simple color conversion
     const rgba = (hex, a) => {
         const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
         return `rgba(${r},${g},${b},${a})`;
     };
+    // Gradient: opaque at the line, transparent toward the zero baseline
     const fillGrad = ctx.createLinearGradient(0, isUp ? zeroY : PAD.top+iH, 0, isUp ? PAD.top : zeroY);
     fillGrad.addColorStop(0, rgba(color, 0.35));
     fillGrad.addColorStop(1, rgba(color, 0.01));
