@@ -1883,8 +1883,10 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const trEl = document.getElementById('portfolio-chart-timerange');
     if (trEl) trEl.style.display = 'none';
 
+    // SVG height leaves room for the HTML time bar below
+    const svgH = H - 22;
     el.innerHTML = `
-<svg width="${W}" height="${H}" viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none" style="display:block;overflow:visible;position:absolute;top:0;left:0">
+<svg width="${W}" height="${svgH}" viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none" style="display:block;overflow:visible;position:absolute;top:0;left:0">
   <defs>
     <linearGradient id="${gid}" x1="0" y1="${gy1}" x2="0" y2="${gy2}">
       <stop offset="0%"   stop-color="${color}" stop-opacity="0.38"/>
@@ -1897,8 +1899,8 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
   <path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
   <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="5" fill="${color}" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>
   ${pLabels.map(p=>`<text x="${VW-PAD.right+3}" y="${(p.y+3).toFixed(1)}" font-size="11" font-family="Inter,monospace" fill="#9aa0a6">${p.label}</text>`).join('')}
-  ${tLabels.map((t,i)=>`<text x="${t.x.toFixed(1)}" y="${VH-8}" text-anchor="${i===0?'start':i===4?'end':'middle'}" font-size="11" font-family="Inter,sans-serif" fill="#9aa0a6">${t.label}</text>`).join('')}
-</svg>`;
+</svg>
+<div style="position:absolute;bottom:0;left:0;right:0;height:22px;display:flex;align-items:center;justify-content:space-between;padding:0 4px 0 ${Math.round(PAD.left/VW*W)}px;padding-right:${Math.round(PAD.right/VW*W)}px;font-size:11px;color:#9aa0a6;font-family:Inter,sans-serif;direction:ltr;border-top:1px solid rgba(0,0,0,0.06)">${tLabels.map((t,i)=>`<span>${t.label}</span>`).join('')}</div>`;
 }
 
 function togglePortfolioChart() {
