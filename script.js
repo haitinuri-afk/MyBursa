@@ -1809,11 +1809,18 @@ function _renderPortfolioChart(el, data) {
 
     _lwPortfolio = LightweightCharts.createChart(el, {
         width:  el.clientWidth  || 400,
-        height: Math.max((el.clientHeight || 280) - 32, 200),
+        height: el.clientHeight || 280,
         layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
         grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
         rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.08, bottom: 0.04 } },
-        timeScale: { visible: false },
+        timeScale: {
+            visible: true,
+            borderColor: 'rgba(0,0,0,0.1)',
+            tickMarkFormatter: t => {
+                const d = new Date(t * 1000);
+                return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+            },
+        },
         handleScroll: true, handleScale: true,
     });
     const series = _lwPortfolio.addAreaSeries({
@@ -1826,16 +1833,6 @@ function _renderPortfolioChart(el, data) {
     series.setData(pctData);
     series.createPriceLine({ price: 0, color: 'rgba(0,0,0,0.15)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
     _lwPortfolio.timeScale().fitContent();
-
-    const trEl = document.getElementById('portfolio-chart-timerange');
-    if (trEl && data.length) {
-        const fmt = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
-        const t0 = data[0].time, t1 = data[data.length-1].time;
-        const labels = Array.from({ length: 5 }, (_, i) => fmt(t0 + Math.round((t1-t0)*i/4)));
-        trEl.style.display = 'flex';
-        trEl.style.direction = 'ltr';
-        trEl.innerHTML = labels.map(l => `<span>${l}</span>`).join('');
-    }
 }
 
 function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
