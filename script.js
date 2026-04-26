@@ -1807,16 +1807,22 @@ function _renderPortfolioChart(el, data) {
     const tsShift    = todayBase - dataBase;
     const pctData    = data.map((p, i) => ({ time: p.time + tsShift, value: pctVals[i] }));
 
-    // Shrink el so the 22px labels bar (sibling in parent) is visible below
-    el.style.bottom = '22px';
-    const elH = el.clientHeight || 258;
+    el.style.bottom = '';   // reset — let inset:0 apply fully
+    const elH = el.clientHeight || 300;
     _lwPortfolio = LightweightCharts.createChart(el, {
         width:  el.clientWidth  || 400,
         height: elH,
         layout:  { background: { color: '#ffffff' }, textColor: '#5f6368' },
         grid:    { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.04)' } },
         rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.08, bottom: 0.04 } },
-        timeScale: { visible: false },
+        timeScale: {
+            visible: true,
+            borderColor: 'rgba(0,0,0,0.08)',
+            tickMarkFormatter: t => {
+                const d = new Date(t * 1000);
+                return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+            },
+        },
         handleScroll: true, handleScale: true,
     });
     const series = _lwPortfolio.addAreaSeries({
@@ -1829,19 +1835,6 @@ function _renderPortfolioChart(el, data) {
     series.setData(pctData);
     series.createPriceLine({ price: 0, color: 'rgba(0,0,0,0.15)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
     _lwPortfolio.timeScale().fitContent();
-
-    // Append time labels to el's parent — outside LW's DOM so LW can't clobber them
-    const fmtT2 = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
-    const t0 = data[0].time, t1 = data[data.length-1].time;
-    const flex1 = el.parentElement;
-    if (flex1) {
-        flex1.querySelectorAll('.ptf-time-bar').forEach(e => e.remove());
-        const labelsBar = document.createElement('div');
-        labelsBar.className = 'ptf-time-bar';
-        labelsBar.style.cssText = 'position:absolute;bottom:0;left:0;right:0;height:22px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;font-size:0.65rem;color:#9aa0a6;pointer-events:none;direction:ltr;z-index:10;font-family:Inter,sans-serif;font-variant-numeric:tabular-nums;border-top:1px solid rgba(0,0,0,0.06);background:#fff';
-        labelsBar.innerHTML = Array.from({length:5}, (_,i) => `<span>${fmtT2(t0 + Math.round((t1-t0)*i/4))}</span>`).join('');
-        flex1.appendChild(labelsBar);
-    }
 }
 
 function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
