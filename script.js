@@ -1859,13 +1859,17 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const oldTr = document.getElementById('portfolio-chart-timerange');
     if (oldTr) oldTr.style.display = 'none';
 
-    // Time labels
+    // Time labels — pick up to 5 evenly-spaced, deduplicate consecutive identical values
     const fmtT = t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); };
     const tCount = Math.min(5, data.length);
-    const tSpans = Array.from({length: tCount}, (_, i) => {
-        const idx = Math.round(i * (data.length - 1) / (tCount - 1));
-        return `<span>${fmtT(data[idx].time)}</span>`;
-    }).join('');
+    const rawLabels = tCount < 2
+        ? (tCount === 1 ? [fmtT(data[0].time)] : [])
+        : Array.from({length: tCount}, (_, i) => {
+            const idx = Math.round(i * (data.length - 1) / (tCount - 1));
+            return fmtT(data[idx].time);
+          });
+    const uniqLabels = rawLabels.filter((l, i) => i === 0 || l !== rawLabels[i - 1]);
+    const tSpans = uniqLabels.map(l => `<span>${l}</span>`).join('');
 
     const PAD = { top: 14, right: 56, bottom: 6, left: 22 };
     const iW  = W - PAD.left - PAD.right;
