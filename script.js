@@ -1836,12 +1836,6 @@ function _renderPortfolioChart(el, data) {
 }
 
 function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
-    // Ensure chronological order (oldest first = left side of chart)
-    if (data.length > 1 && data[0].time > data[data.length - 1].time) {
-        data    = data.slice().reverse();
-        pctVals = pctVals.slice().reverse();
-    }
-
     const isMobile = window.innerWidth <= 768;
     const chartWrap = document.getElementById('ptf-chart-wrap') || el.parentElement;
 
