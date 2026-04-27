@@ -927,16 +927,20 @@ async function drawChart() {
     const chartTx = dark ? '#9aa0a6' : '#5f6368';
     const gridV   = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
     const gridH   = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    const isIntraday = currentMainTf === 'intraday';
     const _fmtTick = function(t) {
         var d = new Date(t * 1000);
-        return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
+        if (isIntraday) {
+            return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
+        }
+        return ('0'+d.getDate()).slice(-2) + '/' + ('0'+(d.getMonth()+1)).slice(-2);
     };
     _lwChart = LightweightCharts.createChart(container, {
         width: w, height: h,
         layout:   { background: { color: chartBg }, textColor: chartTx },
         grid:     { vertLines: { color: gridV }, horzLines: { color: gridH } },
         localization: { timeFormatter: _fmtTick },
-        timeScale:      { borderColor: 'rgba(0,0,0,0.1)', timeVisible: true, secondsVisible: false, fixRightEdge: true, tickMarkFormatter: _fmtTick },
+        timeScale:      { borderColor: 'rgba(0,0,0,0.1)', timeVisible: isIntraday, secondsVisible: false, fixRightEdge: true, tickMarkFormatter: _fmtTick },
         rightPriceScale:{ borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.06, bottom: 0.26 } },
         crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
     });
