@@ -54,6 +54,12 @@ app.get('/sw.js', (req, res) => {
     res.send(sw);
 });
 
+// Root → always fresh HTML (must come BEFORE express.static)
+app.get('/', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 // JS / CSS — always fresh, no browser cache
 app.get(/\.(js|css)$/, (req, res, next) => {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -61,12 +67,6 @@ app.get(/\.(js|css)$/, (req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname)));
-
-// Root → full dashboard
-app.get('/', (req, res) => {
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
 
 // ── Yahoo Finance helpers ─────────────────────────────────────────────────
 
