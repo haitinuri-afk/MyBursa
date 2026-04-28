@@ -915,19 +915,8 @@ async function drawChart() {
 
     const { range, interval } = tfToOhlcRange(currentMainTf);
     const isIntraday = currentMainTf === 'intraday';
-    let { ohlc, prevClose } = await fetchHistoricalOHLC(sym, range, interval);
+    const { ohlc, prevClose } = await fetchHistoricalOHLC(sym, range, interval);
     if (!ohlc.length) { console.warn('[lwChart] no OHLC for', sym, range); return; }
-    // For non-intraday: convert Unix timestamps → 'YYYY-MM-DD' strings so
-    // LightweightCharts uses its business-day scale (proper date labels)
-    if (!isIntraday) {
-        ohlc = ohlc.map(d => {
-            const dt = new Date(d.time * 1000);
-            const ymd = dt.getFullYear() + '-'
-                + ('0'+(dt.getMonth()+1)).slice(-2) + '-'
-                + ('0'+dt.getDate()).slice(-2);
-            return { ...d, time: ymd };
-        });
-    }
 
     // Destroy old chart
     if (_lwChart) { _lwChart.remove(); _lwChart = null; _lwSeries = null; _lwVolume = null; }
@@ -1052,8 +1041,15 @@ function drawIndexChart(tf = currentTf) {
     const ohlc = getIndexOHLC(tf);
     if (!ohlc || ohlc.length < 2) return;
 
-    // Recreate chart if theme changed
-    if (_idxChart && container.children.length && container.querySelector('canvas')?.style.background?.includes('0b0e')) {
+    // Detect whether this dataset uses intraday (number) or daily (string) times
+    const idxIntraday = typeof ohlc[0].time === 'number';
+    const fmtIdx = idxIntraday
+        ? t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+        : undefined;
+
+    // Recreate chart whenever the time-format changes (intraday ↔ daily)
+    const prevIntraday = _idxChart?._isIntraday;
+    if (_idxChart && prevIntraday !== idxIntraday) {
         _idxChart.remove(); _idxChart = null; _idxSeries = null;
     }
     if (!_idxChart) {
@@ -1062,11 +1058,11 @@ function drawIndexChart(tf = currentTf) {
             height: container.clientHeight || 200,
             layout:   { background: { color: '#ffffff' }, textColor: '#5f6368' },
             grid:     { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.06)' } },
-            localization: { timeFormatter: t => { const d = new Date(t*1000); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; } },
-            timeScale:       { borderColor: '#1e2430', timeVisible: true, secondsVisible: false, fixRightEdge: true, tickMarkFormatter: t => { const d = new Date(t*1000); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; } },
+            timeScale:       { borderColor: '#1e2430', timeVisible: idxIntraday, secondsVisible: false, fixRightEdge: true, tickMarkFormatter: fmtIdx },
             rightPriceScale: { borderColor: '#1e2430', scaleMargins: { top: 0.08, bottom: 0.06 } },
             crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
         });
+        _idxChart._isIntraday = idxIntraday;
         _idxSeries = _idxChart.addAreaSeries({
             lineColor:      '#1db954',
             topColor:       'rgba(29,185,84,0.35)',

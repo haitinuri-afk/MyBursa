@@ -423,8 +423,12 @@ app.get('/api/stock/history', async (req, res) => {
         const closes    = closeData.map(d => applyDivisor(canonicalSymbol, d.v, currency));
         const closeTimes = closeData.map(d => d.t ?? 0);
 
+        // For daily+ intervals, convert Unix timestamp → 'YYYY-MM-DD' string
+        // so LightweightCharts uses its business-day scale (proper date labels)
+        const isIntradayInterval = /m$|h$/i.test(interval); // e.g. 5m, 30m, 1h
+        const toYMD = t => { const d = new Date(t * 1000); return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); };
         const ohlc = timestamps.map((t, i) => ({
-            time:   t,
+            time:   isIntradayInterval ? t : toYMD(t),
             open:   applyDivisor(canonicalSymbol, q.open?.[i],  currency),
             high:   applyDivisor(canonicalSymbol, q.high?.[i],  currency),
             low:    applyDivisor(canonicalSymbol, q.low?.[i],   currency),
