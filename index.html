@@ -5,24 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bursa — בורסת תל אביב</title>
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#0f1013">
+    <meta name="theme-color" content="#ffffff">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Bursa">
     <link rel="apple-touch-icon" href="/icon-192.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" href="style.css?v=6">
+    <link rel="stylesheet" href="style.css?v=7">
 </head>
-<body class="bg-white text-gray-900">
+<body>
     <div class="main-wrapper">
         <!-- Header Bar -->
         <header class="top-bar">
-            <!-- Logo -->
             <div class="hdr-logo">
                 <span class="hdr-logo-mark">B</span>
                 <span class="hdr-logo-text">בורסת תל אביב</span>
@@ -30,20 +29,13 @@
                     <span id="market-status" class="hdr-dot">●</span>
                     <span id="market-label" class="hdr-label"></span>
                 </span>
+            </div>
+            <div class="hdr-center">
+                <span id="last-update" class="hdr-time"></span>
                 <span id="data-status" class="hdr-badge">SIM</span>
             </div>
-
-            <!-- Center: clock + delay -->
-            <div class="hdr-center">
-                <span class="hdr-delay">נתונים מעוכבים ~15 דק׳</span>
-                <span class="hdr-sep">|</span>
-                <span id="last-update" class="hdr-time"></span>
-            </div>
-
-            <!-- Actions -->
             <div class="hdr-actions" dir="ltr">
-                <button onclick="toggleReportPanel()" class="hdr-btn" id="report-toggle-btn">📋 דוח</button>
-                <button onclick="resetWindows()" class="hdr-btn">&#8635; Reset</button>
+                <button onclick="resetWindows()" class="hdr-btn">↺ Reset</button>
             </div>
         </header>
 
@@ -56,7 +48,7 @@
 
         <!-- Scan Strip -->
         <div id="scan-strip" class="scan-strip" style="display:none">
-            <span class="scan-strip-label">🔍 דוחות:</span>
+            <span class="scan-strip-label">סריקה:</span>
             <div id="scan-strip-items" class="scan-strip-items"></div>
         </div>
 
@@ -74,10 +66,6 @@
                 <span class="mob-tab-icon">🤖</span>
                 <span class="mob-tab-label">AI</span>
             </button>
-            <button class="mob-tab" data-tab="report" onclick="switchMobileTab('report')">
-                <span class="mob-tab-icon">📋</span>
-                <span class="mob-tab-label">דוח</span>
-            </button>
         </nav>
 
         <!-- Dashboard Area -->
@@ -86,9 +74,9 @@
             <!-- TA-35 Index Window -->
             <div id="win-indices-tase" class="card">
                 <div class="window-header">
-                    <div style="display:flex;align-items:center;gap:6px">
-                        <h3>TA-35 Index</h3>
-                        <span id="ta35-status" style="font-size:9px;font-family:monospace;font-weight:700;color:#ea4335"></span>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <h3>TA-35</h3>
+                        <span id="ta35-status" style="font-size:9px;font-family:monospace;font-weight:700;color:#ef4444"></span>
                     </div>
                     <div class="window-controls">
                         <div class="timeframe-buttons" id="index-tf-btns">
@@ -101,12 +89,12 @@
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
-                <div class="card-body" dir="ltr" style="padding:10px 12px 8px">
-                    <div style="margin-bottom:6px">
-                        <div style="font-size:1.7rem;font-weight:700;font-family:'Inter',sans-serif;color:#202124;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums" id="ta35-price"></div>
-                        <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
-                            <span id="ta35-pct" style="font-family:'Inter',sans-serif;font-weight:600;font-size:0.82rem"></span>
-                            <span id="ta35-pts" style="font-family:'Inter',sans-serif;font-size:0.78rem;color:#9aa0a6"></span>
+                <div class="card-body" dir="ltr">
+                    <div class="index-stats">
+                        <div class="index-price" id="ta35-price"></div>
+                        <div class="index-meta">
+                            <span id="ta35-pct"></span>
+                            <span id="ta35-pts" class="index-pts"></span>
                         </div>
                     </div>
                     <div style="flex:1;position:relative;min-height:0">
@@ -118,7 +106,7 @@
             <!-- Leading Stocks Window -->
             <div id="win-stocks" class="card">
                 <div class="window-header">
-                    <h3>מניות מובילות</h3>
+                    <h3>מניות</h3>
                     <div class="window-controls">
                         <button class="win-btn win-max" onclick="toggleMaximize('win-stocks')"></button>
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
@@ -138,19 +126,19 @@
                             <tbody id="stock-list"></tbody>
                         </table>
                     </div>
-                    <button id="stock-show-more-btn" onclick="_stockShowAll=!_stockShowAll;updateStockList()" style="display:none;margin-top:4px;font-size:10px;padding:4px 0;width:100%;background:#f1f3f4;border:1px solid rgba(0,0,0,0.12);border-radius:8px;color:#1a73e8;font-weight:600;cursor:pointer"></button>
-                    <button id="refresh-btn" style="margin-top:4px;font-size:10px;padding:4px 0;width:100%;background:#f1f3f4;border:1px solid rgba(0,0,0,0.12);border-radius:8px;color:#3c4043;cursor:pointer">רענן</button>
+                    <button id="stock-show-more-btn" onclick="_stockShowAll=!_stockShowAll;updateStockList()" style="display:none;margin-top:8px;font-size:11px;padding:6px 0;width:100%;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--primary);font-weight:600;cursor:pointer"></button>
+                    <button id="refresh-btn" style="margin-top:6px;font-size:11px;padding:6px 0;width:100%;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--text3);cursor:pointer">רענן</button>
                 </div>
             </div>
 
             <!-- Main Chart Window -->
             <div id="win-main-chart" class="card">
                 <div class="window-header" dir="ltr">
-                    <div style="display:flex;align-items:center;gap:8px">
-                        <bdi style="font-size:0.8rem;color:#202124;font-weight:600;font-family:inherit" id="main-chart-title">לאומי</bdi>
-                        <span id="main-chart-price" style="font-family:'Inter',sans-serif;font-size:13px;font-weight:600;color:#202124;font-variant-numeric:tabular-nums"></span>
-                        <span id="main-chart-pct"   style="font-family:'Inter',sans-serif;font-size:11px;font-weight:500;font-variant-numeric:tabular-nums"></span>
-                        <span id="main-chart-date"  style="font-family:'Inter',sans-serif;font-size:10px;color:#9aa0a6;font-variant-numeric:tabular-nums"></span>
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <bdi class="chart-title" id="main-chart-title">לאומי</bdi>
+                        <span class="chart-price" id="main-chart-price"></span>
+                        <span class="chart-pct" id="main-chart-pct"></span>
+                        <span class="chart-date" id="main-chart-date"></span>
                     </div>
                     <div class="window-controls">
                         <div class="timeframe-buttons" id="main-tf-btns">
@@ -165,7 +153,7 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="flex-1 w-full overflow-hidden relative" style="min-height:0;position:relative;background:#ffffff;border-radius:8px">
+                    <div style="flex:1;position:relative;min-height:0;border-radius:10px;overflow:hidden">
                         <div id="stockChart" style="position:absolute;inset:0"></div>
                     </div>
                 </div>
@@ -176,7 +164,7 @@
                 <div class="window-header">
                     <h3>תיק השקעות</h3>
                     <div class="window-controls">
-                        <button onclick="togglePortfolioChart()" style="font-size:10px;background:#e8f0fe;border:1px solid #c5d3f5;color:#1a73e8;padding:2px 10px;border-radius:20px;height:20px;line-height:1;cursor:pointer;font-weight:600">📈 גרף</button>
+                        <button onclick="togglePortfolioChart()" class="pill-btn">📈 גרף</button>
                         <button class="win-btn win-max" onclick="toggleMaximize('win-portfolio')"></button>
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
@@ -186,9 +174,9 @@
                         <table id="portfolio-table">
                             <thead>
                                 <tr>
-                                    <th class="whitespace-nowrap text-left">מניה</th>
+                                    <th class="text-right">מניה</th>
                                     <th class="pct-col text-center">P/L%</th>
-                                    <th class="text-right" style="font-size:9px">P/L ₪</th>
+                                    <th class="text-right">P/L ₪</th>
                                     <th class="pct-col text-center">יום%</th>
                                     <th class="text-right">שווי</th>
                                     <th class="text-center">פעולה</th>
@@ -198,7 +186,7 @@
                         </table>
                     </div>
                     <div class="portfolio-footer">
-                        <span>סה"כ</span>
+                        <span>סה״כ</span>
                         <span id="total-portfolio-value">₪0.00</span>
                     </div>
                 </div>
@@ -207,39 +195,38 @@
             <!-- Simulator Window -->
             <div id="win-simulator" class="card">
                 <div class="window-header">
-                    <h3>סימולטור</h3>
+                    <h3>קנה / מכור</h3>
                     <div class="window-controls">
                         <button class="win-btn win-max" onclick="toggleMaximize('win-simulator')"></button>
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
                 <div class="card-body" dir="ltr">
-                    <div style="display:flex;gap:6px;margin-bottom:6px">
+                    <div style="display:flex;gap:8px;margin-bottom:8px">
                         <div style="position:relative;flex:1">
-                            <input type="text" id="sim-symbol" placeholder="חפש מניה בעברית..." dir="rtl"
-                                style="background:#f1f3f4;border:1px solid rgba(0,0,0,0.15);color:#202124;padding:5px 8px;border-radius:8px;font-size:12px;width:100%;outline:none"
+                            <input type="text" id="sim-symbol" placeholder="חפש מניה..." dir="rtl" class="sim-input"
                                 oninput="stockAutocomplete(this.value)"
                                 onkeydown="handleAutocompleteKey(event)"
                                 onblur="setTimeout(()=>document.getElementById('ac-dropdown').style.display='none',150)"
                                 onfocus="stockAutocomplete(this.value)">
-                            <div id="ac-dropdown" style="display:none;position:absolute;top:100%;right:0;left:0;z-index:9999;background:#fff;border:1px solid rgba(0,0,0,0.15);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);max-height:160px;overflow-y:auto;margin-top:2px"></div>
+                            <div id="ac-dropdown" style="display:none;position:absolute;top:100%;right:0;left:0;z-index:9999;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.10);max-height:160px;overflow-y:auto;margin-top:4px"></div>
                         </div>
-                        <input type="number" id="sim-qty" placeholder="כמות" min="1" style="background:#f1f3f4;border:1px solid rgba(0,0,0,0.15);color:#202124;padding:5px 8px;border-radius:8px;font-size:12px;width:72px;outline:none" onkeydown="if(event.key==='Enter') buyStock()">
+                        <input type="number" id="sim-qty" placeholder="כמות" min="1" class="sim-input" style="width:76px" onkeydown="if(event.key==='Enter') buyStock()">
                     </div>
-                    <div style="display:flex;gap:6px;margin-bottom:8px">
-                        <button id="buy-btn" style="flex:1;background:#34a853;color:#fff;padding:6px 0;border-radius:20px;font-weight:700;font-size:12px;border:none;cursor:pointer">קנה</button>
-                        <button id="sell-btn-sim" style="flex:1;background:#ea4335;color:#fff;padding:6px 0;border-radius:20px;font-weight:700;font-size:12px;border:none;cursor:pointer">מכור</button>
+                    <div style="display:flex;gap:8px;margin-bottom:12px">
+                        <button id="buy-btn" class="action-btn action-btn-buy">קנה</button>
+                        <button id="sell-btn-sim" class="action-btn action-btn-sell">מכור</button>
                     </div>
-                    <div style="font-size:9px;color:#5f6368;margin-bottom:4px;font-weight:600">היסטוריית עסקאות</div>
+                    <div class="section-label">היסטוריית עסקאות</div>
                     <div class="scroll-container" style="max-height:120px">
-                        <table style="width:100%;border-collapse:collapse;font-size:9px">
+                        <table style="width:100%;border-collapse:collapse;font-size:11px">
                             <thead>
-                                <tr style="color:#5f6368">
-                                    <th style="text-align:left;padding:1px 3px">שעה</th>
-                                    <th style="text-align:left;padding:1px 3px">פעולה</th>
-                                    <th style="text-align:left;padding:1px 3px">סימול</th>
-                                    <th style="text-align:right;padding:1px 3px">כמות</th>
-                                    <th style="text-align:right;padding:1px 3px">מחיר</th>
+                                <tr>
+                                    <th style="text-align:right;padding:2px 4px;color:var(--text3);font-weight:500;font-size:10px">שעה</th>
+                                    <th style="text-align:right;padding:2px 4px;color:var(--text3);font-weight:500;font-size:10px">פעולה</th>
+                                    <th style="text-align:right;padding:2px 4px;color:var(--text3);font-weight:500;font-size:10px">סימול</th>
+                                    <th style="text-align:right;padding:2px 4px;color:var(--text3);font-weight:500;font-size:10px">כמות</th>
+                                    <th style="text-align:right;padding:2px 4px;color:var(--text3);font-weight:500;font-size:10px">מחיר</th>
                                 </tr>
                             </thead>
                             <tbody id="tx-history-list"></tbody>
@@ -248,11 +235,10 @@
                 </div>
             </div>
 
-
             <!-- Portfolio Chart Window -->
             <div id="win-portfolio-chart" class="card" style="display:none">
                 <div class="window-header">
-                    <h3>📈 ביצועי תיק</h3>
+                    <h3>ביצועי תיק</h3>
                     <div class="window-controls">
                         <div class="timeframe-buttons">
                             <button id="ptf-day"  class="active" onclick="setPortfolioTf('day')">יום</button>
@@ -265,7 +251,7 @@
                 </div>
                 <div class="card-body" style="display:flex;flex-direction:column;gap:4px">
                     <div id="portfolio-chart-summary" style="text-align:center;padding:2px 0"></div>
-                    <div id="ptf-chart-wrap" style="flex:1;min-height:0;position:relative;overflow:hidden;background:#fff;border-radius:8px">
+                    <div id="ptf-chart-wrap" style="flex:1;min-height:0;position:relative;overflow:hidden;background:#fff;border-radius:10px">
                         <div id="portfolioChart" style="position:absolute;top:0;left:0;right:0;bottom:24px"></div>
                         <div id="portfolio-chart-timerange" style="position:absolute;bottom:0;left:0;right:0;height:24px;display:none;align-items:center;justify-content:space-between;padding:0 56px 0 22px;font-size:11px;color:#9aa0a6;font-family:Inter,sans-serif;direction:ltr;border-top:1px solid rgba(0,0,0,0.07)"></div>
                     </div>
@@ -274,14 +260,13 @@
 
             <!-- Search Window -->
             <div id="win-search" class="card">
-                <div class="window-header" style="padding:6px 12px">
+                <div class="window-header" style="padding:10px 16px">
                     <div style="display:flex;gap:8px;flex:1;align-items:center" dir="ltr">
-                        <span style="font-size:13px">🔍</span>
                         <input type="text" id="search-symbol" placeholder="חפש מניה (e.g. לאומי / LUMI.TA)"
-                            style="background:#f1f3f4;border:1px solid rgba(0,0,0,0.15);color:#202124;padding:4px 12px;border-radius:20px;font-size:12px;flex:1;outline:none;height:26px"
+                            class="search-input"
                             onkeydown="if(event.key==='Enter') searchSymbol()">
-                        <button onclick="searchSymbol()" style="background:#1a73e8;color:#fff;padding:0 16px;border-radius:20px;font-size:12px;font-weight:600;border:none;cursor:pointer;height:26px">חפש</button>
-                        <span id="search-error" style="font-size:10px;color:#ea4335;white-space:nowrap" class="hidden">לא נמצא</span>
+                        <button onclick="searchSymbol()" class="search-btn">חפש</button>
+                        <span id="search-error" style="font-size:11px;color:#ef4444;white-space:nowrap" class="hidden">לא נמצא</span>
                     </div>
                 </div>
             </div>
@@ -289,9 +274,9 @@
             <!-- AI Chat Window -->
             <div id="win-ai-chat" class="card" style="display:flex;flex-direction:column">
                 <div class="window-header">
-                    <h3>🤖 יועץ AI</h3>
+                    <h3>יועץ AI</h3>
                     <div class="window-controls">
-                        <button onclick="clearAIChat()" style="font-size:9px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#9aa0a6;padding:0 8px;border-radius:20px;height:18px;line-height:1;cursor:pointer">נקה</button>
+                        <button onclick="clearAIChat()" class="pill-btn pill-btn-sm">נקה</button>
                         <button class="win-btn win-max" onclick="toggleMaximize('win-ai-chat')"></button>
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
@@ -304,48 +289,12 @@
                 </div>
             </div>
 
-            <!-- Report Analyzer Card -->
-            <div id="win-report" class="card">
-                <div class="window-header">
-                    <h3>📋 ניתוח דוח כספי</h3>
-                    <div class="window-controls">
-                        <button onclick="clearReport()" style="font-size:9px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#9aa0a6;padding:0 8px;border-radius:20px;height:18px;line-height:1;cursor:pointer">נקה</button>
-                        <button class="win-btn win-max" onclick="toggleMaximize('win-report')"></button>
-                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
-                    </div>
-                </div>
-
-                <!-- Input area -->
-                <div id="report-input-area" style="padding:12px;display:flex;flex-direction:column;gap:8px">
-
-                    <!-- PDF upload zone -->
-                    <label id="report-pdf-zone" style="display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--border);border-radius:10px;padding:14px;cursor:pointer;color:var(--text2);font-size:0.82rem;transition:border-color .15s;background:var(--bg)" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
-                        <span style="font-size:1.4rem">📄</span>
-                        <span>גרור PDF לכאן או <strong style="color:var(--primary)">לחץ לבחירה</strong></span>
-                        <input type="file" accept="application/pdf" style="display:none" onchange="analyzeReportPDF(this)">
-                    </label>
-
-                    <div style="text-align:center;font-size:0.75rem;color:var(--text2)">— או הדבק טקסט —</div>
-
-                    <textarea id="report-text" placeholder="הדבק כאן טקסט של דוח כספי..." dir="rtl"
-                        style="width:100%;min-height:80px;max-height:160px;border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;font-size:0.85rem;background:var(--bg);color:var(--text);resize:vertical;font-family:inherit;line-height:1.5;outline:none"></textarea>
-                    <button onclick="analyzeReport()" id="report-analyze-btn"
-                        style="align-self:flex-end;padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:20px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:opacity .15s">
-                        🔍 נתח טקסט
-                    </button>
-                </div>
-
-                <!-- Results area -->
-                <div id="report-result" style="flex:1;overflow-y:auto;padding:0 12px 12px"></div>
-            </div>
-
         </div>
     </div>
 
-    <script src="script.js?v=21"></script>
+    <script src="script.js?v=22"></script>
     <script>
       if ('serviceWorker' in navigator) {
-        // Unregister old service workers, then re-register fresh
         navigator.serviceWorker.getRegistrations().then(regs => {
           regs.forEach(r => r.unregister());
         });

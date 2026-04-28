@@ -1306,7 +1306,6 @@ const MOB_TABS = {
     market:    ['win-indices-tase', 'win-stocks', 'win-search'],
     portfolio: ['win-portfolio', 'win-simulator'],
     ai:        ['win-ai-chat'],
-    report:    ['win-report'],
 };
 const MOB_ALL = Object.values(MOB_TABS).flat();
 
@@ -1423,7 +1422,7 @@ function toggleDarkMode() {
     if (saved === '1') applyTheme(true);
 })();
 
-const POPUP_WINDOWS = ['win-portfolio-chart', 'win-report'];
+const POPUP_WINDOWS = ['win-portfolio-chart'];
 
 function resetWindows() {
     const cards = document.querySelectorAll('.card');
@@ -2023,26 +2022,6 @@ function clearAIChat() {
     document.getElementById('ai-messages').innerHTML = '';
 }
 
-// ── Report Analyzer ───────────────────────────────────────────────────────────
-
-// Drag & drop on PDF zone
-document.addEventListener('DOMContentLoaded', () => {
-    const zone = document.getElementById('report-pdf-zone');
-    if (!zone) return;
-    zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor = 'var(--primary)'; });
-    zone.addEventListener('dragleave', () => { zone.style.borderColor = ''; });
-    zone.addEventListener('drop', e => {
-        e.preventDefault();
-        zone.style.borderColor = '';
-        const file = e.dataTransfer?.files?.[0];
-        if (file?.type === 'application/pdf') {
-            const dt = new DataTransfer(); dt.items.add(file);
-            const inp = zone.querySelector('input[type=file]');
-            inp.files = dt.files;
-            analyzeReportPDF(inp);
-        }
-    });
-});
 
 // ── Scan Strip ───────────────────────────────────────────────────────────────
 
@@ -2102,157 +2081,4 @@ function openScanDetail(jsonStr) {
 // Refresh strip every 10 minutes
 setInterval(fetchScanStrip, 10 * 60 * 1000);
 
-function toggleReportPanel() {
-    const win = document.getElementById('win-report');
-    const btn = document.getElementById('report-toggle-btn');
-    if (!win) return;
-    const isOpen = getComputedStyle(win).display !== 'none';
-    win.style.display = isOpen ? 'none' : 'flex';
-    if (btn) btn.style.background = isOpen ? '' : 'rgba(26,115,232,0.2)';
-}
 
-function clearReport() {
-    document.getElementById('report-text').value = '';
-    document.getElementById('report-result').innerHTML = '';
-}
-
-async function analyzeReportPDF(input) {
-    const file = input.files[0];
-    if (!file) return;
-    input.value = '';
-
-    const btn     = document.getElementById('report-analyze-btn');
-    const zone    = document.getElementById('report-pdf-zone');
-    const resultEl = document.getElementById('report-result');
-
-    btn.disabled  = true;
-    zone.style.opacity = '0.5';
-    resultEl.innerHTML = `<div style="color:var(--text2);font-size:0.85rem;padding:12px;text-align:center">מחלץ טקסט מ-${file.name}...</div>`;
-
-    try {
-        const form = new FormData();
-        form.append('file', file);
-
-        const res = await fetch('/api/analyze-report', {
-            method: 'POST',
-            body:   form,
-            signal: AbortSignal.timeout(60_000),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `שגיאה ${res.status}`);
-        resultEl.innerHTML = _renderReportCard(data);
-    } catch(e) {
-        resultEl.innerHTML = `<div style="color:#d93025;font-size:0.85rem;padding:12px">שגיאה: ${e.message}</div>`;
-    } finally {
-        btn.disabled = false;
-        zone.style.opacity = '';
-    }
-}
-
-async function analyzeReport() {
-    const text = document.getElementById('report-text').value.trim();
-    if (!text || text.length < 50) {
-        alert('יש להדביק טקסט דוח (לפחות 50 תווים)');
-        return;
-    }
-
-    const btn = document.getElementById('report-analyze-btn');
-    const resultEl = document.getElementById('report-result');
-    btn.disabled = true;
-    btn.textContent = '⏳ מנתח...';
-    resultEl.innerHTML = '<div style="color:var(--text2);font-size:0.85rem;padding:12px;text-align:center">מעבד דוח, אנא המתן...</div>';
-
-    try {
-        const res = await fetch('/api/analyze-report', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text }),
-            signal: AbortSignal.timeout(45_000),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `שגיאה ${res.status}`);
-        resultEl.innerHTML = _renderReportCard(data);
-    } catch (e) {
-        resultEl.innerHTML = `<div style="color:#d93025;font-size:0.85rem;padding:12px">שגיאה: ${e.message}</div>`;
-    } finally {
-        btn.disabled = false;
-        btn.textContent = '🔍 נתח דוח';
-    }
-}
-
-function _renderReportCard(a) {
-    const rec = a.recommendation ?? '—';
-    const recColor = rec === 'קנייה' ? '#1e8e3e' : rec === 'מכירה' ? '#d93025' : '#f9ab00';
-    const conf = a.confidence ?? 0;
-    const m = a.metrics ?? {};
-
-    const metricRow = (label, val, suffix = '') =>
-        val != null ? `<tr><td style="color:var(--text2);padding:3px 8px 3px 0">${label}</td><td style="font-weight:600;font-variant-numeric:tabular-nums">${val}${suffix}</td></tr>` : '';
-
-    const swotSection = (title, items, color) => {
-        if (!items?.length) return '';
-        return `<div style="margin-bottom:8px">
-            <div style="font-size:0.75rem;font-weight:700;color:${color};margin-bottom:4px">${title}</div>
-            ${items.map(i => `<div style="font-size:0.8rem;color:var(--text);padding:2px 0">• ${i}</div>`).join('')}
-        </div>`;
-    };
-
-    const fxDir = a.fxImpact?.direction ?? '';
-    const fxIcon = fxDir === 'חיובי' ? '📈' : fxDir === 'שלילי' ? '📉' : '➡️';
-
-    return `
-    <div style="font-size:0.82rem;line-height:1.6">
-
-      <!-- Header -->
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 8px;border-bottom:1px solid var(--border)">
-        <div>
-          <div style="font-weight:700;font-size:1rem">${a.company ?? '—'}</div>
-          <div style="color:var(--text2);font-size:0.78rem">${a.period ?? ''}</div>
-        </div>
-        <div style="text-align:center">
-          <div style="font-weight:700;font-size:1.1rem;color:${recColor}">${rec}</div>
-          <div style="font-size:0.72rem;color:var(--text2)">ביטחון ${conf}%</div>
-          <div style="width:60px;height:4px;background:var(--border);border-radius:2px;margin-top:3px">
-            <div style="width:${conf}%;height:100%;background:${recColor};border-radius:2px"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Summary -->
-      ${a.summary ? `<div style="padding:8px 0;color:var(--text);border-bottom:1px solid var(--border)">${a.summary}</div>` : ''}
-
-      <!-- Metrics -->
-      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
-        <div style="font-weight:600;font-size:0.78rem;color:var(--text2);margin-bottom:6px">מדדים פיננסיים</div>
-        <table style="width:100%;border-collapse:collapse">
-          ${metricRow('הכנסות', m.revenue != null ? Number(m.revenue).toLocaleString('he-IL') : null, ' ₪')}
-          ${metricRow('EBITDA', m.ebitda != null ? Number(m.ebitda).toLocaleString('he-IL') : null, ' ₪')}
-          ${metricRow('רווח נקי', m.netProfit != null ? Number(m.netProfit).toLocaleString('he-IL') : null, ' ₪')}
-          ${metricRow('EPS (רווח למניה)', m.eps)}
-          ${metricRow('מכפיל רווח (P/E)', m.peRatio)}
-          ${metricRow('חוב להון', m.debtToEquity)}
-          ${metricRow('תשואת הון (ROE)', m.roe, '%')}
-        </table>
-      </div>
-
-      <!-- FX -->
-      ${a.fxImpact?.explanation ? `
-      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
-        <div style="font-weight:600;font-size:0.78rem;color:var(--text2);margin-bottom:4px">חשיפת מט"ח ${fxIcon}</div>
-        <div style="color:var(--text)">${a.fxImpact.explanation}</div>
-        <div style="font-size:0.75rem;color:var(--text2);margin-top:2px">רמה: ${a.fxImpact.exposure ?? '—'} | כיוון: ${fxDir}</div>
-      </div>` : ''}
-
-      <!-- SWOT -->
-      <div style="padding:8px 0">
-        <div style="font-weight:600;font-size:0.78rem;color:var(--text2);margin-bottom:8px">SWOT</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div>${swotSection('💪 חוזקות', a.swot?.strengths, '#1e8e3e')}</div>
-          <div>${swotSection('⚠️ חולשות', a.swot?.weaknesses, '#d93025')}</div>
-          <div>${swotSection('🚀 הזדמנויות', a.swot?.opportunities, '#1a73e8')}</div>
-          <div>${swotSection('🔴 סיכונים', a.swot?.threats, '#f9ab00')}</div>
-        </div>
-      </div>
-
-    </div>`;
-}
