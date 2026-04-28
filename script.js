@@ -914,8 +914,20 @@ async function drawChart() {
     _lwTf    = currentMainTf;
 
     const { range, interval } = tfToOhlcRange(currentMainTf);
-    const { ohlc, prevClose } = await fetchHistoricalOHLC(sym, range, interval);
+    const isIntraday = currentMainTf === 'intraday';
+    let { ohlc, prevClose } = await fetchHistoricalOHLC(sym, range, interval);
     if (!ohlc.length) { console.warn('[lwChart] no OHLC for', sym, range); return; }
+    // For non-intraday: convert Unix timestamps → 'YYYY-MM-DD' strings so
+    // LightweightCharts uses its business-day scale (proper date labels)
+    if (!isIntraday) {
+        ohlc = ohlc.map(d => {
+            const dt = new Date(d.time * 1000);
+            const ymd = dt.getFullYear() + '-'
+                + ('0'+(dt.getMonth()+1)).slice(-2) + '-'
+                + ('0'+dt.getDate()).slice(-2);
+            return { ...d, time: ymd };
+        });
+    }
 
     // Destroy old chart
     if (_lwChart) { _lwChart.remove(); _lwChart = null; _lwSeries = null; _lwVolume = null; }
@@ -927,14 +939,10 @@ async function drawChart() {
     const chartTx = dark ? '#9aa0a6' : '#5f6368';
     const gridV   = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
     const gridH   = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-    const isIntraday = currentMainTf === 'intraday';
-    const _fmtTick = function(t) {
-        var d = new Date(t * 1000);
-        if (isIntraday) {
-            return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2);
-        }
-        return ('0'+d.getDate()).slice(-2) + '/' + ('0'+(d.getMonth()+1)).slice(-2);
-    };
+    // _fmtTick: for intraday → HH:MM; for daily+ → handled by LW business-day scale (tickMarkFormatter not needed)
+    const _fmtTick = isIntraday
+        ? function(t) { var d = new Date(t * 1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+        : undefined;
     _lwChart = LightweightCharts.createChart(container, {
         width: w, height: h,
         layout:   { background: { color: chartBg }, textColor: chartTx },
