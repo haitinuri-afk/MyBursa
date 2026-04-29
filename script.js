@@ -225,7 +225,12 @@ async function loadSessionHistory() {
     // Index chart: load OHLC for LightweightCharts
     const idxSym = STOCK_SYMBOLS["מדד תא-35"];
     if (idxSym) {
-        const { ohlc: ohlc5d } = await fetchHistoricalOHLC(idxSym, '5d', '30m');
+        const { ohlc: ohlc5d, prevClose: idxPrevClose } = await fetchHistoricalOHLC(idxSym, '5d', '30m');
+        // Always update prevClose from history — overrides any stale localStorage value
+        if (idxPrevClose && idxPrevClose > 0) {
+            stocksData["מדד תא-35"].initial = idxPrevClose;
+            if (indicesData["מדד תא-35"]) indicesData["מדד תא-35"].initial = idxPrevClose;
+        }
         if (ohlc5d.length > 1) {
             stocksData["מדד תא-35"].ohlcWeek = ohlc5d;
             drawIndexChart('daily');

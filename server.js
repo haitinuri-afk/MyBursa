@@ -458,10 +458,23 @@ app.get('/api/stock/history', async (req, res) => {
             volume: q.volume?.[i] ?? 0,
         })).filter(d => d.close > 0 && d.open > 0 && d.high > 0 && d.low > 0);
 
+        // Derive prevClose from timestamps (same logic as batch endpoint)
+        const rawAll    = q.close ?? [];
+        const todayMs   = new Date().setUTCHours(0, 0, 0, 0);
+        let tsPrevClose = null;
+        for (let i = timestamps.length - 1; i >= 0; i--) {
+            const v = rawAll[i];
+            if (!v || v <= 0) continue;
+            if (new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0) < todayMs) {
+                tsPrevClose = v; break;
+            }
+        }
+        const prevCloseRaw = meta.regularMarketPreviousClose ?? tsPrevClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
+
         res.json({
             symbol: canonicalSymbol,
             price:     applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency),
-            prevClose: applyDivisor(canonicalSymbol, meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice, currency),
+            prevClose: applyDivisor(canonicalSymbol, prevCloseRaw, currency),
             closes,
             timestamps: closeTimes,
             ohlc
