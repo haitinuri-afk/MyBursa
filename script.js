@@ -384,7 +384,12 @@ async function refreshRealData() {
         if (!q.regularMarketPrice) return;
 
         stocksData[name].price   = q.regularMarketPrice;
-        stocksData[name].initial = q.regularMarketPreviousClose ?? q.regularMarketPrice;
+        // Use server-computed prevClose; if changePercent provided, derive it exactly
+        const pc = q.regularMarketPreviousClose;
+        const pct = q.regularMarketChangePercent;
+        stocksData[name].initial = pc
+            ? pc
+            : (pct != null ? q.regularMarketPrice / (1 + pct / 100) : q.regularMarketPrice);
         const nowSec = Math.floor(Date.now() / 1000);
         stocksData[name].history.push(stocksData[name].price);
         if (!stocksData[name].historyTs) stocksData[name].historyTs = [];

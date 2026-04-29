@@ -376,58 +376,87 @@ function isMarketOpen() {
     return dow >= 0 && dow <= 5 && mins >= 540 && mins < closeTime;
 }
 
+// Fetch batch quotes via Yahoo v7/quote — returns regularMarketChangePercent directly
+async function fetchV7Quotes(symList) {
+    const fields = 'regularMarketPrice,regularMarketPreviousClose,regularMarketChangePercent,regularMarketChange,marketState,currency';
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symList.join(','))}&fields=${fields}&formatted=false`;
+    try {
+        const { body } = await httpsGet(url, { Referer: 'https://finance.yahoo.com/' });
+        return body?.quoteResponse?.result ?? [];
+    } catch(e) {
+        console.warn('[v7quote]', e.message);
+        return [];
+    }
+}
+
 // GET /api/stock/batch?symbols=LUMI.TA,POLI.TA,^TA35,...
 app.get('/api/stock/batch', async (req, res) => {
     const { symbols } = req.query;
     if (!symbols) return res.status(400).json({ error: 'symbols required' });
 
-    const symList  = symbols.split(',').map(s => s.trim()).filter(Boolean);
-    const settled  = await Promise.allSettled(symList.map(async sym => {
-        const isIndex = sym.startsWith('^');
-        const { meta, result: chartResult, canonicalSymbol } = await fetchChartMeta(sym, '5d');
-        const currency = meta.currency;
+    const symList = symbols.split(',').map(s => s.trim()).filter(Boolean);
 
-        // Find yesterday's close from chart timestamps (most reliable cross-range approach)
-        const rawCloses    = chartResult?.indicators?.quote?.[0]?.close ?? [];
-        const timestamps   = chartResult?.timestamp ?? [];
-        const todayUtcMs   = new Date().setUTCHours(0, 0, 0, 0);
-        let chartPrevClose = null;
-        for (let i = timestamps.length - 1; i >= 0; i--) {
-            const val   = rawCloses[i];
-            if (!val || val <= 0) continue;
-            const dayMs = new Date(timestamps[i] * 1000).setUTCHours(0, 0, 0, 0);
-            if (dayMs < todayUtcMs) { chartPrevClose = val; break; }
-        }
+    // Step 1: v7/quote — fast batch, accurate regularMarketChangePercent + regularMarketPreviousClose
+    const v7results = await fetchV7Quotes(symList);
+    const v7map = {};
+    v7results.forEach(q => { if (q?.symbol) v7map[q.symbol] = q; });
 
-        // prevClose priority: Yahoo explicit field → timestamp-derived → chartPreviousClose
-        const prevClose = meta.regularMarketPreviousClose
-            ?? chartPrevClose
-            ?? meta.chartPreviousClose
-            ?? meta.regularMarketPrice;
+    // Step 2: for symbols missing from v7, try ETF fallbacks via chart API
+    const missing = symList.filter(s => !v7map[s]);
+    const fallbackSettled = missing.length
+        ? await Promise.allSettled(missing.map(async sym => {
+            const fallbackSym = SYMBOL_FALLBACKS[sym] ?? sym;
+            const { meta, result: chartResult } = await fetchChartMeta(fallbackSym, '5d');
+            const currency = meta.currency;
+            const rawCloses  = chartResult?.indicators?.quote?.[0]?.close ?? [];
+            const timestamps = chartResult?.timestamp ?? [];
+            const todayUtcMs = new Date().setUTCHours(0, 0, 0, 0);
+            let chartPrevClose = null;
+            for (let i = timestamps.length - 1; i >= 0; i--) {
+                const val = rawCloses[i]; if (!val || val <= 0) continue;
+                if (new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0) < todayUtcMs) { chartPrevClose = val; break; }
+            }
+            const prevClose = meta.regularMarketPreviousClose ?? chartPrevClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
+            return { symbol: sym, regularMarketPrice: applyDivisor(sym, meta.regularMarketPrice, currency),
+                     regularMarketPreviousClose: applyDivisor(sym, prevClose, currency),
+                     marketState: meta.marketState ?? 'CLOSED' };
+          }))
+        : [];
 
-        const result = {
-            symbol: canonicalSymbol,
-            regularMarketPrice:         applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency),
-            regularMarketPreviousClose: applyDivisor(canonicalSymbol, prevClose, currency),
-            marketState: meta.marketState ?? 'CLOSED'
-        };
-        _lastKnownPrices[sym] = result;
-        return result;
-    }));
-
+    // Build results list
     const results = [];
-    settled.forEach((r, i) => {
-        if (r.status === 'fulfilled') results.push(r.value);
-        else if (_lastKnownPrices[symList[i]]) results.push(_lastKnownPrices[symList[i]]);
-        else console.warn(`[batch] ${symList[i]}: ${r.reason?.message}`);
+    for (const sym of symList) {
+        if (v7map[sym]) {
+            const q = v7map[sym];
+            const price    = q.regularMarketPrice ?? 0;
+            const currency = q.currency;
+            // Derive prevClose from changePercent if not provided (common for ^TA35)
+            let prevClose = q.regularMarketPreviousClose;
+            if (!prevClose && q.regularMarketChangePercent != null && price) {
+                prevClose = price / (1 + q.regularMarketChangePercent / 100);
+            }
+            const result = {
+                symbol:                     sym,
+                regularMarketPrice:         applyDivisor(sym, price, currency),
+                regularMarketPreviousClose: applyDivisor(sym, prevClose ?? price, currency),
+                regularMarketChangePercent: q.regularMarketChangePercent ?? 0,
+                marketState:                q.marketState ?? 'CLOSED'
+            };
+            _lastKnownPrices[sym] = result;
+            results.push(result);
+        }
+    }
+    // Add fallback results
+    fallbackSettled.forEach((r, i) => {
+        if (r.status === 'fulfilled') { _lastKnownPrices[missing[i]] = r.value; results.push(r.value); }
+        else if (_lastKnownPrices[missing[i]]) results.push(_lastKnownPrices[missing[i]]);
+        else console.warn(`[batch] ${missing[i]}: ${r.reason?.message}`);
     });
 
-    const yahooState  = results.find(r => r.marketState)?.marketState;
-    // isMarketOpen() is primary for TASE — Yahoo's marketState is unreliable for Israeli hours
     const serverOpen  = isMarketOpen();
     const marketState = serverOpen ? 'REGULAR' : 'CLOSED';
-    console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen} (yahoo:${yahooState ?? 'n/a'})`);
-    _cachedQuotes = results;   // keep for AI chat context
+    console.log(`[batch] ${results.length}/${symList.length} | v7=${v7results.length} | open=${serverOpen}`);
+    _cachedQuotes = results;
     res.json({ marketOpen: serverOpen, marketState, quotes: results });
 });
 
