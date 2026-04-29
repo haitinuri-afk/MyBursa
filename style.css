@@ -501,7 +501,7 @@ th {
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
-    background: #fff;
+    background: var(--surface);
     z-index: 1;
 }
 
@@ -522,6 +522,7 @@ td {
     white-space: nowrap;
 }
 #portfolio-table th { background: var(--surface); }
+
 
 .stock-row:hover { background: #f9fafb; cursor: pointer; }
 
