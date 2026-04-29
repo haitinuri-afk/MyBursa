@@ -1080,6 +1080,23 @@ app.post('/api/portfolio', express.json(), async (req, res) => {
 });
 
 // ── Debug ─────────────────────────────────────────────────────────────────────
+app.get('/api/debug/ta35', async (req, res) => {
+    try {
+        const { meta, canonicalSymbol } = await fetchChartMeta('^TA35', '5d');
+        const price     = meta.regularMarketPreviousClose;
+        const prevClose = meta.regularMarketPreviousClose;
+        res.json({
+            source: canonicalSymbol,
+            regularMarketPrice:         meta.regularMarketPrice,
+            regularMarketPreviousClose: meta.regularMarketPreviousClose,
+            chartPreviousClose:         meta.chartPreviousClose,
+            pct: meta.regularMarketPreviousClose
+                ? (((meta.regularMarketPrice - meta.regularMarketPreviousClose) / meta.regularMarketPreviousClose) * 100).toFixed(2) + '%'
+                : 'N/A'
+        });
+    } catch(e) { res.json({ error: e.message }); }
+});
+
 app.get('/api/debug/mongo', async (req, res) => {
     const mongoOk = !!_portfolioCol;
     let doc = null;
