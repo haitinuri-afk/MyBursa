@@ -24,8 +24,8 @@
 
 /* ── Design tokens ── */
 :root {
-    --bg:        #f0f2f5;
-    --surface:   #ffffff;
+    --bg:        #ffffff;
+    --surface:   #f4f6f8;
     --border:    rgba(0,0,0,0.07);
     --border2:   rgba(0,0,0,0.04);
     --text:      #111827;
@@ -33,7 +33,7 @@
     --text3:     #6b7280;
     --text4:     #9ca3af;
     --input-bg:  #f9fafb;
-    --primary:   #2563eb;
+    --primary:   #059669;
     --green:     #16a34a;
     --red:       #dc2626;
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
@@ -273,8 +273,9 @@ header.top-bar {
     box-shadow: var(--shadow);
     transition: box-shadow 0.2s, transform 0.15s;
     z-index: 10;
-    border: none;
+    border: 1px solid rgba(5, 150, 105, 0.25);
 }
+
 
 .card:hover {
     box-shadow: var(--shadow-lg);
@@ -307,6 +308,7 @@ header.top-bar {
     color: var(--text2);
     font-weight: 600;
     letter-spacing: -0.1px;
+    white-space: nowrap;
 }
 
 /* ── Window Controls ── */
@@ -314,6 +316,7 @@ header.top-bar {
     display: flex;
     gap: 6px;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .win-btn {
@@ -351,13 +354,12 @@ header.top-bar {
 /* ── Window Positions ── */
 /* Col A */
 #win-portfolio    { left: 0;      width: 24.5%; top:  0%;  height: 49%; }
-#win-simulator    { left: 0;      width: 24.5%; top: 50%;  height: 20%; }
-#win-ai-chat      { left: 0;      width: 24.5%; top: 71%;  height: 29%; }
+#win-simulator    { left: 0;      width: 24.5%; top: 50%;  height: 50%; }
 #win-portfolio-chart { left: 0;   width: 30%;   top:  8%;  height: 55%; z-index: 25; }
 
 /* Col B */
-#win-main-chart   { left: 25.5%;  width: 49%;   top:  0%;  height: 86%; }
-#win-search       { left: 25.5%;  width: 49%;   top: 87%;  height: 13%; }
+#win-main-chart   { left: 25.5%;  width: 49%;   top:  0%;  height: 67%; }
+#win-ai-chat      { left: 25.5%;  width: 49%;   top: 68%;  height: 32%; }
 
 /* Col C */
 #win-indices-tase { left: 75.5%;  width: 24.5%; top:  0%;  height: 30%; }
@@ -513,6 +515,13 @@ td {
 }
 
 .pct-col { font-weight: 600 !important; text-align: center !important; }
+
+#portfolio-table th, #portfolio-table td {
+    padding: 6px 3px;
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+#portfolio-table th { background: var(--surface); }
 
 .stock-row:hover { background: #f9fafb; cursor: pointer; }
 
@@ -778,73 +787,108 @@ canvas { width: 100% !important; height: 100% !important; }
 ══════════════════════════════════════════ */
 @media (max-width: 768px) {
 
-    body { overflow: auto; height: auto; min-height: 100vh; }
-    .main-wrapper { height: auto; min-height: 100vh; padding: 6px; gap: 6px; padding-bottom: 68px; }
+    body { overflow: auto; height: auto; min-height: 100vh; background: #f0f2f5; }
+    .main-wrapper { height: auto; min-height: 100vh; padding: 0; gap: 0; padding-bottom: 72px; }
 
-    /* Tab Bar */
+    /* ── Header ── */
+    header.top-bar {
+        height: auto; padding: 10px 16px;
+        border-radius: 0;
+        border-bottom: 1px solid var(--border);
+    }
+    .hdr-center { display: none; }
+    .hdr-actions { display: none; }
+    .hdr-logo-text { font-size: 15px; }
+
+    /* ── Ticker ── */
+    .ticker-row { height: 30px; min-height: 30px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .ticker-scroll span { font-size: 11.5px !important; padding: 0 16px !important; }
+
+    /* ── Tab Bar ── */
     .mobile-tab-bar {
         display: flex;
-        position: fixed;
-        bottom: 0; left: 0; right: 0;
-        height: 60px;
-        background: var(--surface);
-        border-top: 1px solid var(--border);
+        position: fixed; bottom: 0; left: 0; right: 0;
+        height: 64px;
+        background: rgba(255,255,255,0.92);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-top: 1px solid rgba(5,150,105,0.15);
         z-index: 9999;
-        box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+        box-shadow: 0 -1px 0 rgba(0,0,0,0.06), 0 -8px 24px rgba(0,0,0,0.06);
+        padding-bottom: env(safe-area-inset-bottom);
     }
     .mob-tab {
         flex: 1; display: flex; flex-direction: column;
-        align-items: center; justify-content: center; gap: 3px;
+        align-items: center; justify-content: center; gap: 5px;
         background: none; border: none; cursor: pointer;
-        color: var(--text3); padding: 6px 0;
-        transition: color 0.15s;
+        color: #b0b8c1; padding: 8px 0;
+        transition: color 0.2s;
+        position: relative;
+    }
+    .mob-tab::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 20%; right: 20%;
+        height: 2.5px;
+        border-radius: 0 0 3px 3px;
+        background: var(--primary);
+        opacity: 0;
+        transition: opacity 0.2s;
     }
     .mob-tab.active { color: var(--primary); }
-    .mob-tab-icon  { font-size: 22px; line-height: 1; }
-    .mob-tab-label { font-size: 11px; font-weight: 600; }
-
+    .mob-tab.active::before { opacity: 1; }
+    .mob-tab-icon { width: 24px; height: 24px; stroke-width: 1.8; }
+    .mob-tab-label { font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
     .mob-hidden { display: none !important; }
 
-    /* Header */
-    header.top-bar { height: auto; min-height: 48px; padding: 8px 12px; }
-    .hdr-center { display: none; }
-
-    /* Ticker */
-    .ticker-row { height: 26px; min-height: 26px; }
-    .ticker-scroll span { font-size: 11px !important; padding: 0 14px !important; }
-
-    /* Dashboard */
+    /* ── Dashboard ── */
     .dashboard-grid {
         position: static; overflow: visible;
-        display: flex; flex-direction: column; gap: 10px;
-        padding-top: 4px;
+        display: flex; flex-direction: column; gap: 0;
+        padding: 12px 12px 0;
+        gap: 12px;
     }
 
+    /* ── Cards ── */
     .card {
         position: relative !important; width: 100% !important;
         height: auto !important; top: auto !important;
         left: auto !important; right: auto !important; bottom: auto !important;
+        border-radius: 16px !important;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important;
+        border: 1px solid rgba(5,150,105,0.25) !important;
     }
 
-    #win-portfolio, #win-simulator, #win-main-chart,
-    #win-indices-tase, #win-stocks, #win-portfolio-chart, #win-ai-chat {
-        width: 100% !important; height: auto !important;
-        top: auto !important; left: auto !important;
-    }
+    /* hide desktop-only controls */
+    .win-btn { display: none !important; }
+    .pill-btn { display: none !important; }
 
-    .card-body { min-height: 200px; }
-    #win-main-chart .card-body, #win-indices-tase .card-body { min-height: 280px; }
-    #win-portfolio-chart .card-body { min-height: 50vh; }
-    #win-portfolio-chart #portfolioChart { min-height: 40vh; }
-    #win-simulator .card-body { min-height: 120px; }
+    /* ── Card bodies ── */
+    .card-body { min-height: 0; padding: 12px 14px; }
+    #win-indices-tase .card-body { min-height: 260px; }
+    #win-main-chart .card-body   { min-height: 300px; }
+    #win-ai-chat { display: flex !important; flex-direction: column; min-height: 420px; }
+    #win-ai-chat .card-body { flex: 1; }
 
+    /* ── Window headers ── */
+    .window-header { padding: 12px 14px 10px; }
+    .window-header h3 { font-size: 14px; font-weight: 700; color: var(--text); }
+
+    /* ── Tables ── */
     .scroll-container { max-height: none !important; overflow-y: visible !important; overflow-x: auto; }
+    td { padding: 9px 5px; font-size: 12.5px; }
+    th { padding: 0 5px 10px; font-size: 11px; }
+    #portfolio-table th, #portfolio-table td { padding: 8px 4px; font-size: 12px; white-space: nowrap; }
 
-    #portfolio-table { min-width: 0; width: 100%; }
-    #portfolio-table th, #portfolio-table td { padding: 7px 4px; font-size: 12px; white-space: nowrap; }
-    .sell-btn { padding: 6px 10px; font-size: 12px; min-height: 34px; }
+    /* ── Timeframe buttons ── */
+    .timeframe-buttons button { padding: 5px 10px; font-size: 11.5px; }
 
-    /* Portfolio chart full screen on mobile */
+    /* ── Simulator ── */
+    #buy-btn, #sell-btn-sim { padding: 13px 0; font-size: 15px; min-height: 48px; border-radius: 12px; }
+    .sim-input { font-size: 16px !important; padding: 11px 14px; border-radius: 10px; }
+    #win-simulator .card-body { min-height: 0; }
+
+    /* ── Portfolio chart fullscreen ── */
     #win-portfolio-chart {
         position: fixed !important; inset: 0 !important;
         width: 100% !important; height: 100% !important;
@@ -855,20 +899,16 @@ canvas { width: 100% !important; height: 100% !important; }
         overflow: hidden !important; padding: 4px 0 0 !important;
     }
     #win-portfolio-chart #portfolioChart {
-        position: absolute !important; inset: 0 !important; overflow: visible !important;
+        position: absolute !important; inset: 0 !important;
     }
 
-    td { padding: 7px 4px; }
-    th { padding: 0 4px 8px; }
-    .win-btn { width: 20px; height: 20px; }
-    .timeframe-buttons button { padding: 5px 9px; font-size: 11px; }
-
-    #buy-btn, #sell-btn-sim { padding: 11px 0; font-size: 14px; min-height: 46px; }
-    .sim-input { font-size: 16px !important; padding: 10px 12px; }
-
+    /* ── Stock detail ── */
     .stock-detail-window {
         position: relative !important; width: 100% !important;
         height: auto !important; top: auto !important;
         left: auto !important; z-index: 10 !important; min-height: 400px;
     }
+
+    /* ── Sell button ── */
+    .sell-btn { padding: 7px 12px; font-size: 12px; min-height: 34px; }
 }

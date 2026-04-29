@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
     <div class="main-wrapper">
@@ -55,16 +55,16 @@
         <!-- Mobile Tab Bar -->
         <nav id="mobile-tabs" class="mobile-tab-bar">
             <button class="mob-tab active" data-tab="market" onclick="switchMobileTab('market')">
-                <span class="mob-tab-icon">📊</span>
+                <svg class="mob-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 <span class="mob-tab-label">שוק</span>
             </button>
             <button class="mob-tab" data-tab="portfolio" onclick="switchMobileTab('portfolio')">
-                <span class="mob-tab-icon">💼</span>
+                <svg class="mob-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
                 <span class="mob-tab-label">תיק</span>
             </button>
             <button class="mob-tab" data-tab="ai" onclick="switchMobileTab('ai')">
-                <span class="mob-tab-icon">🤖</span>
-                <span class="mob-tab-label">AI</span>
+                <svg class="mob-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span class="mob-tab-label">יועץ</span>
             </button>
         </nav>
 
@@ -164,7 +164,7 @@
                 <div class="window-header">
                     <h3>תיק השקעות</h3>
                     <div class="window-controls">
-                        <button onclick="togglePortfolioChart()" class="pill-btn">📈 גרף</button>
+                        <button onclick="togglePortfolioChart()" class="pill-btn">📈</button>
                         <button class="win-btn win-max" onclick="toggleMaximize('win-portfolio')"></button>
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
@@ -258,18 +258,6 @@
                 </div>
             </div>
 
-            <!-- Search Window -->
-            <div id="win-search" class="card">
-                <div class="window-header" style="padding:10px 16px">
-                    <div style="display:flex;gap:8px;flex:1;align-items:center" dir="ltr">
-                        <input type="text" id="search-symbol" placeholder="חפש מניה (e.g. לאומי / LUMI.TA)"
-                            class="search-input"
-                            onkeydown="if(event.key==='Enter') searchSymbol()">
-                        <button onclick="searchSymbol()" class="search-btn">חפש</button>
-                        <span id="search-error" style="font-size:11px;color:#ef4444;white-space:nowrap" class="hidden">לא נמצא</span>
-                    </div>
-                </div>
-            </div>
 
             <!-- AI Chat Window -->
             <div id="win-ai-chat" class="card" style="display:flex;flex-direction:column">
@@ -292,7 +280,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=22"></script>
+    <script src="script.js?v=27"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(regs => {

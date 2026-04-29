@@ -12,13 +12,20 @@ const STOCK_SYMBOLS = {
     "פועלים":       "POLI.TA",
     "דיסקונט":      "DSCT.TA",
     "מזרחי טפחות": "MZTF.TA",
-    // ביטחון/טכנולוגיה
+    // ביטחון
     "אלביט":        "ESLT.TA",
+    // טכנולוגיה
     "נייס":         "NICE.TA",
     "טאוור":        "TSEM.TA",
+    "אאורה":        "AURA.TA",
     // פארמה/כימיה
     "טבע":          "TEVA.TA",
     "כיל":          "ICL.TA",
+    // פיננסים — בנקים נוספים
+    "הבינלאומי":    "FIBI.TA",
+    "בנק ירושלים":  "JBNK.TA",
+    // פיננסים — שוק ההון
+    "אי.בי.אי":     "IBI.TA",
     // ביטוח
     "הפניקס":       "PHOE.TA",
     "הראל":         "HARL.TA",
@@ -30,6 +37,7 @@ const STOCK_SYMBOLS = {
     "ביג":          "BIG.TA",
     "גב ים":        "GVYM.TA",
     "שיכון ובינוי": "SKBN.TA",
+    "ריט1":         "RIT1.TA",
     // אנרגיה
     "אנרג'יקס":     "ENRG.TA",
     "אנלייט":       "ENLT.TA",
@@ -194,19 +202,18 @@ function applyMarketStatus(marketState) {
     if (dot) dot.style.color = color;
     const label = document.getElementById('market-label');
     if (label) {
-        let txt = 'סגור';
-        if (open) {
-            txt = 'מסחר רציף';
-        } else {
-            // Check if it's a weekday at all
-            const ilStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jerusalem' });
-            const [dp, tp] = ilStr.split(' ');
-            const [y, mo, d] = dp.split('-').map(Number);
-            const day = new Date(y, mo-1, d).getDay();
-            if (day === 0 || day === 6) txt = 'סוף שבוע';
-        }
+        const ilStr = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Jerusalem' });
+        const [dp] = ilStr.split(' ');
+        const [y, mo, d] = dp.split('-').map(Number);
+        const day = new Date(y, mo-1, d).getDay();
+        let txt = open ? 'מסחר רציף' : (day === 0 || day === 6 ? 'סוף שבוע' : 'סגור');
         label.textContent = txt;
         label.style.color = color;
+    }
+    const pill = document.getElementById('market-status-pill');
+    if (pill) {
+        pill.style.background = open ? 'rgba(22,163,74,0.08)' : 'rgba(239,68,68,0.08)';
+        pill.style.borderColor = open ? 'rgba(22,163,74,0.3)' : 'rgba(239,68,68,0.3)';
     }
     const badge = document.getElementById('ta35-status');
     if (badge) badge.textContent = '';
@@ -404,7 +411,7 @@ async function refreshRealData() {
         if (el) el.textContent = `עודכן ${now}`;
     }
 
-    initTicker(); initStockSuggestions(); updateStockList(); updatePortfolioList(); updateTransactionHistory();
+    initTicker(); initStockSuggestions(); updateStockList(); updateRealEstateList(); updatePortfolioList(); updateTransactionHistory();
     drawChart(); drawIndexChart(); updateAllStockWindows();
     checkPortfolioAlerts();
     saveState();
@@ -1153,6 +1160,31 @@ function updateStockList() {
 }
 
 
+const REALESTATE_NAMES = ['עזריאלי','מליסרון','אמות','ביג','גב ים','שיכון ובינוי','ריט1'];
+
+function updateRealEstateList() {
+    const tbody = document.getElementById('realestate-list');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    REALESTATE_NAMES.forEach(name => {
+        const stock = stocksData[name];
+        if (!stock) return;
+        const price = parseFloat(stock.price);
+        const pct   = calculatePctChange(price, stock.initial);
+        const up    = parseFloat(pct) >= 0;
+        const priceStr = price > 0 ? `₪${price.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+        const tr = document.createElement('tr');
+        tr.className = 'stock-row';
+        tr.innerHTML = `
+            <td class="text-right" style="font-size:0.82rem;color:#202124;white-space:nowrap;cursor:pointer">${name}</td>
+            <td class="text-right" style="font-size:0.82rem;color:#202124;font-variant-numeric:tabular-nums;white-space:nowrap" dir="ltr">${priceStr}</td>
+            <td class="pct-col"><span dir="ltr" class="inline-block" style="color:${pctColor(pct).text};background:${pctColor(pct).bg};padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700">${up ? '+' : ''}${pct}%</span></td>
+            <td class="text-center"><button onclick="event.stopPropagation();quickBuy('${name}')" style="background:#16a34a;color:#fff;border:none;border-radius:4px;font-size:9px;font-weight:700;padding:2px 5px;cursor:pointer">קנה</button></td>`;
+        tr.onclick = () => { currentStock = name; _lwStock = null; drawChart(); openStockWindow(name); };
+        tbody.appendChild(tr);
+    });
+}
+
 function updateTransactionHistory() {
     const tbody = document.getElementById('tx-history-list');
     if (!tbody) return;
@@ -1303,7 +1335,7 @@ let highestZIndex = 100;
 
 // ── Mobile Tabs ─────────────────────────────────────────────────────────────
 const MOB_TABS = {
-    market:    ['win-indices-tase', 'win-stocks', 'win-search'],
+    market:    ['win-indices-tase', 'win-stocks', 'win-realestate', 'win-main-chart'],
     portfolio: ['win-portfolio', 'win-simulator'],
     ai:        ['win-ai-chat'],
 };
@@ -1323,7 +1355,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try { initWindowManager(); } catch(e) { console.error("Window manager failed:", e); }
     requestNotifPermission();
 
-    initTicker(); initStockSuggestions(); updateStockList(); updatePortfolioList(); updateTransactionHistory();
+    initTicker(); initStockSuggestions(); updateStockList(); updateRealEstateList(); updatePortfolioList(); updateTransactionHistory();
     fetchScanStrip();
     drawChart(); drawIndexChart();
 
@@ -1506,9 +1538,9 @@ function makeResizable(el) {
         // For win-main-chart, cap just above the search bar; for others cap at dashboard bottom
         let maxH;
         if (el.id === 'win-main-chart') {
-            const searchEl = document.getElementById('win-search');
-            if (searchEl) {
-                maxH = searchEl.getBoundingClientRect().top - dashRect2.top - elTop0 - 4;
+            const reEl = document.getElementById('win-realestate');
+            if (reEl) {
+                maxH = reEl.getBoundingClientRect().top - dashRect2.top - elTop0 - 4;
             } else {
                 maxH = dashRect2.height * 0.91 - elTop0;
             }
@@ -1607,8 +1639,7 @@ function renderMarkdown(text) {
 function tagStockMentions(text) {
     const out = renderMarkdown(text);
     // Movers bar shown only if there are significant movers — as separate row below text
-    const bar = buildMoversBar();
-    return out + bar;
+    return out;
 }
 
 function addAIMessage(role, text) {
