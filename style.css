@@ -924,9 +924,13 @@ canvas { width: 100% !important; height: 100% !important; }
     .timeframe-buttons button { padding: 5px 10px; font-size: 11.5px; }
 
     /* ── Simulator ── */
-    #buy-btn, #sell-btn-sim { padding: 10px 0; font-size: 14px; min-height: 42px; border-radius: 12px; }
-    .sim-input { font-size: 16px !important; padding: 11px 14px; border-radius: 10px; }
-    #win-simulator .card-body { min-height: 0; }
+    .action-btn-sm { padding: 10px 14px; font-size: 14px; border-radius: 12px; }
+    .sim-input-sm  { font-size: 16px !important; padding: 11px 12px; border-radius: 10px; }
+    .sim-input     { font-size: 16px !important; padding: 11px 14px; border-radius: 10px; }
+    #win-simulator .card-body { min-height: 0; padding-bottom: 14px; }
+
+    /* ── Portfolio ── */
+    #win-portfolio .scroll-container { min-height: 200px; }
 
     /* ── Portfolio chart fullscreen ── */
     #win-portfolio-chart {
