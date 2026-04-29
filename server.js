@@ -1096,6 +1096,10 @@ app.get('/api/debug/ta35', async (req, res) => {
         const rawCloses  = chartResult?.indicators?.quote?.[0]?.close ?? [];
         const timestamps = chartResult?.timestamp ?? [];
         const todayUtcMs = new Date().setUTCHours(0, 0, 0, 0);
+        const candles = timestamps.map((ts, i) => ({
+            ts, date: new Date(ts * 1000).toISOString(), close: rawCloses[i],
+            utcDay: new Date(ts * 1000).setUTCHours(0,0,0,0)
+        }));
         let chartPrevClose = null;
         for (let i = timestamps.length - 1; i >= 0; i--) {
             const val = rawCloses[i];
@@ -1104,13 +1108,14 @@ app.get('/api/debug/ta35', async (req, res) => {
         }
         const prevClose = meta.regularMarketPreviousClose ?? chartPrevClose ?? meta.chartPreviousClose;
         res.json({
-            source: canonicalSymbol,
+            source: canonicalSymbol, now: new Date().toISOString(), todayUtcMs,
             price: meta.regularMarketPrice,
             regularMarketPreviousClose: meta.regularMarketPreviousClose,
             chartPreviousClose: meta.chartPreviousClose,
             chartPrevClose_derived: chartPrevClose,
             prevClose_used: prevClose,
-            pct: prevClose ? (((meta.regularMarketPrice - prevClose) / prevClose) * 100).toFixed(2) + '%' : 'N/A'
+            pct: prevClose ? (((meta.regularMarketPrice - prevClose) / prevClose) * 100).toFixed(2) + '%' : 'N/A',
+            candles
         });
     } catch(e) { res.json({ error: e.message }); }
 });
