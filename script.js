@@ -1185,20 +1185,53 @@ function updateRealEstateList() {
     });
 }
 
+function _txRow(tx) {
+    const isBuy = tx.action === 'Buy';
+    const c = isBuy ? '#16a34a' : '#dc2626';
+    return `<tr class="tx-row">
+        <td class="tx-time">${tx.time}</td>
+        <td class="tx-action" style="color:${c}">${isBuy ? 'קנייה' : 'מכירה'}</td>
+        <td class="tx-symbol">${tx.symbol ?? tx.name ?? ''}</td>
+        <td class="tx-qty" dir="ltr">${tx.qty}</td>
+        <td class="tx-price" dir="ltr">₪${tx.price}</td>
+    </tr>`;
+}
+
 function updateTransactionHistory() {
+    // Show only the latest transaction in the card
+    const latest = document.getElementById('tx-latest');
+    if (latest) {
+        const tx = transactionHistory[0];
+        if (tx) {
+            const isBuy = tx.action === 'Buy';
+            const c = isBuy ? '#16a34a' : '#dc2626';
+            latest.innerHTML = `
+            <div onclick="openTxModal()" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:var(--surface);cursor:pointer;border:1px solid rgba(5,150,105,0.15)">
+                <span style="font-size:15px">${isBuy ? '🟢' : '🔴'}</span>
+                <div style="flex:1;min-width:0">
+                    <span style="font-weight:600;color:#111;font-size:12px">${tx.symbol ?? tx.name ?? ''}</span>
+                    <span style="color:${c};font-size:11px;margin-right:6px">${isBuy ? 'קנייה' : 'מכירה'} ${tx.qty}</span>
+                    <span style="color:#9ca3af;font-size:11px">₪${tx.price}</span>
+                </div>
+                <span style="color:#9ca3af;font-size:11px">${tx.time}</span>
+                <span style="color:#9ca3af;font-size:12px">›</span>
+            </div>`;
+        } else {
+            latest.innerHTML = `<div style="text-align:center;color:#9ca3af;font-size:12px;padding:8px">אין עסקאות</div>`;
+        }
+    }
+    // Fill modal table
     const tbody = document.getElementById('tx-history-list');
-    if (!tbody) return;
-    tbody.innerHTML = transactionHistory.map(tx => {
-        const isBuy = tx.action === 'Buy';
-        const actionColor = isBuy ? '#16a34a' : '#dc2626';
-        return `<tr class="tx-row">
-            <td class="tx-time">${tx.time}</td>
-            <td class="tx-action" style="color:${actionColor}">${isBuy ? 'קנייה' : 'מכירה'}</td>
-            <td class="tx-symbol">${tx.symbol ?? tx.name ?? ''}</td>
-            <td class="tx-qty" dir="ltr">${tx.qty}</td>
-            <td class="tx-price" dir="ltr">₪${tx.price}</td>
-        </tr>`;
-    }).join('');
+    if (tbody) tbody.innerHTML = transactionHistory.map(_txRow).join('');
+}
+
+function openTxModal() {
+    const modal = document.getElementById('tx-modal');
+    if (modal) { modal.style.display = 'block'; document.body.style.overflow = 'hidden'; }
+}
+function closeTxModal() {
+    const modal = document.getElementById('tx-modal');
+    if (modal) { modal.style.display = 'none'; document.body.style.overflow = ''; }
 }
 
 function updatePortfolioList() {

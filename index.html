@@ -217,21 +217,11 @@
                         <button id="buy-btn" class="action-btn action-btn-buy">קנה</button>
                         <button id="sell-btn-sim" class="action-btn action-btn-sell">מכור</button>
                     </div>
-                    <div class="section-label">היסטוריית עסקאות</div>
-                    <div class="scroll-container" style="max-height:none;flex:1">
-                        <table style="width:100%;border-collapse:collapse;font-size:12px">
-                            <thead>
-                                <tr>
-                                    <th style="text-align:right;padding:4px 5px;color:var(--text3);font-weight:500;font-size:11px">שעה</th>
-                                    <th style="text-align:right;padding:4px 5px;color:var(--text3);font-weight:500;font-size:11px">פעולה</th>
-                                    <th style="text-align:right;padding:4px 5px;color:var(--text3);font-weight:500;font-size:11px">סימול</th>
-                                    <th style="text-align:right;padding:4px 5px;color:var(--text3);font-weight:500;font-size:11px">כמות</th>
-                                    <th style="text-align:right;padding:4px 5px;color:var(--text3);font-weight:500;font-size:11px">מחיר</th>
-                                </tr>
-                            </thead>
-                            <tbody id="tx-history-list"></tbody>
-                        </table>
+                    <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;padding:0 4px">
+                        <span>היסטוריית עסקאות</span>
+                        <button onclick="openTxModal()" style="background:none;border:none;color:var(--primary);font-size:11px;font-weight:600;cursor:pointer;padding:0">הכל ›</button>
                     </div>
+                    <div id="tx-latest" style="padding:2px 0"></div>
                 </div>
             </div>
 
@@ -295,7 +285,31 @@
         </div>
     </div>
 
-    <script src="script.js?v=30"></script>
+    <!-- Transaction History Modal -->
+    <div id="tx-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.45);backdrop-filter:blur(2px)" onclick="if(event.target===this)closeTxModal()">
+        <div style="position:absolute;bottom:0;left:0;right:0;background:#fff;border-radius:16px 16px 0 0;max-height:80vh;display:flex;flex-direction:column">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid #f0f0f0">
+                <span style="font-weight:700;font-size:15px;color:#111">היסטוריית עסקאות</span>
+                <button onclick="closeTxModal()" style="background:none;border:none;font-size:20px;color:#9ca3af;cursor:pointer;line-height:1">✕</button>
+            </div>
+            <div style="overflow-y:auto;padding:8px 12px 24px">
+                <table style="width:100%;border-collapse:collapse;font-size:13px">
+                    <thead>
+                        <tr style="position:sticky;top:0;background:#fff">
+                            <th style="text-align:right;padding:6px 5px;color:#9ca3af;font-weight:500;font-size:11px;border-bottom:1px solid #f0f0f0">שעה</th>
+                            <th style="text-align:right;padding:6px 5px;color:#9ca3af;font-weight:500;font-size:11px;border-bottom:1px solid #f0f0f0">פעולה</th>
+                            <th style="text-align:right;padding:6px 5px;color:#9ca3af;font-weight:500;font-size:11px;border-bottom:1px solid #f0f0f0">מניה</th>
+                            <th style="text-align:right;padding:6px 5px;color:#9ca3af;font-weight:500;font-size:11px;border-bottom:1px solid #f0f0f0">כמות</th>
+                            <th style="text-align:right;padding:6px 5px;color:#9ca3af;font-weight:500;font-size:11px;border-bottom:1px solid #f0f0f0">מחיר</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tx-history-list"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js?v=31"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(regs => {
