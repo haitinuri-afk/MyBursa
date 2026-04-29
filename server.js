@@ -325,9 +325,11 @@ const zlib = require('zlib');
 function httpsGet(url, extraHeaders = {}, timeoutMs = 12000, rawText = false) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(url);
+        // new URL() encodes ^ → %5E but Yahoo Finance requires literal ^ for index symbols
+        const rawPath = (parsed.pathname + parsed.search).replace(/%5E/gi, '^');
         const options = {
             hostname: parsed.hostname,
-            path:     parsed.pathname + parsed.search,
+            path:     rawPath,
             headers:  { ...BASE_HEADERS, ...extraHeaders },
         };
         const req = https.get(options, res => {
@@ -400,67 +402,46 @@ app.get('/api/stock/batch', async (req, res) => {
     if (!symbols) return res.status(400).json({ error: 'symbols required' });
 
     const symList = symbols.split(',').map(s => s.trim()).filter(Boolean);
+    const todayUtcMs = new Date().setUTCHours(0, 0, 0, 0);
 
-    // Step 1: v7/quote — fast batch, accurate regularMarketChangePercent + regularMarketPreviousClose
-    const v7results = await fetchV7Quotes(symList);
-    const v7map = {};
-    v7results.forEach(q => { if (q?.symbol) v7map[q.symbol] = q; });
+    const settled = await Promise.allSettled(symList.map(async sym => {
+        const { meta, result: chartResult, canonicalSymbol } = await fetchChartMeta(sym, '5d');
+        const currency  = meta.currency;
+        const rawCloses = chartResult?.indicators?.quote?.[0]?.close ?? [];
+        const timestamps = chartResult?.timestamp ?? [];
 
-    // Step 2: for symbols missing from v7, try ETF fallbacks via chart API
-    const missing = symList.filter(s => !v7map[s]);
-    const fallbackSettled = missing.length
-        ? await Promise.allSettled(missing.map(async sym => {
-            const fallbackSym = SYMBOL_FALLBACKS[sym] ?? sym;
-            const { meta, result: chartResult } = await fetchChartMeta(fallbackSym, '5d');
-            const currency = meta.currency;
-            const rawCloses  = chartResult?.indicators?.quote?.[0]?.close ?? [];
-            const timestamps = chartResult?.timestamp ?? [];
-            const todayUtcMs = new Date().setUTCHours(0, 0, 0, 0);
-            let chartPrevClose = null;
-            for (let i = timestamps.length - 1; i >= 0; i--) {
-                const val = rawCloses[i]; if (!val || val <= 0) continue;
-                if (new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0) < todayUtcMs) { chartPrevClose = val; break; }
+        // Walk backwards to find the last close from before today (= yesterday's close)
+        let chartPrevClose = null;
+        for (let i = timestamps.length - 1; i >= 0; i--) {
+            const val = rawCloses[i];
+            if (!val || val <= 0) continue;
+            if (new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0) < todayUtcMs) {
+                chartPrevClose = val; break;
             }
-            const prevClose = meta.regularMarketPreviousClose ?? chartPrevClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
-            return { symbol: sym, regularMarketPrice: applyDivisor(sym, meta.regularMarketPrice, currency),
-                     regularMarketPreviousClose: applyDivisor(sym, prevClose, currency),
-                     marketState: meta.marketState ?? 'CLOSED' };
-          }))
-        : [];
-
-    // Build results list
-    const results = [];
-    for (const sym of symList) {
-        if (v7map[sym]) {
-            const q = v7map[sym];
-            const price    = q.regularMarketPrice ?? 0;
-            const currency = q.currency;
-            // Derive prevClose from changePercent if not provided (common for ^TA35)
-            let prevClose = q.regularMarketPreviousClose;
-            if (!prevClose && q.regularMarketChangePercent != null && price) {
-                prevClose = price / (1 + q.regularMarketChangePercent / 100);
-            }
-            const result = {
-                symbol:                     sym,
-                regularMarketPrice:         applyDivisor(sym, price, currency),
-                regularMarketPreviousClose: applyDivisor(sym, prevClose ?? price, currency),
-                regularMarketChangePercent: q.regularMarketChangePercent ?? 0,
-                marketState:                q.marketState ?? 'CLOSED'
-            };
-            _lastKnownPrices[sym] = result;
-            results.push(result);
         }
-    }
-    // Add fallback results
-    fallbackSettled.forEach((r, i) => {
-        if (r.status === 'fulfilled') { _lastKnownPrices[missing[i]] = r.value; results.push(r.value); }
-        else if (_lastKnownPrices[missing[i]]) results.push(_lastKnownPrices[missing[i]]);
-        else console.warn(`[batch] ${missing[i]}: ${r.reason?.message}`);
+        // chartPrevClose is most reliable — regularMarketPreviousClose on ETF proxies (TA35.TA)
+        // often reflects chartPreviousClose (5-days-ago baseline) instead of yesterday
+        const prevClose = chartPrevClose ?? meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
+        const result = {
+            symbol:                     canonicalSymbol,
+            regularMarketPrice:         applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency),
+            regularMarketPreviousClose: applyDivisor(canonicalSymbol, prevClose, currency),
+            marketState:                meta.marketState ?? 'CLOSED'
+        };
+        _lastKnownPrices[sym] = result;
+        return result;
+    }));
+
+    const results = [];
+    settled.forEach((r, i) => {
+        if (r.status === 'fulfilled') results.push(r.value);
+        else if (_lastKnownPrices[symList[i]]) results.push(_lastKnownPrices[symList[i]]);
+        else console.warn(`[batch] ${symList[i]}: ${r.reason?.message}`);
     });
 
     const serverOpen  = isMarketOpen();
     const marketState = serverOpen ? 'REGULAR' : 'CLOSED';
-    console.log(`[batch] ${results.length}/${symList.length} | v7=${v7results.length} | open=${serverOpen}`);
+    console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen}`);
     _cachedQuotes = results;
     res.json({ marketOpen: serverOpen, marketState, quotes: results });
 });
@@ -1138,23 +1119,28 @@ app.post('/api/portfolio', express.json(), async (req, res) => {
 
 // ── Debug ─────────────────────────────────────────────────────────────────────
 
-// Quick check: what does v7/quote return for TA-35?
+// Quick check: TA-35 price, prevClose and computed %
 app.get('/api/debug/ta35', async (req, res) => {
     try {
-        const v7 = await fetchV7Quotes(['^TA35', 'TA35.TA']);
-        const ta35q = v7.find(q => q.symbol === '^TA35');
-        const etfq  = v7.find(q => q.symbol === 'TA35.TA');
+        const todayUtcMs = new Date().setUTCHours(0, 0, 0, 0);
+        const { meta, result: chartResult, canonicalSymbol } = await fetchChartMeta('^TA35', '5d');
+        const rawCloses  = chartResult?.indicators?.quote?.[0]?.close ?? [];
+        const timestamps = chartResult?.timestamp ?? [];
+        let chartPrevClose = null;
+        for (let i = timestamps.length - 1; i >= 0; i--) {
+            const val = rawCloses[i]; if (!val || val <= 0) continue;
+            if (new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0) < todayUtcMs) { chartPrevClose = val; break; }
+        }
+        const prevClose = chartPrevClose ?? meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
+        const price = meta.regularMarketPrice;
         res.json({
-            ta35_v7: ta35q ? {
-                price: ta35q.regularMarketPrice,
-                prevClose: ta35q.regularMarketPreviousClose,
-                changePct: ta35q.regularMarketChangePercent
-            } : null,
-            etf_v7: etfq ? {
-                price: etfq.regularMarketPrice,
-                prevClose: etfq.regularMarketPreviousClose,
-                changePct: etfq.regularMarketChangePercent
-            } : null
+            source: canonicalSymbol,
+            price,
+            chartPrevClose,
+            regularMarketPreviousClose: meta.regularMarketPreviousClose,
+            chartPreviousClose: meta.chartPreviousClose,
+            usedPrevClose: prevClose,
+            pct: prevClose ? `${(((price - prevClose) / prevClose) * 100).toFixed(2)}%` : 'N/A'
         });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
