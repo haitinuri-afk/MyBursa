@@ -387,13 +387,23 @@ app.get('/api/stock/batch', async (req, res) => {
         const { meta, result: chartResult, canonicalSymbol } = await fetchChartMeta(sym, '5d');
         const currency = meta.currency;
 
-        // Get all valid daily closes from the 5d chart
-        const closes = (chartResult?.indicators?.quote?.[0]?.close ?? []).filter(v => v != null && v > 0);
+        // Find yesterday's close from chart timestamps (most reliable cross-range approach)
+        const rawCloses    = chartResult?.indicators?.quote?.[0]?.close ?? [];
+        const timestamps   = chartResult?.timestamp ?? [];
+        const todayUtcMs   = new Date().setUTCHours(0, 0, 0, 0);
+        let chartPrevClose = null;
+        for (let i = timestamps.length - 1; i >= 0; i--) {
+            const val   = rawCloses[i];
+            if (!val || val <= 0) continue;
+            const dayMs = new Date(timestamps[i] * 1000).setUTCHours(0, 0, 0, 0);
+            if (dayMs < todayUtcMs) { chartPrevClose = val; break; }
+        }
 
-        // prevClose: use Yahoo's authoritative field first; only fall back to chart if missing
+        // prevClose priority: Yahoo explicit field → timestamp-derived → chartPreviousClose
         const prevClose = meta.regularMarketPreviousClose
+            ?? chartPrevClose
             ?? meta.chartPreviousClose
-            ?? (closes.length >= 2 ? closes[closes.length - 2] : meta.regularMarketPrice);
+            ?? meta.regularMarketPrice;
 
         const result = {
             symbol: canonicalSymbol,
@@ -1082,17 +1092,25 @@ app.post('/api/portfolio', express.json(), async (req, res) => {
 // ── Debug ─────────────────────────────────────────────────────────────────────
 app.get('/api/debug/ta35', async (req, res) => {
     try {
-        const { meta, canonicalSymbol } = await fetchChartMeta('^TA35', '5d');
-        const price     = meta.regularMarketPreviousClose;
-        const prevClose = meta.regularMarketPreviousClose;
+        const { meta, result: chartResult, canonicalSymbol } = await fetchChartMeta('^TA35', '5d');
+        const rawCloses  = chartResult?.indicators?.quote?.[0]?.close ?? [];
+        const timestamps = chartResult?.timestamp ?? [];
+        const todayUtcMs = new Date().setUTCHours(0, 0, 0, 0);
+        let chartPrevClose = null;
+        for (let i = timestamps.length - 1; i >= 0; i--) {
+            const val = rawCloses[i];
+            if (!val || val <= 0) continue;
+            if (new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0) < todayUtcMs) { chartPrevClose = val; break; }
+        }
+        const prevClose = meta.regularMarketPreviousClose ?? chartPrevClose ?? meta.chartPreviousClose;
         res.json({
             source: canonicalSymbol,
-            regularMarketPrice:         meta.regularMarketPrice,
+            price: meta.regularMarketPrice,
             regularMarketPreviousClose: meta.regularMarketPreviousClose,
-            chartPreviousClose:         meta.chartPreviousClose,
-            pct: meta.regularMarketPreviousClose
-                ? (((meta.regularMarketPrice - meta.regularMarketPreviousClose) / meta.regularMarketPreviousClose) * 100).toFixed(2) + '%'
-                : 'N/A'
+            chartPreviousClose: meta.chartPreviousClose,
+            chartPrevClose_derived: chartPrevClose,
+            prevClose_used: prevClose,
+            pct: prevClose ? (((meta.regularMarketPrice - prevClose) / prevClose) * 100).toFixed(2) + '%' : 'N/A'
         });
     } catch(e) { res.json({ error: e.message }); }
 });
