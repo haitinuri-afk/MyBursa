@@ -287,7 +287,7 @@
 
     <!-- Transaction History Floating Window -->
     <div id="tx-modal" style="display:none;position:fixed;z-index:9999;top:50%;left:50%;transform:translate(-50%,-50%);width:340px;background:#fff;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.18);border:1px solid rgba(5,150,105,0.15);overflow:hidden">
-        <div id="tx-drag-handle" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px 8px;background:#f9fafb;border-bottom:1px solid #f0f0f0;cursor:move;user-select:none;touch-action:none">
+        <div id="tx-drag-handle" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px 8px;background:#f9fafb;border-bottom:1px solid #f0f0f0;cursor:grab;user-select:none;touch-action:none">
             <span style="font-weight:700;font-size:13px;color:#111">היסטוריית עסקאות</span>
             <button onclick="closeTxModal()" style="background:none;border:none;font-size:15px;color:#9ca3af;cursor:pointer;line-height:1;padding:0 2px">✕</button>
         </div>
@@ -307,7 +307,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=35"></script>
+    <script src="script.js?v=36"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(regs => {

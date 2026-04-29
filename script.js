@@ -1268,6 +1268,7 @@ function _initFloatDrag(modal) {
         modal.style.transform = 'none';
         modal.style.left = origLeft + 'px';
         modal.style.top  = origTop  + 'px';
+        handle.style.cursor = 'grabbing';
     };
     const onMove = e => {
         if (startX === undefined) return;
@@ -1275,7 +1276,7 @@ function _initFloatDrag(modal) {
         modal.style.left = (origLeft + cx - startX) + 'px';
         modal.style.top  = (origTop  + cy - startY) + 'px';
     };
-    const onEnd = () => { startX = undefined; };
+    const onEnd = () => { startX = undefined; handle.style.cursor = 'grab'; };
     handle.addEventListener('mousedown', onStart);
     handle.addEventListener('touchstart', onStart, { passive: true });
     window.addEventListener('mousemove', onMove);
@@ -1565,7 +1566,7 @@ function resetWindows() {
 function makeDraggable(el) {
     const header = el.querySelector('.window-header');
     if (!header) return;
-    header.style.cursor = 'move';
+    header.style.cursor = 'grab';
 
     header.addEventListener('mousedown', function(e) {
         if (window.innerWidth <= 768) return; // dragging disabled on mobile
@@ -1577,6 +1578,7 @@ function makeDraggable(el) {
 
         el.style.zIndex = ++highestZIndex;
         el.classList.add('dragging');
+        header.style.cursor = 'grabbing';
 
         const dashRect = dashboard.getBoundingClientRect();
         const elRect   = el.getBoundingClientRect();
@@ -1597,6 +1599,7 @@ function makeDraggable(el) {
 
         function onMouseUp() {
             el.classList.remove('dragging');
+            header.style.cursor = 'grab';
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup',   onMouseUp);
         }
