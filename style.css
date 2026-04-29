@@ -1,3 +1,6 @@
+/* ── Grabbing override — prevents child elements from overriding cursor during drag ── */
+body[style*="grabbing"], body[style*="grabbing"] * { cursor: grabbing !important; }
+
 /* ── Utility classes ── */
 .flex          { display: flex; }
 .flex-1        { flex: 1; }
