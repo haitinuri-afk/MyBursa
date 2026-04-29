@@ -11,9 +11,9 @@
       "totalCost": 48290
     },
     "מדד תא-35": {
-      "qty": 50,
-      "buyPrice": 4429.47,
-      "totalCost": 221473.5
+      "qty": 60,
+      "buyPrice": 4411.346666666666,
+      "totalCost": 264680.8
     },
     "עזריאלי": {
       "qty": 200,
@@ -21,9 +21,9 @@
       "totalCost": 92460
     },
     "דיסקונט": {
-      "qty": 500,
-      "buyPrice": 35.18,
-      "totalCost": 17590
+      "qty": 1000,
+      "buyPrice": 34.18,
+      "totalCost": 34180
     },
     "פועלים": {
       "qty": 200,
@@ -41,17 +41,57 @@
       "totalCost": 140278.94999999998
     },
     "רמי לוי": {
-      "qty": 100,
-      "buyPrice": 360.5,
-      "totalCost": 36050
+      "qty": 350,
+      "buyPrice": 361.85714285714283,
+      "totalCost": 126650
     },
     "שטראוס": {
       "qty": 200,
       "buyPrice": 128.5,
       "totalCost": 25700
+    },
+    "טאוור": {
+      "qty": 70,
+      "buyPrice": 558.5,
+      "totalCost": 39095
     }
   },
   "transactionHistory": [
+    {
+      "time": "9:17:06 AM",
+      "action": "Buy",
+      "symbol": "רמי לוי",
+      "qty": 250,
+      "price": "362.40"
+    },
+    {
+      "time": "8:35:45 AM",
+      "action": "Buy",
+      "symbol": "דיסקונט",
+      "qty": 500,
+      "price": "33.18"
+    },
+    {
+      "time": "8:31:12 AM",
+      "action": "Buy",
+      "symbol": "טאוור",
+      "qty": 45,
+      "price": "558.50"
+    },
+    {
+      "time": "8:30:46 AM",
+      "action": "Buy",
+      "symbol": "טאוור",
+      "qty": 25,
+      "price": "558.50"
+    },
+    {
+      "time": "5:56:03 PM",
+      "action": "Buy",
+      "symbol": "מדד תא-35",
+      "qty": 10,
+      "price": "4320.73"
+    },
     {
       "time": "8:22:32 PM",
       "action": "Buy",
