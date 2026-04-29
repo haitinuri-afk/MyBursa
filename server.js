@@ -378,11 +378,10 @@ app.get('/api/stock/batch', async (req, res) => {
         // Get all valid daily closes from the 5d chart
         const closes = (chartResult?.indicators?.quote?.[0]?.close ?? []).filter(v => v != null && v > 0);
 
-        // prevClose = second-to-last close from chart (= last full session's close)
-        // Fall back to Yahoo's metadata fields if chart doesn't have enough data
-        let prevClose = closes.length >= 2
-            ? closes[closes.length - 2]
-            : (meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice);
+        // prevClose: use Yahoo's authoritative field first; only fall back to chart if missing
+        const prevClose = meta.regularMarketPreviousClose
+            ?? meta.chartPreviousClose
+            ?? (closes.length >= 2 ? closes[closes.length - 2] : meta.regularMarketPrice);
 
         const result = {
             symbol: canonicalSymbol,
