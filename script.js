@@ -1,4 +1,4 @@
-const STORAGE_KEY   = 'trading_station_pro_data';
+const STORAGE_KEY   = 'trading_station_pro_data_v2';
 const PORTFOLIO_KEY = 'trading_station_portfolio';
 
 
@@ -112,7 +112,7 @@ function saveState() {
     try {
         const prices = {};
         Object.entries(stocksData).forEach(([name, d]) => {
-            if (d.price > 0) prices[name] = { price: d.price, initial: d.initial };
+            if (d.price > 0) prices[name] = { price: d.price };   // initial always from server, never cache
         });
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ indicesData, prices }));
         savePortfolio();   // always flush portfolio too
