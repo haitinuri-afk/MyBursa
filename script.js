@@ -1262,8 +1262,8 @@ function _initFloatDrag(modal) {
         if (e.target.tagName === 'BUTTON') return;
         const r = modal.getBoundingClientRect();
         [startX, startY] = getPos(e);
-        origLeft = r.left + r.width / 2;
-        origTop  = r.top  + r.height / 2;
+        origLeft = r.left;
+        origTop  = r.top;
         modal.style.transition = 'none';
         modal.style.transform = 'none';
         modal.style.left = origLeft + 'px';
