@@ -1068,6 +1068,17 @@ app.post('/api/portfolio', express.json(), async (req, res) => {
     }
 });
 
+// ── Debug ─────────────────────────────────────────────────────────────────────
+app.get('/api/debug/mongo', async (req, res) => {
+    const mongoOk = !!_portfolioCol;
+    let doc = null;
+    if (_portfolioCol) {
+        try { doc = await _portfolioCol.findOne({ _id: 'main' }, { projection: { 'portfolioData.transactionHistory': 0 } }); }
+        catch(e) { doc = { error: e.message }; }
+    }
+    res.json({ mongoOk, portfolioDoc: doc, env: !!process.env.MONGODB_URI });
+});
+
 // ── Alerts API ────────────────────────────────────────────────────────────────
 
 // GET /api/my-alerts — last 20 unread alerts sorted by newest first
