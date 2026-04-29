@@ -356,8 +356,8 @@ header.top-bar {
 
 /* ── Window Positions ── */
 /* Col A */
-#win-portfolio    { left: 0;      width: 24.5%; top:  0%;  height: 49%; }
-#win-simulator    { left: 0;      width: 24.5%; top: 50%;  height: 50%; }
+#win-portfolio    { left: 0;      width: 24.5%; top:  0%;  height: 65%; }
+#win-simulator    { left: 0;      width: 24.5%; top: 66%;  height: 34%; }
 #win-portfolio-chart { left: 0;   width: 30%;   top:  8%;  height: 55%; z-index: 25; }
 
 /* Col B */
