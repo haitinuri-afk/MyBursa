@@ -120,7 +120,7 @@ function _isTA35Company(report) {
  * @param {{ groq, ragCol, usdRate }} ctx
  * @returns {Promise<Array>}  new scan results
  */
-async function runScan({ groq, ragCol, usdRate = 3.7 }) {
+async function runScan({ groq, ragCol, usdRate = 3.7, portfolioCol, alertsCol }) {
     console.log('[maya] Starting scan…');
     const newResults = [];
 
@@ -146,6 +146,8 @@ async function runScan({ groq, ragCol, usdRate = 3.7 }) {
 
         let analysis = null;
         let savedToRag = false;
+        let holderSummary = null;
+        let isPortfolioStock = false;
 
         try {
             const text = await _extractReportText(report.url);
@@ -156,6 +158,58 @@ async function runScan({ groq, ragCol, usdRate = 3.7 }) {
 
             // Send to agent for analysis
             analysis = await analyzeReport(text, { groq, ragCol, usdRate });
+
+            // ── Smart Matcher: check if this company is in user's portfolio ──────
+            if (portfolioCol && alertsCol) {
+                const userPortfolio = await portfolioCol.findOne({ _id: 'main' }).catch(() => null);
+                const userSymbols = userPortfolio?.symbols ?? [];
+                // Match by company name (Hebrew) or symbol
+                isPortfolioStock = userSymbols.some(sym =>
+                    report.company?.includes(sym) ||
+                    (analysis?.company ?? '').includes(sym) ||
+                    sym.includes(report.company?.split(' ')[0] ?? '___')
+                );
+                if (isPortfolioStock && analysis?.summary) {
+                    // Generate holder's summary using groq
+                    try {
+                        const holderPrompt = `אתה יועץ השקעות. המשתמש מחזיק במניית ${analysis?.company || report.company}.
+דוח חדש פורסם. תקציר הדוח: ${analysis.summary}
+שער דולר נוכחי: ${usdRate} ₪
+
+כתוב 'תקציר למחזיקים' בעברית פשוטה — 3 שורות בלבד:
+1. מה המשמעות לבעל המניה (חיובי/שלילי/ניטרלי)
+2. האם כדאי להחזיק/לחזק/לצמצם
+3. משפט אחד על השפעת שער הדולר אם רלוונטי`;
+
+                        const chat = await groq.chat.completions.create({
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [{ role: 'user', content: holderPrompt }],
+                            max_tokens: 200,
+                            temperature: 0.4,
+                        });
+                        holderSummary = chat.choices[0]?.message?.content?.trim() ?? null;
+                    } catch(e) { console.warn('[maya] holderSummary failed:', e.message); }
+
+                    // Save alert to MongoDB
+                    const matchedSymbol = userSymbols.find(s =>
+                        report.company?.includes(s) || s.includes(report.company?.split(' ')[0] ?? '___')
+                    ) ?? '';
+                    await alertsCol.insertOne({
+                        company: analysis?.company || report.company,
+                        symbol: matchedSymbol,
+                        summary: analysis.summary,
+                        holderSummary,
+                        recommendation: analysis.recommendation,
+                        confidence: analysis.confidence,
+                        url: report.url,
+                        createdAt: new Date(),
+                        read: false,
+                    }).catch(e => console.warn('[maya] alert insert failed:', e.message));
+
+                    console.log(`[maya] 🔔 Portfolio alert created for ${analysis?.company || report.company}`);
+                }
+            }
+            // ── End Smart Matcher ─────────────────────────────────────────────────
 
             // Override source tag in MongoDB
             if (ragCol && analysis) {
@@ -178,6 +232,8 @@ async function runScan({ groq, ragCol, usdRate = 3.7 }) {
             recommendation: analysis?.recommendation ?? null,
             confidence:     analysis?.confidence ?? 0,
             summary:        analysis?.summary ?? null,
+            holderSummary:  holderSummary ?? null,
+            isPortfolioStock: isPortfolioStock ?? false,
             savedToRag,
             scannedAt:  new Date().toISOString(),
         };

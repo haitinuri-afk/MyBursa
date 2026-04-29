@@ -1348,6 +1348,7 @@ function switchMobileTab(tab) {
         const el = document.getElementById(id);
         if (el) el.classList.toggle('mob-hidden', !MOB_TABS[tab].includes(id));
     });
+    if (tab === 'ai') markAlertsRead();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1362,6 +1363,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('buy-btn').onclick      = buyStock;
     document.getElementById('sell-btn-sim').onclick = sellStockSim;
     document.getElementById('refresh-btn').onclick  = () => refreshRealData();
+    // Mark alerts read when AI chat window is focused (desktop)
+    const aiWin = document.getElementById('win-ai-chat');
+    if (aiWin) aiWin.addEventListener('mousedown', markAlertsRead, { once: false });
 
     applyMarketStatus(isMarketOpen() ? 'REGULAR' : 'CLOSED');
     // Load portfolio from server first, then fetch prices
@@ -1397,6 +1401,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch(e) {}
     }, 30_000);
+
+    // Check portfolio alerts on load and every minute
+    checkAlerts();
+    setInterval(checkAlerts, 60_000);
 });
 
 // ── Window Manager ─────────────────────────────────────────────────────────
@@ -2113,5 +2121,49 @@ function openScanDetail(jsonStr) {
 
 // Refresh strip every 10 minutes
 setInterval(fetchScanStrip, 10 * 60 * 1000);
+
+// ── Portfolio Alerts ────────────────────────────────────────────────────────
+async function checkAlerts() {
+    try {
+        const res = await fetch('/api/my-alerts');
+        if (!res.ok) return;
+        const { alerts, unreadCount } = await res.json();
+
+        // Update badge
+        const badge = document.getElementById('alerts-badge');
+        if (badge) {
+            if (unreadCount > 0) {
+                badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+                badge.style.display = 'block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // Update hot alerts panel
+        const panel = document.getElementById('hot-alerts-panel');
+        if (panel && alerts.length > 0) {
+            panel.style.display = 'block';
+            panel.innerHTML = alerts.map(a => {
+                const color = a.recommendation === 'BUY' ? '#16a34a' : a.recommendation === 'SELL' ? '#dc2626' : '#d97706';
+                return `<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,0.06)">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+                        <span style="font-weight:700;color:#111">${a.company}</span>
+                        <span style="background:${color};color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px">${a.recommendation ?? '—'}</span>
+                    </div>
+                    ${a.holderSummary ? `<div style="color:#374151;line-height:1.5;direction:rtl">${a.holderSummary}</div>` : ''}
+                </div>`;
+            }).join('');
+        } else if (panel) {
+            panel.style.display = 'none';
+        }
+    } catch(e) { console.warn('checkAlerts:', e); }
+}
+
+async function markAlertsRead() {
+    await fetch('/api/alerts/mark-read', { method: 'POST' }).catch(() => {});
+    const badge = document.getElementById('alerts-badge');
+    if (badge) badge.style.display = 'none';
+}
 
 

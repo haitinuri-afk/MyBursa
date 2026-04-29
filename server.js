@@ -457,8 +457,10 @@ const CONTEXT_IQ_PATH = path.join(__dirname, '..', 'ContextIQ');
 
 // ── MongoDB Atlas (optional — set MONGODB_URI env var to enable) ───────────
 const MONGODB_URI = process.env.MONGODB_URI;
-let _ragCol     = null;   // MongoDB collection handle
-let _scansCol   = null;   // Persistent scan results collection
+let _ragCol       = null;   // MongoDB collection handle
+let _scansCol     = null;   // Persistent scan results collection
+let _portfolioCol = null;   // User portfolio symbols collection
+let _alertsCol    = null;   // Portfolio alerts collection
 
 async function initMongoDB() {
     if (!MONGODB_URI) return;
@@ -466,13 +468,17 @@ async function initMongoDB() {
         const { MongoClient } = require('mongodb');
         const client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
         await client.connect();
-        const db  = client.db('bursa');
-        _ragCol   = db.collection('knowledge');
-        _scansCol = db.collection('scan_results');
+        const db      = client.db('bursa');
+        _ragCol       = db.collection('knowledge');
+        _scansCol     = db.collection('scan_results');
+        _portfolioCol = db.collection('user_portfolio');
+        _alertsCol    = db.collection('alerts');
         // Full-text index (created once, idempotent)
         await _ragCol.createIndex({ text: 'text' }, { default_language: 'none' });
         await _scansCol.createIndex({ scannedAt: -1 });
-        console.log('[MongoDB] Connected to Atlas — RAG + scans collections ready');
+        await _alertsCol.createIndex({ createdAt: -1 });
+        await _alertsCol.createIndex({ read: 1 });
+        console.log('[MongoDB] Connected to Atlas — RAG + scans + portfolio + alerts collections ready');
         await _syncLocalChunksToMongo();
     } catch(e) {
         console.warn('[MongoDB] Connection failed, falling back to local RAG:', e.message);
@@ -962,22 +968,47 @@ if (GCS_BUCKET) {
 }
 
 async function loadPortfolio() {
+    // 1. MongoDB (shared across all instances — primary source)
+    if (_portfolioCol) {
+        try {
+            const doc = await _portfolioCol.findOne({ _id: 'main' });
+            if (doc?.portfolioData) return doc.portfolioData;
+        } catch(e) { console.warn('[portfolio] MongoDB load failed:', e.message); }
+    }
+    // 2. GCS
     if (_gcsStorage) {
         try {
             const [contents] = await _gcsStorage.bucket(GCS_BUCKET).file(GCS_OBJECT).download();
             return JSON.parse(contents.toString());
         } catch(e) { return { portfolio: {}, transactionHistory: [] }; }
     }
+    // 3. Local file fallback
     try { return JSON.parse(fs.readFileSync(PORTFOLIO_FILE, 'utf8')); }
     catch { return { portfolio: {}, transactionHistory: [] }; }
 }
 
 async function savePortfolio(data) {
+    // 1. MongoDB (primary — synced across desktop + mobile)
+    if (_portfolioCol) {
+        try {
+            await _portfolioCol.updateOne(
+                { _id: 'main' },
+                { $set: {
+                    portfolioData: data,
+                    symbols: Object.keys(data.portfolio ?? {}),
+                    updatedAt: new Date()
+                }},
+                { upsert: true }
+            );
+        } catch(e) { console.warn('[portfolio] MongoDB save failed:', e.message); }
+    }
+    // 2. GCS
     if (_gcsStorage) {
         await _gcsStorage.bucket(GCS_BUCKET).file(GCS_OBJECT).save(JSON.stringify(data, null, 2), { contentType: 'application/json' });
-    } else {
-        fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(data, null, 2));
+        return;
     }
+    // 3. Local file fallback
+    fs.writeFileSync(PORTFOLIO_FILE, JSON.stringify(data, null, 2));
 }
 
 app.get('/api/news', async (req, res) => {
@@ -992,9 +1023,48 @@ app.get('/api/portfolio', async (req, res) => {
 
 app.post('/api/portfolio', express.json(), async (req, res) => {
     try {
-        await savePortfolio(req.body);
+        const data = req.body;
+        await savePortfolio(data);
+        // Sync portfolio symbols to MongoDB
+        if (_portfolioCol && data?.portfolio) {
+            _portfolioCol.updateOne(
+                { _id: 'main' },
+                { $set: { symbols: Object.keys(data.portfolio), updatedAt: new Date() } },
+                { upsert: true }
+            ).catch(e => console.warn('[portfolio] MongoDB sync failed:', e.message));
+        }
         res.json({ ok: true });
     } catch(e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ── Alerts API ────────────────────────────────────────────────────────────────
+
+// GET /api/my-alerts — last 20 unread alerts sorted by newest first
+app.get('/api/my-alerts', async (req, res) => {
+    if (!_alertsCol) return res.json({ alerts: [], unreadCount: 0 });
+    try {
+        const alerts = await _alertsCol.find({ read: false })
+            .sort({ createdAt: -1 })
+            .limit(20)
+            .toArray();
+        const unreadCount = alerts.length;
+        res.json({ alerts, unreadCount });
+    } catch(e) {
+        console.error('[/api/my-alerts]', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/alerts/mark-read — marks all alerts as read
+app.post('/api/alerts/mark-read', async (req, res) => {
+    if (!_alertsCol) return res.json({ ok: true });
+    try {
+        await _alertsCol.updateMany({}, { $set: { read: true } });
+        res.json({ ok: true });
+    } catch(e) {
+        console.error('[/api/alerts/mark-read]', e.message);
         res.status(500).json({ error: e.message });
     }
 });
@@ -1041,7 +1111,7 @@ async function _persistScans(results) {
 // ── /api/trigger-scan (manual trigger) ───────────────────────────────────────
 app.post('/api/trigger-scan', apiLimiter, async (req, res) => {
     res.json({ message: 'סריקה התחילה ברקע' });
-    runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate })
+    runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate, portfolioCol: _portfolioCol, alertsCol: _alertsCol })
         .then(results => _persistScans(results))
         .catch(e => console.error('[maya] manual scan error:', e.message));
 });
@@ -1057,7 +1127,7 @@ app.listen(PORT, async () => {
     cron.schedule('0 10-18 * * 1-5', async () => {
         console.log('[maya] Hourly scan triggered by cron');
         try {
-            const results = await runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate });
+            const results = await runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate, portfolioCol: _portfolioCol, alertsCol: _alertsCol });
             await _persistScans(results);
         } catch (e) {
             console.error('[maya] cron scan error:', e.message);

@@ -269,6 +269,7 @@
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
+                <div id="hot-alerts-panel" style="display:none;background:linear-gradient(135deg,#fef3c7,#fff7ed);border-bottom:1px solid #fcd34d;padding:10px 14px;font-size:12px;max-height:120px;overflow-y:auto"></div>
                 <div id="ai-messages" class="chat-messages">
                     <div class="chat-empty-state" id="ai-empty-state">
                         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -278,8 +279,9 @@
                 <div class="chat-input-row">
                     <input id="ai-input" class="chat-input" type="text" placeholder="שאל על התיק שלך..." dir="rtl"
                         onkeydown="if(event.key==='Enter') sendAIMessage()" />
-                    <button onclick="sendAIMessage()" id="ai-send-btn" class="chat-send-btn">
+                    <button onclick="sendAIMessage()" id="ai-send-btn" class="chat-send-btn" style="position:relative">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        <span id="alerts-badge" style="display:none;position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:9px;font-weight:700;border-radius:10px;padding:1px 5px;min-width:16px;text-align:center;line-height:16px;box-shadow:0 1px 4px rgba(0,0,0,0.2)"></span>
                     </button>
                 </div>
             </div>
