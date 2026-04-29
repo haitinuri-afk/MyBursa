@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" href="style.css?v=27">
+    <link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
     <div class="main-wrapper">
@@ -269,18 +269,25 @@
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
-                <div id="ai-messages" class="chat-messages"></div>
+                <div id="ai-messages" class="chat-messages">
+                    <div class="chat-empty-state" id="ai-empty-state">
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        <p>שאל אותי על התיק שלך,<br>מגמות בשוק, או מה לקנות</p>
+                    </div>
+                </div>
                 <div class="chat-input-row">
                     <input id="ai-input" class="chat-input" type="text" placeholder="שאל על התיק שלך..." dir="rtl"
                         onkeydown="if(event.key==='Enter') sendAIMessage()" />
-                    <button onclick="sendAIMessage()" id="ai-send-btn" class="chat-send-btn">שלח</button>
+                    <button onclick="sendAIMessage()" id="ai-send-btn" class="chat-send-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
                 </div>
             </div>
 
         </div>
     </div>
 
-    <script src="script.js?v=28"></script>
+    <script src="script.js?v=29"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(regs => {

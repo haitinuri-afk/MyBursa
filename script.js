@@ -1644,6 +1644,8 @@ function tagStockMentions(text) {
 
 function addAIMessage(role, text) {
     const box = document.getElementById('ai-messages');
+    const empty = document.getElementById('ai-empty-state');
+    if (empty) empty.remove();
     const div = document.createElement('div');
     const isUser = role === 'user';
     const html = isUser
