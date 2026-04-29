@@ -626,6 +626,7 @@ td {
     padding: 12px 16px 8px;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
+    background: #ffffff;
 }
 .chat-messages::-webkit-scrollbar { width: 3px; }
 .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
