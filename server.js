@@ -176,7 +176,8 @@ async function fetchChartMeta(symbol, range, interval = '1d') {
           ];
 
     for (const attempt of attempts) {
-        const url = `https://${attempt.host}.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(attempt.sym)}?range=${attempt.range}&interval=${attempt.interval}&includePrePost=false`;
+        // Use symbol as-is — encodeURIComponent turns ^ into %5E which Yahoo rejects with 404
+        const url = `https://${attempt.host}.finance.yahoo.com/v8/finance/chart/${attempt.sym}?range=${attempt.range}&interval=${attempt.interval}&includePrePost=false`;
         try {
             const { body } = await httpsGet(url, { Referer: 'https://finance.yahoo.com/' });
             const result = body?.chart?.result?.[0];
