@@ -379,10 +379,14 @@ function isMarketOpen() {
 // Fetch batch quotes via Yahoo v7/quote — returns regularMarketChangePercent directly
 async function fetchV7Quotes(symList) {
     const fields = 'regularMarketPrice,regularMarketPreviousClose,regularMarketChangePercent,regularMarketChange,marketState,currency';
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symList.join(','))}&fields=${fields}&formatted=false`;
+    // Encode each symbol individually, join with raw comma
+    const symsParam = symList.map(s => encodeURIComponent(s)).join(',');
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symsParam}&fields=${fields}&formatted=false`;
     try {
         const { body } = await httpsGet(url, { Referer: 'https://finance.yahoo.com/' });
-        return body?.quoteResponse?.result ?? [];
+        const results = body?.quoteResponse?.result ?? [];
+        console.log(`[v7quote] ${results.length}/${symList.length} symbols returned`);
+        return results;
     } catch(e) {
         console.warn('[v7quote]', e.message);
         return [];
@@ -1132,6 +1136,27 @@ app.post('/api/portfolio', express.json(), async (req, res) => {
 });
 
 // ── Debug ─────────────────────────────────────────────────────────────────────
+
+// Quick check: what does v7/quote return for TA-35?
+app.get('/api/debug/ta35', async (req, res) => {
+    try {
+        const v7 = await fetchV7Quotes(['^TA35', 'TA35.TA']);
+        const ta35q = v7.find(q => q.symbol === '^TA35');
+        const etfq  = v7.find(q => q.symbol === 'TA35.TA');
+        res.json({
+            ta35_v7: ta35q ? {
+                price: ta35q.regularMarketPrice,
+                prevClose: ta35q.regularMarketPreviousClose,
+                changePct: ta35q.regularMarketChangePercent
+            } : null,
+            etf_v7: etfq ? {
+                price: etfq.regularMarketPrice,
+                prevClose: etfq.regularMarketPreviousClose,
+                changePct: etfq.regularMarketChangePercent
+            } : null
+        });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
 
 app.get('/api/debug/mongo', async (req, res) => {
     const mongoOk = !!_portfolioCol;
