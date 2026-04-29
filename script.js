@@ -1425,14 +1425,68 @@ const MOB_TABS = {
 };
 const MOB_ALL = Object.values(MOB_TABS).flat();
 
+// Panel labels for the picker
+const PANEL_DEFS = {
+    market:    [
+        { id: 'win-indices-tase', label: 'TA-35' },
+        { id: 'win-stocks',       label: 'מניות' },
+        { id: 'win-main-chart',   label: 'גרף מניה' },
+    ],
+    portfolio: [
+        { id: 'win-portfolio',  label: 'תיק השקעות' },
+        { id: 'win-simulator',  label: 'קנה / מכור' },
+    ],
+    ai:        [
+        { id: 'win-ai-chat', label: 'יועץ AI' },
+    ],
+};
+const PANEL_TAB_LABELS = { market: 'שוק', portfolio: 'תיק', ai: 'יועץ' };
+
+let _panelPrefs = {};
+try { _panelPrefs = JSON.parse(localStorage.getItem('mob_panels') || '{}'); } catch(e) {}
+function _isPanelOn(id) { return _panelPrefs[id] !== false; }
+
 function switchMobileTab(tab) {
     if (window.innerWidth > 768) return;
-    document.querySelectorAll('.mob-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.mob-tab[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     MOB_ALL.forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.classList.toggle('mob-hidden', !MOB_TABS[tab].includes(id));
+        if (!el) return;
+        const inTab = MOB_TABS[tab].includes(id);
+        el.classList.toggle('mob-hidden', !inTab || !_isPanelOn(id));
     });
     if (tab === 'ai') markAlertsRead();
+}
+
+// ── Panel Picker ─────────────────────────────────────────────────────────────
+function openPanelPicker() {
+    _renderPanelPicker();
+    document.getElementById('panel-picker-overlay').classList.remove('hidden');
+}
+function closePanelPicker() {
+    document.getElementById('panel-picker-overlay').classList.add('hidden');
+}
+function togglePanel(id) {
+    _panelPrefs[id] = !_isPanelOn(id);
+    localStorage.setItem('mob_panels', JSON.stringify(_panelPrefs));
+    const activeTab = document.querySelector('.mob-tab.active')?.dataset.tab || 'market';
+    switchMobileTab(activeTab);
+    _renderPanelPicker();
+}
+function _renderPanelPicker() {
+    const body = document.getElementById('panel-picker-body');
+    if (!body) return;
+    body.innerHTML = Object.entries(PANEL_DEFS).map(([tab, panels]) => `
+        <div class="picker-group">
+            <div class="picker-group-label">${PANEL_TAB_LABELS[tab]}</div>
+            <div class="picker-chips">
+                ${panels.map(p => `
+                    <button class="picker-chip ${_isPanelOn(p.id) ? 'active' : ''}"
+                            onclick="togglePanel('${p.id}')">${p.label}</button>
+                `).join('')}
+            </div>
+        </div>
+    `).join('');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
