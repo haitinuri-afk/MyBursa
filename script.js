@@ -1248,11 +1248,11 @@ function updatePortfolioList() {
     const c          = pctColor(totalPL);
     const plSign     = totalPLils >= 0 ? '+' : '';
     totalDisplay.innerHTML = `
-        <span dir="ltr" style="display:flex;flex-direction:column;align-items:flex-end;gap:1px">
-            <span style="font-size:0.85rem;font-weight:700;color:#202124;font-variant-numeric:tabular-nums">
+        <span dir="ltr" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            <span style="font-size:1rem;font-weight:700;color:#202124;font-variant-numeric:tabular-nums;letter-spacing:-0.3px">
                 ₪${totalValue.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:0})}
             </span>
-            <span style="font-size:0.75rem;font-weight:700;color:${c.text};background:${c.bg};padding:1px 7px;border-radius:4px;font-variant-numeric:tabular-nums">
+            <span style="font-size:0.78rem;font-weight:700;color:${c.text};background:${c.bg};padding:3px 9px;border-radius:6px;font-variant-numeric:tabular-nums">
                 ${plSign}₪${Math.abs(totalPLils).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:0})} (${parseFloat(totalPL)>=0?'+':''}${totalPL}%)
             </span>
         </span>`;

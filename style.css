@@ -530,13 +530,15 @@ td {
 /* ── Portfolio Footer ── */
 .portfolio-footer {
     margin-top: 10px;
-    padding-top: 10px;
+    padding: 12px 0 2px;
     border-top: 1px solid var(--border);
     display: flex;
     justify-content: space-between;
+    align-items: flex-start;
     font-weight: 700;
     color: var(--text);
     font-size: 14px;
+    gap: 8px;
 }
 
 /* ── Sell Button ── */
