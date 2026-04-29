@@ -885,7 +885,7 @@ canvas { width: 100% !important; height: 100% !important; }
     .timeframe-buttons button { padding: 5px 10px; font-size: 11.5px; }
 
     /* ── Simulator ── */
-    #buy-btn, #sell-btn-sim { padding: 13px 0; font-size: 15px; min-height: 48px; border-radius: 12px; }
+    #buy-btn, #sell-btn-sim { padding: 10px 0; font-size: 14px; min-height: 42px; border-radius: 12px; }
     .sim-input { font-size: 16px !important; padding: 11px 14px; border-radius: 10px; }
     #win-simulator .card-body { min-height: 0; }
 
