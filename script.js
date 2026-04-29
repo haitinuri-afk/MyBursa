@@ -1227,62 +1227,61 @@ function updateTransactionHistory() {
 
 function openTxModal() {
     const modal = document.getElementById('tx-modal');
-    const sheet = modal?.querySelector('div');
-    if (!modal || !sheet) return;
+    if (!modal) return;
     modal.style.display = 'block';
-    document.body.style.overflow = 'hidden';
-    sheet.style.transition = 'transform 0.3s cubic-bezier(0.32,0.72,0,1)';
-    sheet.style.transform = 'translateY(100%)';
-    requestAnimationFrame(() => { sheet.style.transform = 'translateY(0)'; });
-    _initSheetDrag(sheet);
+    modal.style.opacity = '0';
+    modal.style.transform = 'translate(-50%,-50%) scale(0.95)';
+    modal.style.transition = 'opacity 0.18s, transform 0.18s';
+    requestAnimationFrame(() => {
+        modal.style.opacity = '1';
+        modal.style.transform = 'translate(-50%,-50%) scale(1)';
+    });
+    _initFloatDrag(modal);
 }
 function closeTxModal() {
     const modal = document.getElementById('tx-modal');
-    const sheet = modal?.querySelector('div');
     if (!modal) return;
-    if (sheet) {
-        sheet.style.transition = 'transform 0.25s cubic-bezier(0.32,0.72,0,1)';
-        sheet.style.transform = 'translateY(100%)';
-        setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; sheet.style.transform = ''; }, 250);
-    } else {
-        modal.style.display = 'none'; document.body.style.overflow = '';
-    }
+    modal.style.transition = 'opacity 0.15s, transform 0.15s';
+    modal.style.opacity = '0';
+    modal.style.transform = (modal.style.transform.includes('translate(') && !modal.style.transform.includes('-50%'))
+        ? modal.style.transform.replace('scale(1)', 'scale(0.95)')
+        : 'translate(-50%,-50%) scale(0.95)';
+    setTimeout(() => {
+        modal.style.display = 'none';
+        modal.style.top = '50%'; modal.style.left = '50%';
+        modal.style.transform = 'translate(-50%,-50%)';
+    }, 150);
 }
-function _initSheetDrag(sheet) {
-    let startY = 0, curY = 0, dragging = false;
+function _initFloatDrag(modal) {
+    const handle = document.getElementById('tx-drag-handle');
+    if (!handle || handle._dragInit) return;
+    handle._dragInit = true;
+    let startX, startY, origLeft, origTop;
+    const getPos = e => e.touches ? [e.touches[0].clientX, e.touches[0].clientY] : [e.clientX, e.clientY];
     const onStart = e => {
-        startY = (e.touches ? e.touches[0].clientY : e.clientY);
-        dragging = true;
-        sheet.style.transition = 'none';
+        if (e.target.tagName === 'BUTTON') return;
+        const r = modal.getBoundingClientRect();
+        [startX, startY] = getPos(e);
+        origLeft = r.left + r.width / 2;
+        origTop  = r.top  + r.height / 2;
+        modal.style.transition = 'none';
+        modal.style.transform = 'none';
+        modal.style.left = origLeft + 'px';
+        modal.style.top  = origTop  + 'px';
     };
     const onMove = e => {
-        if (!dragging) return;
-        curY = (e.touches ? e.touches[0].clientY : e.clientY) - startY;
-        if (curY < 0) curY = 0;
-        sheet.style.transform = `translateY(${curY}px)`;
+        if (startX === undefined) return;
+        const [cx, cy] = getPos(e);
+        modal.style.left = (origLeft + cx - startX) + 'px';
+        modal.style.top  = (origTop  + cy - startY) + 'px';
     };
-    const onEnd = () => {
-        if (!dragging) return;
-        dragging = false;
-        if (curY > 80) { closeTxModal(); }
-        else { sheet.style.transition = 'transform 0.2s'; sheet.style.transform = 'translateY(0)'; }
-        curY = 0;
-    };
-    // Remove old listeners by cloning the drag handle
-    const handle = sheet.querySelector('#tx-drag-handle');
-    if (handle) {
-        handle.removeEventListener('touchstart', handle._ts);
-        handle.removeEventListener('touchmove', handle._tm);
-        handle.removeEventListener('touchend', handle._te);
-        handle.removeEventListener('mousedown', handle._md);
-        handle._ts = onStart; handle._tm = onMove; handle._te = onEnd; handle._md = onStart;
-        handle.addEventListener('touchstart', onStart, { passive: true });
-        handle.addEventListener('touchmove', onMove, { passive: true });
-        handle.addEventListener('touchend', onEnd);
-        handle.addEventListener('mousedown', onStart);
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onEnd);
-    }
+    const onEnd = () => { startX = undefined; };
+    handle.addEventListener('mousedown', onStart);
+    handle.addEventListener('touchstart', onStart, { passive: true });
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchend', onEnd);
 }
 
 function updatePortfolioList() {
