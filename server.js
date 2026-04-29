@@ -480,10 +480,39 @@ async function initMongoDB() {
         await _alertsCol.createIndex({ read: 1 });
         console.log('[MongoDB] Connected to Atlas — RAG + scans + portfolio + alerts collections ready');
         await _syncLocalChunksToMongo();
+        await _seedMongoPortfolio();
     } catch(e) {
         console.warn('[MongoDB] Connection failed, falling back to local RAG:', e.message);
         _ragCol = null;
     }
+}
+
+// On desktop startup: if MongoDB portfolio is empty or local file is newer, seed MongoDB
+async function _seedMongoPortfolio() {
+    if (!_portfolioCol) return;
+    try {
+        // Check if local file exists and has data
+        let localData;
+        try { localData = JSON.parse(fs.readFileSync(PORTFOLIO_FILE, 'utf8')); } catch { return; }
+        if (!localData?.portfolio || !Object.keys(localData.portfolio).length) return;
+
+        const existing = await _portfolioCol.findOne({ _id: 'main' });
+        const localCount = Object.keys(localData.portfolio).length;
+        const mongoCount = existing?.portfolioData?.portfolio
+            ? Object.keys(existing.portfolioData.portfolio).length : 0;
+
+        // Seed if MongoDB is empty or local has MORE holdings (desktop is source of truth on first boot)
+        if (!existing || localCount > mongoCount) {
+            await _portfolioCol.updateOne(
+                { _id: 'main' },
+                { $set: { portfolioData: localData, symbols: Object.keys(localData.portfolio), updatedAt: new Date() }},
+                { upsert: true }
+            );
+            console.log(`[portfolio] Seeded MongoDB from local file (${localCount} holdings)`);
+        } else {
+            console.log(`[portfolio] MongoDB has ${mongoCount} holdings — no seed needed`);
+        }
+    } catch(e) { console.warn('[portfolio] seed failed:', e.message); }
 }
 
 // Sync local .txt files to MongoDB on startup (upsert by content hash)
