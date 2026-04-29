@@ -2142,22 +2142,58 @@ async function checkAlerts() {
 
         // Update hot alerts panel
         const panel = document.getElementById('hot-alerts-panel');
+        const list  = document.getElementById('hot-alerts-list') ?? panel;
         if (panel && alerts.length > 0) {
             panel.style.display = 'block';
-            panel.innerHTML = alerts.map(a => {
-                const color = a.recommendation === 'BUY' ? '#16a34a' : a.recommendation === 'SELL' ? '#dc2626' : '#d97706';
-                return `<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(0,0,0,0.06)">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
-                        <span style="font-weight:700;color:#111">${a.company}</span>
-                        <span style="background:${color};color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px">${a.recommendation ?? '—'}</span>
+            list.innerHTML = alerts.map((a, i) => {
+                const rec = a.recommendation ?? 'HOLD';
+                const recColor = rec === 'BUY' ? '#16a34a' : rec === 'SELL' ? '#dc2626' : '#d97706';
+                const recBg   = rec === 'BUY' ? '#dcfce7' : rec === 'SELL' ? '#fee2e2' : '#fef9c3';
+                const recHe   = rec === 'BUY' ? 'קנייה' : rec === 'SELL' ? 'מכירה' : 'החזק';
+                const conf    = Math.min(100, Math.max(0, (a.confidence ?? 0.7) * 100));
+                const confColor = conf >= 75 ? '#16a34a' : conf >= 50 ? '#d97706' : '#dc2626';
+                const id = `alert-body-${i}`;
+                const timeAgo = a.createdAt ? _timeAgo(new Date(a.createdAt)) : '';
+                return `
+                <div style="background:#fff;border:1px solid rgba(251,191,36,0.4);border-radius:10px;margin-bottom:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.06)">
+                    <div onclick="document.getElementById('${id}').style.display=document.getElementById('${id}').style.display==='none'?'block':'none'"
+                         style="display:flex;align-items:center;gap:8px;padding:9px 11px;cursor:pointer">
+                        <span style="font-size:16px">🔔</span>
+                        <div style="flex:1;min-width:0">
+                            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                                <span style="font-weight:700;color:#111;font-size:13px">${a.company}</span>
+                                <span style="background:${recBg};color:${recColor};font-size:10px;font-weight:700;padding:1px 8px;border-radius:20px;border:1px solid ${recColor}40">${recHe}</span>
+                                ${a.unread !== false ? '<span style="background:#ef4444;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px">חדש</span>' : ''}
+                            </div>
+                            <div style="font-size:10px;color:#9ca3af;margin-top:1px">${timeAgo} · דוח מאיה</div>
+                        </div>
+                        <span style="color:#9ca3af;font-size:12px">▾</span>
                     </div>
-                    ${a.holderSummary ? `<div style="color:#374151;line-height:1.5;direction:rtl">${a.holderSummary}</div>` : ''}
+                    <div id="${id}" style="display:none;padding:0 11px 10px;border-top:1px solid #fef3c7">
+                        ${a.holderSummary ? `<div style="color:#374151;line-height:1.6;font-size:12px;direction:rtl;margin:8px 0;white-space:pre-line">${a.holderSummary}</div>` : ''}
+                        <div style="display:flex;align-items:center;gap:6px;margin-top:8px">
+                            <span style="font-size:10px;color:#6b7280;white-space:nowrap">אמינות</span>
+                            <div style="flex:1;height:4px;background:#f3f4f6;border-radius:4px;overflow:hidden">
+                                <div style="width:${conf}%;height:100%;background:${confColor};border-radius:4px;transition:width 0.6s"></div>
+                            </div>
+                            <span style="font-size:10px;font-weight:700;color:${confColor}">${Math.round(conf)}%</span>
+                        </div>
+                        ${a.url ? `<a href="${a.url}" target="_blank" style="display:inline-block;margin-top:8px;font-size:11px;color:#059669;text-decoration:none;font-weight:600">← לדוח המלא במאיה</a>` : ''}
+                    </div>
                 </div>`;
             }).join('');
         } else if (panel) {
             panel.style.display = 'none';
         }
     } catch(e) { console.warn('checkAlerts:', e); }
+}
+
+function _timeAgo(date) {
+    const s = Math.floor((Date.now() - date) / 1000);
+    if (s < 60) return 'עכשיו';
+    if (s < 3600) return `לפני ${Math.floor(s/60)} דקות`;
+    if (s < 86400) return `לפני ${Math.floor(s/3600)} שעות`;
+    return `לפני ${Math.floor(s/86400)} ימים`;
 }
 
 async function markAlertsRead() {

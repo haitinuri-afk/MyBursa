@@ -269,7 +269,13 @@
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
-                <div id="hot-alerts-panel" style="display:none;background:linear-gradient(135deg,#fef3c7,#fff7ed);border-bottom:1px solid #fcd34d;padding:10px 14px;font-size:12px;max-height:120px;overflow-y:auto"></div>
+                <div id="hot-alerts-panel" style="display:none;border-bottom:1px solid #fcd34d;font-size:12px">
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 11px 4px;background:#fffbeb">
+                        <span style="font-size:11px;font-weight:700;color:#92400e;letter-spacing:0.3px">🔔 התראות תיק</span>
+                        <button onclick="document.getElementById('hot-alerts-panel').style.display='none'" style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:14px;line-height:1;padding:0">✕</button>
+                    </div>
+                    <div id="hot-alerts-list" style="padding:6px 8px 8px;max-height:220px;overflow-y:auto;background:#fffbeb"></div>
+                </div>
                 <div id="ai-messages" class="chat-messages">
                     <div class="chat-empty-state" id="ai-empty-state">
                         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -289,7 +295,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=29"></script>
+    <script src="script.js?v=30"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(regs => {
