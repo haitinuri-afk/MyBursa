@@ -160,18 +160,30 @@ function applyDivisor(sym, value, currency) {
 }
 
 async function fetchChartMeta(symbol, range, interval = '1d') {
-    // Try original symbol first, fallback only if it fails
     const fallback   = SYMBOL_FALLBACKS[symbol];
-    const candidates = fallback ? [symbol, fallback] : [symbol];
-    for (const candidate of candidates) {
-        const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(candidate)}?range=${range}&interval=${interval}&includePrePost=false`;
+    // For indices (^TA35 etc): try multiple range/host combos before falling back to ETF alias
+    const isIndex = symbol.startsWith('^');
+    const attempts = isIndex
+        ? [
+            { sym: symbol,   range, interval,  host: 'query2' },
+            { sym: symbol,   range: '1d', interval: '5m', host: 'query1' },
+            { sym: symbol,   range: '1d', interval: '5m', host: 'query2' },
+            ...(fallback ? [{ sym: fallback, range, interval, host: 'query2' }] : []),
+          ]
+        : [
+            { sym: symbol,   range, interval, host: 'query2' },
+            ...(fallback ? [{ sym: fallback, range, interval, host: 'query2' }] : []),
+          ];
+
+    for (const attempt of attempts) {
+        const url = `https://${attempt.host}.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(attempt.sym)}?range=${attempt.range}&interval=${attempt.interval}&includePrePost=false`;
         try {
             const { body } = await httpsGet(url, { Referer: 'https://finance.yahoo.com/' });
             const result = body?.chart?.result?.[0];
             const meta   = result?.meta;
             if (!meta?.regularMarketPrice) continue;
             return { meta, result, canonicalSymbol: symbol };
-        } catch(e) { console.warn(`[chart] ${candidate} → ${e.message}`); }
+        } catch(e) { console.warn(`[chart] ${attempt.sym} → ${e.message}`); }
     }
     throw new Error(`no data for ${symbol}`);
 }
