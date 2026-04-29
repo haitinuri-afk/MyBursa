@@ -1076,7 +1076,7 @@ app.get('/api/debug/mongo', async (req, res) => {
         try { doc = await _portfolioCol.findOne({ _id: 'main' }, { projection: { 'portfolioData.transactionHistory': 0 } }); }
         catch(e) { doc = { error: e.message }; }
     }
-    res.json({ mongoOk, portfolioDoc: doc, env: !!process.env.MONGODB_URI });
+    res.json({ mongoOk, portfolioDoc: doc, env: !!process.env.MONGODB_URI, groqKey: !!process.env.GROQ_API_KEY });
 });
 
 // ── Alerts API ────────────────────────────────────────────────────────────────
