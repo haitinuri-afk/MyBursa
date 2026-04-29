@@ -1156,6 +1156,13 @@ app.post('/api/trigger-scan', apiLimiter, async (req, res) => {
         .catch(e => console.error('[maya] manual scan error:', e.message));
 });
 
+// ── Global JSON error handler (prevents HTML error pages) ────────────────────
+app.use((err, req, res, next) => {
+    console.error('[express error]', err.message);
+    if (res.headersSent) return next(err);
+    res.status(err.status || 500).json({ error: err.message || 'שגיאת שרת' });
+});
+
 // ── Startup ───────────────────────────────────────────────────────────────────
 app.listen(PORT, async () => {
     console.log(`Trading Station server running at http://localhost:${PORT}`);

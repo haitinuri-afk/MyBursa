@@ -2097,7 +2097,10 @@ async function sendAIMessage() {
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ messages: _aiHistory, quotes: window._lastQuotes || [] })
         });
-        const data = await res.json();
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); }
+        catch { data = { error: 'שגיאת תקשורת עם השרת — נסה שוב' }; }
         document.getElementById('ai-thinking')?.remove();
 
         if (res.status === 429) {
