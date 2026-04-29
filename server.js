@@ -20,8 +20,8 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
 
 app.use(cors({
     origin: (origin, cb) => {
-        // Allow same-origin, local dev, and explicitly allowed origins
-        if (!origin || origin.includes('localhost') || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+        if (!origin) return cb(null, true);
+        if (origin.includes('localhost') || origin.endsWith('.onrender.com') || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
         cb(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
