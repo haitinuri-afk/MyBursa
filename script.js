@@ -1227,11 +1227,62 @@ function updateTransactionHistory() {
 
 function openTxModal() {
     const modal = document.getElementById('tx-modal');
-    if (modal) { modal.style.display = 'block'; document.body.style.overflow = 'hidden'; }
+    const sheet = modal?.querySelector('div');
+    if (!modal || !sheet) return;
+    modal.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+    sheet.style.transition = 'transform 0.3s cubic-bezier(0.32,0.72,0,1)';
+    sheet.style.transform = 'translateY(100%)';
+    requestAnimationFrame(() => { sheet.style.transform = 'translateY(0)'; });
+    _initSheetDrag(sheet);
 }
 function closeTxModal() {
     const modal = document.getElementById('tx-modal');
-    if (modal) { modal.style.display = 'none'; document.body.style.overflow = ''; }
+    const sheet = modal?.querySelector('div');
+    if (!modal) return;
+    if (sheet) {
+        sheet.style.transition = 'transform 0.25s cubic-bezier(0.32,0.72,0,1)';
+        sheet.style.transform = 'translateY(100%)';
+        setTimeout(() => { modal.style.display = 'none'; document.body.style.overflow = ''; sheet.style.transform = ''; }, 250);
+    } else {
+        modal.style.display = 'none'; document.body.style.overflow = '';
+    }
+}
+function _initSheetDrag(sheet) {
+    let startY = 0, curY = 0, dragging = false;
+    const onStart = e => {
+        startY = (e.touches ? e.touches[0].clientY : e.clientY);
+        dragging = true;
+        sheet.style.transition = 'none';
+    };
+    const onMove = e => {
+        if (!dragging) return;
+        curY = (e.touches ? e.touches[0].clientY : e.clientY) - startY;
+        if (curY < 0) curY = 0;
+        sheet.style.transform = `translateY(${curY}px)`;
+    };
+    const onEnd = () => {
+        if (!dragging) return;
+        dragging = false;
+        if (curY > 80) { closeTxModal(); }
+        else { sheet.style.transition = 'transform 0.2s'; sheet.style.transform = 'translateY(0)'; }
+        curY = 0;
+    };
+    // Remove old listeners by cloning the drag handle
+    const handle = sheet.querySelector('#tx-drag-handle');
+    if (handle) {
+        handle.removeEventListener('touchstart', handle._ts);
+        handle.removeEventListener('touchmove', handle._tm);
+        handle.removeEventListener('touchend', handle._te);
+        handle.removeEventListener('mousedown', handle._md);
+        handle._ts = onStart; handle._tm = onMove; handle._te = onEnd; handle._md = onStart;
+        handle.addEventListener('touchstart', onStart, { passive: true });
+        handle.addEventListener('touchmove', onMove, { passive: true });
+        handle.addEventListener('touchend', onEnd);
+        handle.addEventListener('mousedown', onStart);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onEnd);
+    }
 }
 
 function updatePortfolioList() {
