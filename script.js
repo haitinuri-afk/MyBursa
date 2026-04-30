@@ -1009,22 +1009,7 @@ function updateMainTimeframe(tf) {
 function getIndexOHLC(tf) {
     const idx = stocksData["מדד תא-35"];
     if (!idx?.price) return null;
-    if (tf === 'daily') {
-        const raw = idx.ohlcWeek;
-        if (!raw?.length) return null;
-        // Find the most recent trading date in the data and return only that session
-        const lastTime = raw[raw.length - 1].time;
-        const lastDate = typeof lastTime === 'number'
-            ? new Date(lastTime * 1000).toISOString().slice(0, 10)
-            : String(lastTime);
-        const todayOnly = raw.filter(c => {
-            const t = typeof c.time === 'number'
-                ? new Date(c.time * 1000).toISOString().slice(0, 10)
-                : String(c.time);
-            return t === lastDate;
-        });
-        return todayOnly.length >= 2 ? todayOnly : raw;
-    }
+    if (tf === 'daily')   return idx.ohlcWeek?.length   ? idx.ohlcWeek   : null;
     if (tf === 'weekly')  return idx.ohlcMonth?.length  ? idx.ohlcMonth  : null;
     if (tf === 'monthly') return idx.ohlc3Month?.length ? idx.ohlc3Month : null;
     return idx.ohlc3Month?.length ? idx.ohlc3Month : null;
@@ -1071,7 +1056,12 @@ function drawIndexChart(tf = currentTf) {
     // Detect whether this dataset uses intraday (number) or daily (string) times
     const idxIntraday = typeof ohlc[0].time === 'number';
     const fmtIdx = idxIntraday
-        ? t => { const d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+        ? (t, markType) => {
+            const d = new Date(t * 1000);
+            // On day-boundary ticks show dd/MM, otherwise HH:MM
+            if (markType >= 2) return ('0'+(d.getMonth()+1)).slice(-2)+'/'+('0'+d.getDate()).slice(-2);
+            return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+          }
         : undefined;
 
     // Recreate chart whenever the time-format changes (intraday ↔ daily)
