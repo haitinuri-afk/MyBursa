@@ -1064,8 +1064,8 @@ function drawIndexChart(tf = currentTf) {
     const fmtIdx = idxIntraday
         ? (t, markType) => {
             const d = new Date(t * 1000);
-            // On day-boundary ticks show dd/MM, otherwise HH:MM
-            if (markType >= 2) return ('0'+(d.getMonth()+1)).slice(-2)+'/'+('0'+d.getDate()).slice(-2);
+            // DayOfMonth (3) or higher → show dd/MM; otherwise HH:MM
+            if (markType >= 3) return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2);
             return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
           }
         : undefined;
