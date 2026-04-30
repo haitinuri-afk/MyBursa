@@ -1009,7 +1009,22 @@ function updateMainTimeframe(tf) {
 function getIndexOHLC(tf) {
     const idx = stocksData["מדד תא-35"];
     if (!idx?.price) return null;
-    if (tf === 'daily')   return idx.ohlcWeek?.length   ? idx.ohlcWeek   : null;
+    if (tf === 'daily') {
+        const raw = idx.ohlcWeek;
+        if (!raw?.length) return null;
+        // Find the most recent trading date in the data and return only that session
+        const lastTime = raw[raw.length - 1].time;
+        const lastDate = typeof lastTime === 'number'
+            ? new Date(lastTime * 1000).toISOString().slice(0, 10)
+            : String(lastTime);
+        const todayOnly = raw.filter(c => {
+            const t = typeof c.time === 'number'
+                ? new Date(c.time * 1000).toISOString().slice(0, 10)
+                : String(c.time);
+            return t === lastDate;
+        });
+        return todayOnly.length >= 2 ? todayOnly : raw;
+    }
     if (tf === 'weekly')  return idx.ohlcMonth?.length  ? idx.ohlcMonth  : null;
     if (tf === 'monthly') return idx.ohlc3Month?.length ? idx.ohlc3Month : null;
     return idx.ohlc3Month?.length ? idx.ohlc3Month : null;
