@@ -84,31 +84,21 @@ function savePortfolio() {
 }
 
 async function loadPortfolio() {
-    let serverReachable = false;
-    try {
-        const res = await fetch('/api/portfolio');
-        if (res.ok) {
-            serverReachable = true;
-            const data = await res.json();
-            // Server responded — trust it even if empty (MongoDB may still be loading)
-            if (data.portfolio && Object.keys(data.portfolio).length > 0) return data;
-            // Server returned empty: retry once after a short delay to let MongoDB connect
-            await new Promise(r => setTimeout(r, 2000));
-            const res2 = await fetch('/api/portfolio');
-            if (res2.ok) {
-                const data2 = await res2.json();
-                if (data2.portfolio && Object.keys(data2.portfolio).length > 0) return data2;
+    // Try server up to 3 times (MongoDB may not be ready immediately on cold start)
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
+            const res = await fetch('/api/portfolio');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.portfolio && Object.keys(data.portfolio).length > 0) return data;
             }
-        }
-    } catch(e) { console.warn('loadPortfolio server:', e.message); }
-    // Fallback to localStorage only when server is unreachable (network error)
-    if (serverReachable) return null;
+        } catch(e) { break; } // network error — stop retrying
+    }
+    // Fallback: use localStorage as read-only view (never push back to server)
     try {
         const raw = localStorage.getItem(PORTFOLIO_KEY);
-        if (raw) {
-            const local = JSON.parse(raw);
-            return local;
-        }
+        if (raw) return JSON.parse(raw);
     } catch(e) { localStorage.removeItem(PORTFOLIO_KEY); }
     return null;
 }
@@ -1065,7 +1055,7 @@ function drawIndexChart(tf = currentTf) {
         ? (t, markType) => {
             const d = new Date(t * 1000);
             // DayOfMonth (3) or higher → show dd/MM; otherwise HH:MM
-            if (markType >= 3) return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2);
+            if (markType <= 2) return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2);
             return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
           }
         : undefined;
