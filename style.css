@@ -365,8 +365,8 @@ header.top-bar {
 #win-ai-chat      { left: 25.5%;  width: 49%;   top: 68%;  height: 32%; }
 
 /* Col C */
-#win-indices-tase { left: 75.5%;  width: 24.5%; top:  0%;  height: 30%; }
-#win-stocks       { left: 75.5%;  width: 24.5%; top: 31%;  height: 69%; }
+#win-indices-tase { left: 75.5%;  width: 24.5%; top:  0%;  height: 42%; }
+#win-stocks       { left: 75.5%;  width: 24.5%; top: 43%;  height: 57%; }
 
 /* ── Card Body ── */
 .card-body {
@@ -380,11 +380,22 @@ header.top-bar {
 
 /* ── Index Stats ── */
 .index-stats { margin-bottom: 8px; }
+.idx-chart-body { position: relative; padding: 0 !important; overflow: visible; }
+.idx-overlay {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    z-index: 5;
+    pointer-events: none;
+    background: rgba(255,255,255,0.75);
+    border-radius: 6px;
+    padding: 4px 8px;
+}
 .index-price {
     font-size: 1.75rem;
     font-weight: 700;
     color: var(--text);
-    letter-spacing: -1px;
+    letter-spacing: -0.5px;
     line-height: 1;
     font-variant-numeric: tabular-nums;
 }

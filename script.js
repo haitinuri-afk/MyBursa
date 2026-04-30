@@ -1052,18 +1052,32 @@ function drawIndexChart(tf = currentTf) {
     // Detect whether this dataset uses intraday (number) or daily (string) times
     const idxIntraday = typeof ohlc[0].time === 'number';
 
-    // Always recreate the index chart so options (timeVisible etc.) stay correct
-    if (_idxChart) { _idxChart.remove(); _idxChart = null; _idxSeries = null; }
-    if (!_idxChart) {
+    // Shift intraday timestamps to IDT (UTC+3) so LightweightCharts day-boundary
+    // lands at midnight Israel time, not midnight UTC
+    const IDT = 3 * 3600;
+    const fmtIdx = idxIntraday
+        ? (t, markType) => {
+            const d = new Date(t * 1000); // already IDT-shifted
+            if (markType <= 2) return ('0'+d.getUTCDate()).slice(-2)+'/'+('0'+(d.getUTCMonth()+1)).slice(-2);
+            return ('0'+d.getUTCHours()).slice(-2)+':'+('0'+d.getUTCMinutes()).slice(-2);
+          }
+        : undefined;
+
+    // Recreate chart only when switching between intraday ↔ daily
+    const prevIntraday = _idxChart?._isIntraday;
+    const needsRecreate = !_idxChart || prevIntraday !== idxIntraday;
+    if (needsRecreate) {
+        if (_idxChart) { _idxChart.remove(); _idxChart = null; _idxSeries = null; }
         _idxChart = LightweightCharts.createChart(container, {
             width:  container.clientWidth  || 300,
             height: container.clientHeight || 200,
             layout:   { background: { color: '#ffffff' }, textColor: '#5f6368' },
             grid:     { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.06)' } },
-            timeScale:       { borderColor: '#1e2430', timeVisible: idxIntraday, secondsVisible: false },
-            rightPriceScale: { borderColor: '#1e2430', scaleMargins: { top: 0.1, bottom: 0.1 } },
+            timeScale:       { borderColor: '#1e2430', timeVisible: idxIntraday, secondsVisible: false, tickMarkFormatter: fmtIdx, fixLeftEdge: true },
+            rightPriceScale: { borderColor: '#1e2430', scaleMargins: { top: 0.08, bottom: 0.06 }, autoScale: true },
             crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
         });
+        _idxChart._isIntraday = idxIntraday;
         _idxSeries = _idxChart.addAreaSeries({
             lineColor:      '#1db954',
             topColor:       'rgba(29,185,84,0.35)',
@@ -1079,8 +1093,34 @@ function drawIndexChart(tf = currentTf) {
         _idxResizeOb.observe(container);
     }
 
-    _idxSeries.setData(ohlc.map(d => ({ time: d.time, value: d.close })));
-    _idxChart.timeScale().fitContent();
+    const closes = ohlc.map(d => d.close);
+    const minClose = Math.min(...closes);
+    _idxSeries.applyOptions({ baseValue: { type: 'price', price: minClose } });
+    const shift = idxIntraday ? IDT : 0;
+    const chartData = ohlc.map(d => ({ time: d.time + shift, value: d.close }));
+    if (idxIntraday) {
+        const nowUTC = Math.floor(Date.now() / 1000);
+        const todayMidnightUTC = Math.floor(nowUTC / 86400) * 86400;
+        const marketCloseShifted = todayMidnightUTC + 17 * 3600 + 30 * 60;
+        const lastTime = chartData[chartData.length - 1].time;
+        if (marketCloseShifted > lastTime)
+            chartData.push({ time: marketCloseShifted }); // WhitespaceData to 17:30
+    }
+    _idxSeries.setData(chartData);
+    if (idxIntraday && needsRecreate) {
+        // Set visible range only on first creation — user can drag freely after that
+        const nowShifted = Math.floor(Date.now() / 1000) + IDT;
+        setTimeout(() => {
+            if (_idxChart) _idxChart.timeScale().setVisibleRange({
+                from: chartData[0].time,
+                to:   nowShifted + 20 * 60
+            });
+        }, 50);
+    } else if (!idxIntraday) {
+        _idxChart.timeScale().fitContent();
+    }
+    _idxChart.priceScale('right').applyOptions({ autoScale: true });
+    _idxChart.priceScale('right').applyOptions({ autoScale: true });
 }
 
 async function updateTimeframe(tf) {

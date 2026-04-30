@@ -112,16 +112,14 @@
                         <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
                     </div>
                 </div>
-                <div class="card-body" dir="ltr">
-                    <div class="index-stats">
+                <div class="card-body idx-chart-body" dir="ltr">
+                    <div id="indexChart" style="position:absolute;inset:0"></div>
+                    <div class="idx-overlay">
                         <div class="index-price" id="ta35-price"></div>
                         <div class="index-meta">
                             <span id="ta35-pct"></span>
                             <span id="ta35-pts" class="index-pts"></span>
                         </div>
-                    </div>
-                    <div style="flex:1;position:relative;min-height:0">
-                        <div id="indexChart" style="position:absolute;inset:0"></div>
                     </div>
                 </div>
             </div>
