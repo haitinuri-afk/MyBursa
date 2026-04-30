@@ -516,6 +516,7 @@ let _ragCol       = null;   // MongoDB collection handle
 let _scansCol     = null;   // Persistent scan results collection
 let _portfolioCol = null;   // User portfolio symbols collection
 let _alertsCol    = null;   // Portfolio alerts collection
+let _mongoReady   = null;   // Promise that resolves when initMongoDB completes
 
 async function initMongoDB() {
     if (!MONGODB_URI) return;
@@ -1101,7 +1102,10 @@ app.get('/api/news', async (req, res) => {
 });
 
 app.get('/api/portfolio', async (req, res) => {
-    try { res.json(await loadPortfolio()); }
+    try {
+        if (_mongoReady) await _mongoReady;   // wait for MongoDB to finish connecting
+        res.json(await loadPortfolio());
+    }
     catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1254,7 +1258,8 @@ app.use((err, req, res, next) => {
 // ── Startup ───────────────────────────────────────────────────────────────────
 app.listen(PORT, async () => {
     console.log(`Trading Station server running at http://localhost:${PORT}`);
-    await initMongoDB();
+    _mongoReady = initMongoDB();
+    await _mongoReady;
     refreshFxRates();
     setInterval(refreshFxRates, 3600_000);
 

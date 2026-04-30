@@ -1051,31 +1051,19 @@ function drawIndexChart(tf = currentTf) {
 
     // Detect whether this dataset uses intraday (number) or daily (string) times
     const idxIntraday = typeof ohlc[0].time === 'number';
-    const fmtIdx = idxIntraday
-        ? (t, markType) => {
-            const d = new Date(t * 1000);
-            // DayOfMonth (3) or higher → show dd/MM; otherwise HH:MM
-            if (markType <= 2) return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2);
-            return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
-          }
-        : undefined;
 
-    // Recreate chart whenever the time-format changes (intraday ↔ daily)
-    const prevIntraday = _idxChart?._isIntraday;
-    if (_idxChart && prevIntraday !== idxIntraday) {
-        _idxChart.remove(); _idxChart = null; _idxSeries = null;
-    }
+    // Always recreate the index chart so options (timeVisible etc.) stay correct
+    if (_idxChart) { _idxChart.remove(); _idxChart = null; _idxSeries = null; }
     if (!_idxChart) {
         _idxChart = LightweightCharts.createChart(container, {
             width:  container.clientWidth  || 300,
             height: container.clientHeight || 200,
             layout:   { background: { color: '#ffffff' }, textColor: '#5f6368' },
             grid:     { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.06)' } },
-            timeScale:       { borderColor: '#1e2430', timeVisible: idxIntraday, secondsVisible: false, fixRightEdge: true, tickMarkFormatter: fmtIdx },
-            rightPriceScale: { borderColor: '#1e2430', scaleMargins: { top: 0.08, bottom: 0.06 } },
+            timeScale:       { borderColor: '#1e2430', timeVisible: idxIntraday, secondsVisible: false },
+            rightPriceScale: { borderColor: '#1e2430', scaleMargins: { top: 0.1, bottom: 0.1 } },
             crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
         });
-        _idxChart._isIntraday = idxIntraday;
         _idxSeries = _idxChart.addAreaSeries({
             lineColor:      '#1db954',
             topColor:       'rgba(29,185,84,0.35)',
