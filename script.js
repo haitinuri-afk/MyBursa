@@ -84,23 +84,29 @@ function savePortfolio() {
 }
 
 async function loadPortfolio() {
+    let serverReachable = false;
     try {
         const res = await fetch('/api/portfolio');
         if (res.ok) {
+            serverReachable = true;
             const data = await res.json();
-            // Only use server data if it has actual holdings
+            // Server responded — trust it even if empty (MongoDB may still be loading)
             if (data.portfolio && Object.keys(data.portfolio).length > 0) return data;
+            // Server returned empty: retry once after a short delay to let MongoDB connect
+            await new Promise(r => setTimeout(r, 2000));
+            const res2 = await fetch('/api/portfolio');
+            if (res2.ok) {
+                const data2 = await res2.json();
+                if (data2.portfolio && Object.keys(data2.portfolio).length > 0) return data2;
+            }
         }
     } catch(e) { console.warn('loadPortfolio server:', e.message); }
-    // Fallback to localStorage
+    // Fallback to localStorage only when server is unreachable (network error)
+    if (serverReachable) return null;
     try {
         const raw = localStorage.getItem(PORTFOLIO_KEY);
         if (raw) {
             const local = JSON.parse(raw);
-            // Migrate localStorage data to server
-            if (local?.portfolio && Object.keys(local.portfolio).length > 0) {
-                fetch('/api/portfolio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(local) }).catch(() => {});
-            }
             return local;
         }
     } catch(e) { localStorage.removeItem(PORTFOLIO_KEY); }
