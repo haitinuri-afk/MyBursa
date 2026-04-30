@@ -410,17 +410,23 @@ app.get('/api/stock/batch', async (req, res) => {
         const rawCloses = chartResult?.indicators?.quote?.[0]?.close ?? [];
         const timestamps = chartResult?.timestamp ?? [];
 
-        // Walk backwards to find the last close from before today (= yesterday's close)
-        let chartPrevClose = null;
+        // Collect the last two distinct-day closes before today.
+        // When market is closed in the morning, regularMarketPrice == latestClose (no new session yet),
+        // so we use secondClose as prevClose to show yesterday's actual change.
+        let latestClose = null, secondClose = null, latestDay = null;
         for (let i = timestamps.length - 1; i >= 0; i--) {
             const val = rawCloses[i];
             if (!val || val <= 0) continue;
-            if (new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0) < todayUtcMs) {
-                chartPrevClose = val; break;
-            }
+            const dayMs = new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0);
+            if (dayMs >= todayUtcMs) continue;
+            if (latestClose === null) { latestClose = val; latestDay = dayMs; }
+            else if (dayMs < latestDay) { secondClose = val; break; }
         }
-        // chartPrevClose is most reliable — regularMarketPreviousClose on ETF proxies (TA35.TA)
-        // often reflects chartPreviousClose (5-days-ago baseline) instead of yesterday
+        // If price == latestClose the current session hasn't diverged yet — show yesterday's move
+        const livePrice = meta.regularMarketPrice;
+        const useSecond = secondClose !== null && latestClose !== null &&
+                          Math.abs(livePrice - latestClose) / latestClose < 0.0001;
+        const chartPrevClose = useSecond ? secondClose : latestClose;
         const prevClose = chartPrevClose ?? meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
         const result = {
             symbol:                     canonicalSymbol,
@@ -550,8 +556,8 @@ async function _seedMongoPortfolio() {
         const mongoCount = existing?.portfolioData?.portfolio
             ? Object.keys(existing.portfolioData.portfolio).length : 0;
 
-        // Seed if MongoDB is empty or local has MORE holdings (desktop is source of truth on first boot)
-        if (!existing || localCount > mongoCount) {
+        // Seed only if MongoDB is empty — once MongoDB has data it is the source of truth
+        if (!existing || mongoCount === 0) {
             await _portfolioCol.updateOne(
                 { _id: 'main' },
                 { $set: { portfolioData: localData, symbols: Object.keys(localData.portfolio), updatedAt: new Date() }},
@@ -1126,13 +1132,19 @@ app.get('/api/debug/ta35', async (req, res) => {
         const { meta, result: chartResult, canonicalSymbol } = await fetchChartMeta('^TA35', '5d');
         const rawCloses  = chartResult?.indicators?.quote?.[0]?.close ?? [];
         const timestamps = chartResult?.timestamp ?? [];
-        let chartPrevClose = null;
+        let latestClose = null, secondClose = null, latestDay = null;
         for (let i = timestamps.length - 1; i >= 0; i--) {
             const val = rawCloses[i]; if (!val || val <= 0) continue;
-            if (new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0) < todayUtcMs) { chartPrevClose = val; break; }
+            const dayMs = new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0);
+            if (dayMs >= todayUtcMs) continue;
+            if (latestClose === null) { latestClose = val; latestDay = dayMs; }
+            else if (dayMs < latestDay) { secondClose = val; break; }
         }
-        const prevClose = chartPrevClose ?? meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
         const price = meta.regularMarketPrice;
+        const useSecond = secondClose !== null && latestClose !== null &&
+                          Math.abs(price - latestClose) / latestClose < 0.0001;
+        const chartPrevClose = useSecond ? secondClose : latestClose;
+        const prevClose = chartPrevClose ?? meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
         res.json({
             source: canonicalSymbol,
             price,
