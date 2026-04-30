@@ -1163,12 +1163,21 @@ app.get('/api/debug/ta35', async (req, res) => {
 
 app.get('/api/debug/mongo', async (req, res) => {
     const mongoOk = !!_portfolioCol;
-    let doc = null;
+    let doc = null, connectErr = null;
     if (_portfolioCol) {
         try { doc = await _portfolioCol.findOne({ _id: 'main' }, { projection: { 'portfolioData.transactionHistory': 0 } }); }
         catch(e) { doc = { error: e.message }; }
+    } else {
+        // Try a fresh connection to get the error message
+        try {
+            const { MongoClient } = require('mongodb');
+            const c = new MongoClient(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+            await c.connect();
+            connectErr = 'connected ok but _portfolioCol is null';
+            await c.close();
+        } catch(e) { connectErr = e.message; }
     }
-    res.json({ mongoOk, portfolioDoc: doc, env: !!process.env.MONGODB_URI, groqKey: !!process.env.GROQ_API_KEY });
+    res.json({ mongoOk, portfolioDoc: doc, connectErr, env: !!process.env.MONGODB_URI, groqKey: !!process.env.GROQ_API_KEY });
 });
 
 // ── Alerts API ────────────────────────────────────────────────────────────────
