@@ -793,29 +793,47 @@ async function buildRAGContext(query, quotes) {
         const sector   = nameToSector[name] ?? 'אחר';
         return `  ${name} | סקטור: ${sector} | ${qty} יח׳ | עלות: ₪${avgCost} | עכשיו: ${priceStr} | יומי: ${dayPct} | P/L כולל: ${pl} | שווי: ${value} | ${momentum}`;
     });
-    // ── סיכום כולל של התיק — מחושב בשרת, לא ע"י ה-AI ────────────────────────
+    // ── סיכום כולל + ביצועי מניות בתיק — מחושב בשרת ────────────────────────
     let _totalValue = 0, _totalCost = 0, _dayGain = 0;
+    const _holdingPerf = []; // ביצועים של כל מניה בתיק
     Object.entries(portfolioData.portfolio ?? {}).forEach(([name, h]) => {
-        const qty      = h.qty ?? h.quantity ?? 0;
-        const avgCost  = h.buyPrice ?? h.avgCost ?? 0;
+        const qty       = h.qty ?? h.quantity ?? 0;
+        const avgCost   = h.buyPrice ?? h.avgCost ?? 0;
         const costBasis = h.totalCost ?? (qty * avgCost);
-        const yahooSym = STOCK_SYMBOLS_HE[name] ?? name;
-        const quote    = quotes.find(q => q.symbol === yahooSym);
+        const yahooSym  = STOCK_SYMBOLS_HE[name] ?? name;
+        const quote     = quotes.find(q => q.symbol === yahooSym);
         if (!quote?.regularMarketPrice) return;
-        const cur  = quote.regularMarketPrice;
-        const prev = quote.regularMarketPreviousClose ?? cur;
-        _totalValue += cur  * qty;
+        const cur   = quote.regularMarketPrice;
+        const prev  = quote.regularMarketPreviousClose ?? cur;
+        const dayPct = prev > 0 ? ((cur - prev) / prev * 100) : 0;
+        const totPct = avgCost > 0 ? ((cur - avgCost) / avgCost * 100) : 0;
+        _totalValue += cur * qty;
         _totalCost  += costBasis;
         _dayGain    += (cur - prev) * qty;
+        _holdingPerf.push({ name, cur, prev, dayPct, totPct, qty, dayGainIls: (cur - prev) * qty });
     });
-    const _totalPLpct  = _totalCost > 0 ? ((_totalValue - _totalCost) / _totalCost * 100).toFixed(2) : '0.00';
-    const _totalPLils  = (_totalValue - _totalCost).toFixed(0);
-    const _dayGainStr  = (_dayGain >= 0 ? '+' : '') + _dayGain.toFixed(0);
-    const portfolioSummary = _totalCost > 0 ? `## סיכום תיק (מחושב):
+
+    const _totalPLpct = _totalCost > 0 ? ((_totalValue - _totalCost) / _totalCost * 100).toFixed(2) : '0.00';
+    const _totalPLils = Math.round(_totalValue - _totalCost);
+    const _dayGainRnd = Math.round(_dayGain);
+
+    // מיון לפי ביצועי יום
+    const _sorted     = [..._holdingPerf].sort((a, b) => a.dayPct - b.dayPct);
+    const _worstToday = _sorted.slice(0, 3).map(s =>
+        `${s.name}: ${s.dayPct.toFixed(2)}% (${s.dayGainIls >= 0 ? '+' : ''}₪${Math.round(s.dayGainIls)})`).join(', ');
+    const _bestToday  = _sorted.slice(-3).reverse().map(s =>
+        `${s.name}: +${s.dayPct.toFixed(2)}% (+₪${Math.round(s.dayGainIls)})`).join(', ');
+    const _worstTotal = [..._holdingPerf].sort((a, b) => a.totPct - b.totPct).slice(0, 3)
+        .map(s => `${s.name}: ${s.totPct.toFixed(2)}%`).join(', ');
+
+    const portfolioSummary = _totalCost > 0 ? `## סיכום תיק (מחושב — אל תשנה מספרים אלו):
   שווי נוכחי: ₪${Math.round(_totalValue).toLocaleString('he-IL')}
   עלות מקורית: ₪${Math.round(_totalCost).toLocaleString('he-IL')}
   רווח/הפסד כולל: ${parseFloat(_totalPLpct) >= 0 ? '+' : ''}${_totalPLpct}% (${_totalPLils >= 0 ? '+₪' : '-₪'}${Math.abs(_totalPLils).toLocaleString('he-IL')})
-  שינוי היום: ${_dayGainStr >= 0 ? '+₪' : '-₪'}${Math.abs(_dayGain).toFixed(0)}` : '';
+  שינוי היום: ${_dayGainRnd >= 0 ? '+' : ''}₪${_dayGainRnd.toLocaleString('he-IL')}
+  הכי פגעו היום (ירידה): ${_worstToday || 'אין נתון'}
+  הכי תרמו היום (עלייה): ${_bestToday  || 'אין נתון'}
+  הכי מפסידות מאז קנייה: ${_worstTotal || 'אין נתון'}` : '';
 
     // ── היסטוריית עסקאות ────────────────────────────────────────────────────
     const txHistory = (portfolioData.transactionHistory ?? []).slice(-20);
