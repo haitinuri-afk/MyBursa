@@ -526,6 +526,7 @@ const CONTEXT_IQ_PATH = path.join(__dirname, '..', 'ContextIQ');
 
 // ── MongoDB Atlas (optional — set MONGODB_URI env var to enable) ───────────
 const MONGODB_URI = process.env.MONGODB_URI;
+let _profilesCol  = null;   // Company profiles + vector embeddings
 let _ragCol       = null;   // MongoDB collection handle
 let _scansCol     = null;   // Persistent scan results collection
 let _portfolioCol = null;   // User portfolio symbols collection
@@ -545,6 +546,7 @@ async function initMongoDB() {
         _portfolioCol = db.collection('user_portfolio');
         _alertsCol    = db.collection('alerts');
         _subsCol      = db.collection('push_subscriptions');
+        _profilesCol  = db.collection('company_profiles');
         // Full-text index (created once, idempotent)
         await _ragCol.createIndex({ text: 'text' }, { default_language: 'none' });
         await _scansCol.createIndex({ scannedAt: -1 });
@@ -682,6 +684,83 @@ app.delete('/api/rag/:id', async (req, res) => {
     } catch { res.status(400).json({ error: 'מזהה לא תקין' }); }
 });
 
+// ── Company profile RAG — Hybrid Search ──────────────────────────────────────
+let _embedder = null;
+async function _getEmbedder() {
+    if (_embedder) return _embedder;
+    try {
+        const { pipeline, env } = require('@xenova/transformers');
+        env.cacheDir = path.join(__dirname, '.model-cache');
+        _embedder = await pipeline('feature-extraction', 'Xenova/multilingual-e5-small');
+        console.log('[embedder] multilingual-e5-small loaded');
+    } catch(e) {
+        console.warn('[embedder] load failed:', e.message);
+        _embedder = null;
+    }
+    return _embedder;
+}
+
+async function retrieveCompanyProfiles(query) {
+    if (!_profilesCol) return '';
+    const results = new Map(); // name → doc, dedup
+
+    // ── 1. Atlas Lucene — keyword + fuzzy + boosting ───────────────────────
+    try {
+        const lucene = await _profilesCol.aggregate([
+            { $search: {
+                index: 'default',
+                compound: {
+                    should: [
+                        // שם חברה — עדיפות גבוהה + fuzzy לשגיאות כתיב
+                        { text: { query, path: 'name',    score: { boost: { value: 10 } }, fuzzy: { maxEdits: 1 } } },
+                        { text: { query, path: 'aliases', score: { boost: { value: 8  } }, fuzzy: { maxEdits: 1 } } },
+                        { text: { query, path: 'sector',  score: { boost: { value: 5  } } } },
+                        { text: { query, path: 'drivers', score: { boost: { value: 3  } } } },
+                        { text: { query, path: 'description' } },
+                    ],
+                    minimumShouldMatch: 1,
+                }
+            }},
+            { $limit: 3 },
+            { $project: { name: 1, text: 1, sector: 1, score: { $meta: 'searchScore' } } }
+        ]).toArray();
+        lucene.forEach(d => results.set(d.name, d));
+    } catch(e) {
+        // Atlas Search index לא קיים — fallback ל-$text רגיל
+        try {
+            const fallback = await _profilesCol.find(
+                { $text: { $search: query } },
+                { projection: { name: 1, text: 1, sector: 1 } }
+            ).limit(3).toArray();
+            fallback.forEach(d => results.set(d.name, d));
+        } catch {}
+    }
+
+    // ── 2. Vector Search — סמנטי ──────────────────────────────────────────
+    try {
+        const model = await _getEmbedder();
+        if (model) {
+            const out = await model(`query: ${query}`, { pooling: 'mean', normalize: true });
+            const qVec = Array.from(out.data);
+            const vectorHits = await _profilesCol.aggregate([
+                { $vectorSearch: {
+                    index: 'company_profiles_vector',
+                    path: 'embedding',
+                    queryVector: qVec,
+                    numCandidates: 30,
+                    limit: 3,
+                }},
+                { $project: { name: 1, text: 1, sector: 1, score: { $meta: 'vectorSearchScore' } } }
+            ]).toArray();
+            vectorHits.forEach(d => results.set(d.name, d));
+        }
+    } catch(e) { /* vector index לא קיים עדיין */ }
+
+    if (!results.size) return '';
+    const profiles = [...results.values()].slice(0, 3).map(d => d.text).join('\n\n---\n\n');
+    return `## פרופילי חברות רלוונטיים:\n${profiles}`;
+}
+
 async function buildRAGContext(query, quotes) {
     const read = f => { try { return fs.readFileSync(path.join(CONTEXT_IQ_PATH, f), 'utf8'); } catch { return ''; } };
     const history = read('history.txt');
@@ -817,7 +896,10 @@ async function buildRAGContext(query, quotes) {
         .map(m => `${symToHe[m.symbol] || m.symbol}: ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(2)}% — ${Math.abs(m.pct) >= 7 ? 'בדוק אירוע ספציפי לחברה' : 'חולשת/חוזקת ענף'}`)
         .join('\n');
 
-    const retrieved = await retrieveRelevantChunks(query, 2);
+    const [retrieved, companyProfiles] = await Promise.all([
+        retrieveRelevantChunks(query, 2),
+        retrieveCompanyProfiles(query),
+    ]);
     const knowledgeSection = retrieved.length
         ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}` : '';
 
@@ -859,6 +941,8 @@ ${history || 'אין היסטוריה'}`;
 
     // ── Assembled context (system + data) ─────────────────────────────────────
     return `${systemPrompt}
+
+${companyProfiles}
 
 ${newsSection}
 ${xSection}
