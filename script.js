@@ -2146,6 +2146,25 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
     const yS    = v => PAD.top  + iH - ((v - lo) / rng) * iH;
     const zeroY = Math.min(Math.max(yS(0), PAD.top), PAD.top + iH);
 
+    // ── קו פתיחת תיק ─────────────────────────────────────────────────────────
+    // מחשב מהעסקה הראשונה בהיסטוריה
+    const firstTx = (transactionHistory ?? []).slice().sort((a, b) => {
+        const ta = a.date ? new Date(a.date).getTime() : 0;
+        const tb = b.date ? new Date(b.date).getTime() : 0;
+        return ta - tb;
+    })[0];
+    const openTs = firstTx?.date ? new Date(firstTx.date).getTime() / 1000 : null;
+    let openLineX = null;
+    if (openTs && data.length >= 2) {
+        const t0 = data[0].time, t1 = data[data.length - 1].time;
+        if (openTs >= t0 && openTs <= t1) {
+            openLineX = PAD.left + ((openTs - t0) / (t1 - t0)) * iW;
+        }
+    }
+    const openLineDate = firstTx?.date
+        ? new Date(firstTx.date).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' })
+        : null;
+
     const pts = pctVals.map((v, i) => [xS(i), yS(v)]);
     let line = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
     for (let i = 1; i < pts.length; i++) {
@@ -2170,6 +2189,11 @@ function _renderPortfolioSVG(el, data, pctVals, color, isUp) {
   </defs>
   ${pLabels.map(p=>`<line x1="${PAD.left}" y1="${p.y.toFixed(1)}" x2="${W-PAD.right}" y2="${p.y.toFixed(1)}" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>`).join('')}
   <line x1="${PAD.left}" y1="${zeroY.toFixed(1)}" x2="${W-PAD.right}" y2="${zeroY.toFixed(1)}" stroke="rgba(0,0,0,0.18)" stroke-width="1" stroke-dasharray="4,3"/>
+  ${openLineX != null ? `
+  <line x1="${openLineX.toFixed(1)}" y1="${PAD.top}" x2="${openLineX.toFixed(1)}" y2="${(PAD.top+iH).toFixed(1)}" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>
+  <rect x="${(openLineX - 20).toFixed(1)}" y="${PAD.top}" width="40" height="16" rx="4" fill="#f59e0b" opacity="0.9"/>
+  <text x="${openLineX.toFixed(1)}" y="${(PAD.top+11).toFixed(1)}" font-size="10" font-family="Inter,sans-serif" fill="#fff" text-anchor="middle" font-weight="600">פתיחה${openLineDate ? ' '+openLineDate : ''}</text>
+  ` : ''}
   <path d="${fill}" fill="url(#${gid})"/>
   <path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
   <circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="5" fill="${color}" stroke="#fff" stroke-width="2"/>
