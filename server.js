@@ -835,6 +835,8 @@ async function buildRAGContext(query, quotes) {
   הכי תרמו היום (עלייה): ${_bestToday  || 'אין נתון'}
   הכי מפסידות מאז קנייה: ${_worstTotal || 'אין נתון'}` : '';
 
+    const symToHe = Object.fromEntries(Object.entries(STOCK_SYMBOLS_HE).map(([he, sym]) => [sym, he]));
+
     // ── היסטוריית עסקאות ────────────────────────────────────────────────────
     const txHistory = (portfolioData.transactionHistory ?? []).slice(-20);
     const txSection = txHistory.length ? `## היסטוריית עסקאות (20 אחרונות):\n` +
@@ -897,7 +899,6 @@ async function buildRAGContext(query, quotes) {
         : '';
 
     // ── Live prices — portfolio stocks only + top movers ─────────────────────
-    const symToHe = Object.fromEntries(Object.entries(STOCK_SYMBOLS_HE).map(([he, sym]) => [sym, he]));
     const portfolioSymbols = new Set(
         Object.keys(portfolioData.portfolio ?? {}).map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean)
     );
