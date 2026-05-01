@@ -21,6 +21,35 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
+// ── Web Push ──────────────────────────────────────────────────────────────────
+self.addEventListener('push', e => {
+  let data = { title: '📋 בורסה — עדכון', body: 'דוח חדש זמין', url: '/' };
+  try { if (e.data) data = { ...data, ...e.data.json() }; } catch {}
+  e.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/icon-192.svg',
+      badge: '/icon-192.svg',
+      dir: 'rtl',
+      lang: 'he',
+      data: { url: data.url },
+      requireInteraction: false,
+    })
+  );
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = e.notification.data?.url || '/';
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      const existing = list.find(c => c.url.includes(self.location.origin));
+      if (existing) { existing.focus(); existing.navigate(url); }
+      else clients.openWindow(url);
+    })
+  );
+});
+
 self.addEventListener('fetch', e => {
   const url = e.request.url;
 

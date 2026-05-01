@@ -329,9 +329,6 @@
     <script src="script.js?v=43"></script>
     <script>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(regs => {
-          regs.forEach(r => r.unregister());
-        });
         navigator.serviceWorker.register('/sw.js');
       }
     </script>

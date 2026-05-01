@@ -1884,10 +1884,43 @@ function _startRateLimitCountdown(seconds, restoredText) {
 
 let _notifAlertsToday = new Set();
 
-function requestNotifPermission() {
-    if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission();
+async function requestNotifPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+        await Notification.requestPermission();
     }
+    if (Notification.permission === 'granted') {
+        await _subscribeToPush();
+    }
+}
+
+async function _subscribeToPush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        const existing = await reg.pushManager.getSubscription();
+        if (existing) {
+            // Refresh subscription on server (in case it expired)
+            await fetch('/api/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(existing) });
+            return;
+        }
+        const { publicKey } = await fetch('/api/push/vapid-public-key').then(r => r.json());
+        const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: _urlBase64ToUint8Array(publicKey),
+        });
+        await fetch('/api/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub) });
+        console.log('[push] subscribed');
+    } catch (e) {
+        console.warn('[push] subscribe failed:', e.message);
+    }
+}
+
+function _urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
 }
 
 function checkPortfolioAlerts() {

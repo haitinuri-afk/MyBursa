@@ -120,7 +120,7 @@ function _isTA35Company(report) {
  * @param {{ groq, ragCol, usdRate }} ctx
  * @returns {Promise<Array>}  new scan results
  */
-async function runScan({ groq, ragCol, usdRate = 3.7, portfolioCol, alertsCol }) {
+async function runScan({ groq, ragCol, usdRate = 3.7, portfolioCol, alertsCol, sendPush }) {
     console.log('[maya] Starting scan…');
     const newResults = [];
 
@@ -194,8 +194,9 @@ async function runScan({ groq, ragCol, usdRate = 3.7, portfolioCol, alertsCol })
                     const matchedSymbol = userSymbols.find(s =>
                         report.company?.includes(s) || s.includes(report.company?.split(' ')[0] ?? '___')
                     ) ?? '';
+                    const companyName = analysis?.company || report.company;
                     await alertsCol.insertOne({
-                        company: analysis?.company || report.company,
+                        company: companyName,
                         symbol: matchedSymbol,
                         summary: analysis.summary,
                         holderSummary,
@@ -206,7 +207,18 @@ async function runScan({ groq, ragCol, usdRate = 3.7, portfolioCol, alertsCol })
                         read: false,
                     }).catch(e => console.warn('[maya] alert insert failed:', e.message));
 
-                    console.log(`[maya] 🔔 Portfolio alert created for ${analysis?.company || report.company}`);
+                    console.log(`[maya] 🔔 Portfolio alert created for ${companyName}`);
+
+                    // ── Web Push ──────────────────────────────────────────────
+                    if (sendPush) {
+                        const rec = analysis.recommendation ?? '';
+                        const emoji = rec === 'BUY' ? '📈' : rec === 'SELL' ? '📉' : '📋';
+                        sendPush({
+                            title: `${emoji} דוח חדש — ${companyName}`,
+                            body: analysis.summary ? analysis.summary.slice(0, 120) : 'דוח חדש פורסם על מניה בתיקך',
+                            url: report.url ?? '/',
+                        }).catch(e => console.warn('[push] send failed:', e.message));
+                    }
                 }
             }
             // ── End Smart Matcher ─────────────────────────────────────────────────

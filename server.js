@@ -10,6 +10,14 @@ const multer       = require('multer');
 const pdfParse     = require('pdf-parse');
 const cron         = require('node-cron');
 const { runScan, getLatestScans } = require('./maya-scraper');
+const webpush = require('web-push');
+
+// ── Web Push / VAPID setup ────────────────────────────────────────────────────
+webpush.setVapidDetails(
+    process.env.VAPID_EMAIL,
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+);
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -516,6 +524,7 @@ let _ragCol       = null;   // MongoDB collection handle
 let _scansCol     = null;   // Persistent scan results collection
 let _portfolioCol = null;   // User portfolio symbols collection
 let _alertsCol    = null;   // Portfolio alerts collection
+let _subsCol      = null;   // Web Push subscriptions collection
 let _mongoReady   = null;   // Promise that resolves when initMongoDB completes
 
 async function initMongoDB() {
@@ -529,11 +538,13 @@ async function initMongoDB() {
         _scansCol     = db.collection('scan_results');
         _portfolioCol = db.collection('user_portfolio');
         _alertsCol    = db.collection('alerts');
+        _subsCol      = db.collection('push_subscriptions');
         // Full-text index (created once, idempotent)
         await _ragCol.createIndex({ text: 'text' }, { default_language: 'none' });
         await _scansCol.createIndex({ scannedAt: -1 });
         await _alertsCol.createIndex({ createdAt: -1 });
         await _alertsCol.createIndex({ read: 1 });
+        await _subsCol.createIndex({ endpoint: 1 }, { unique: true });
         console.log('[MongoDB] Connected to Atlas — RAG + scans + portfolio + alerts collections ready');
         await _syncLocalChunksToMongo();
         await _seedMongoPortfolio();
@@ -766,6 +777,7 @@ async function buildRAGContext(query, quotes) {
         : '';
 
     // ── Live prices — portfolio stocks only + top movers ─────────────────────
+    const symToHe = Object.fromEntries(Object.entries(STOCK_SYMBOLS_HE).map(([he, sym]) => [sym, he]));
     const portfolioSymbols = new Set(
         Object.keys(portfolioData.portfolio ?? {}).map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean)
     );
@@ -785,8 +797,9 @@ async function buildRAGContext(query, quotes) {
             const pct    = prev ? (((price - prev) / prev) * 100) : null;
             const pctStr = pct != null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : 'אין נתון';
             const flag   = pct != null && Math.abs(pct) >= 5 ? ' 🚨' : '';
-            const trend  = pct != null ? (price < prev ? '⚠' : '✓') : '';
-            return `${q.symbol}: ₪${price} (${pctStr}) ${trend}${flag}`;
+            const heName = symToHe[q.symbol] || q.symbol;
+            const dir    = pct != null ? (pct >= 0 ? '▲' : '▼') : '';
+            return `${heName}: ₪${price} ${dir}${pctStr}${flag}`;
         }).join('\n') : 'אין נתוני מחיר זמינים';
 
     // ── Extreme movers ────────────────────────────────────────────────────────
@@ -795,7 +808,7 @@ async function buildRAGContext(query, quotes) {
         .map(q => ({ symbol: q.symbol, pct: ((q.regularMarketPrice - q.regularMarketPreviousClose) / q.regularMarketPreviousClose) * 100 }))
         .filter(m => Math.abs(m.pct) >= 4)
         .sort((a,b) => Math.abs(b.pct) - Math.abs(a.pct))
-        .map(m => `${m.symbol}: ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(2)}% — ${Math.abs(m.pct) >= 7 ? 'בדוק אירוע ספציפי לחברה' : 'חולשת/חוזקת ענף'}`)
+        .map(m => `${symToHe[m.symbol] || m.symbol}: ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(2)}% — ${Math.abs(m.pct) >= 7 ? 'בדוק אירוע ספציפי לחברה' : 'חולשת/חוזקת ענף'}`)
         .join('\n');
 
     const retrieved = await retrieveRelevantChunks(query, 2);
@@ -803,27 +816,32 @@ async function buildRAGContext(query, quotes) {
         ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}` : '';
 
     const newsSection = _cachedNews.length
-        ? `## חדשות פיננסיות אחרונות:\n${_cachedNews.slice(0,6).map(n => `- [${n.source}] ${n.title}`).join('\n')}`
+        ? `## חדשות פיננסיות אחרונות:\n${_cachedNews.slice(0,12).map(n => `- [${n.source}] ${n.title}`).join('\n')}`
         : '';
 
     const xSection = _cachedXPosts.length
-        ? `## X / Twitter — פוסטים רלוונטיים:\n${_cachedXPosts.slice(0,6).map(n => `- [${n.source}] ${n.title}`).join('\n')}`
+        ? `## X / Twitter — פוסטים רלוונטיים:\n${_cachedXPosts.slice(0,10).map(n => `- [${n.source}] ${n.title}`).join('\n')}`
         : '';
 
     // ── System prompt ─────────────────────────────────────────────────────────
-    const systemPrompt = `אתה יועץ השקעות אישי ומנוסה לשוק ההון הישראלי. ענה בעברית פשוטה וברורה כמו חבר שמבין בהשקעות.
+    const systemPrompt = `אתה יועץ השקעות אישי לשוק ההון הישראלי. ענה בעברית פשוטה וברורה.
 
-## סגנון תשובה:
-- פתח ישירות בתשובה — אין "בואו נבדוק", אין "ראשית"
-- עד 6 שורות. אל תפרט יותר מדי
-- שפה פשוטה — אין ז'רגון מקצועי כמו "מומנטום", "רוטציה"
-- אל תמציא מספרים — רק נתונים מה-Context
+## כללים חשובים:
+- השתמש אך ורק בשמות עבריים של מניות (לאומי, טבע, אלביט וכו') — לא בטיקרים
+- אל תמציא נתונים — רק מה שמופיע ב-Context
+- פתח ישירות בלי הקדמות
+
+## סגנון תשובות:
+- כתוב 4–7 שורות
+- **השתמש בחדשות ובפוסטים מה-Context** — אם יש כותרת רלוונטית, ציין אותה ("לפי גלובס...", "TheMarker מדווח...")
+- ציין מחיר ושינוי % לכל מניה שמוזכרת
+- הסבר מה קרה היום — מה בפועל גרם לעלייה/ירידה לפי החדשות, לא הסבר כללי על החברה
 
 ## לפי סוג שאלה:
-- **הפסד בתיק**: הסבר מה קרה + המלצה קצרה (להחזיק / למכור / לחזק)
-- **מניה ספציפית**: מחיר + שינוי יומי + האם בתיק + משפט המלצה
-- **מה לקנות**: עד 3 מניות — שם, מחיר, סיבה אחת בשורה
-- **שאלה כללית**: ענה ישיר ובסיס על הנתונים הזמינים
+- **מה לקנות / המלצות**: המלץ רק מניות עולות היום (▲). לכל מניה: שם + מחיר + % + מה החדשות/הסיבה הספציפית להיום.
+- **הפסד / ירידה בתיק**: ציין כמה ירדת, מה גרם לכך לפי החדשות, המלץ בבירור — להחזיק / למכור / להוסיף
+- **מניה ספציפית**: מחיר + % יומי + מה כתוב עליה בחדשות היום
+- **שאלה כללית**: ענה עם נתונים ספציפיים מהחדשות והמחירים
 
 ${knowledgeSection}
 
@@ -960,7 +978,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
 
         const result = await _groq.chat.completions.create({
             model:      'llama-3.1-8b-instant',
-            max_tokens: mobile ? 220 : 380,   // shorter on mobile
+            max_tokens: mobile ? 320 : 600,   // shorter on mobile
             messages:   groqMessages,
         });
 
@@ -1180,6 +1198,56 @@ app.get('/api/debug/mongo', async (req, res) => {
     res.json({ mongoOk, portfolioDoc: doc, connectErr, env: !!process.env.MONGODB_URI, groqKey: !!process.env.GROQ_API_KEY });
 });
 
+// ── Web Push API ──────────────────────────────────────────────────────────────
+
+// GET /api/push/vapid-public-key  — client needs the public key to subscribe
+app.get('/api/push/vapid-public-key', (req, res) => {
+    res.json({ publicKey: process.env.VAPID_PUBLIC_KEY });
+});
+
+// POST /api/push/subscribe  — save/refresh a push subscription
+app.post('/api/push/subscribe', express.json(), async (req, res) => {
+    const sub = req.body;
+    if (!sub?.endpoint) return res.status(400).json({ error: 'subscription חסר' });
+    if (_subsCol) {
+        await _subsCol.updateOne(
+            { endpoint: sub.endpoint },
+            { $set: { subscription: sub, updatedAt: new Date() } },
+            { upsert: true }
+        ).catch(e => console.warn('[push] save sub failed:', e.message));
+    }
+    res.json({ ok: true });
+});
+
+// POST /api/push/unsubscribe  — remove a subscription
+app.post('/api/push/unsubscribe', express.json(), async (req, res) => {
+    const { endpoint } = req.body ?? {};
+    if (endpoint && _subsCol) {
+        await _subsCol.deleteOne({ endpoint }).catch(() => {});
+    }
+    res.json({ ok: true });
+});
+
+// Helper: send a push to all subscribers
+async function sendPushToAll(payload) {
+    if (!_subsCol) return;
+    const subs = await _subsCol.find({}).toArray().catch(() => []);
+    const dead = [];
+    await Promise.allSettled(subs.map(async doc => {
+        try {
+            await webpush.sendNotification(doc.subscription, JSON.stringify(payload));
+        } catch (e) {
+            // 410 Gone = subscription expired / user unsubscribed
+            if (e.statusCode === 410 || e.statusCode === 404) dead.push(doc.endpoint);
+            else console.warn('[push] send failed:', e.message);
+        }
+    }));
+    if (dead.length) {
+        await _subsCol.deleteMany({ endpoint: { $in: dead } }).catch(() => {});
+        console.log(`[push] removed ${dead.length} expired subscription(s)`);
+    }
+}
+
 // ── Alerts API ────────────────────────────────────────────────────────────────
 
 // GET /api/my-alerts — last 20 unread alerts sorted by newest first
@@ -1252,7 +1320,7 @@ async function _persistScans(results) {
 // ── /api/trigger-scan (manual trigger) ───────────────────────────────────────
 app.post('/api/trigger-scan', apiLimiter, async (req, res) => {
     res.json({ message: 'סריקה התחילה ברקע' });
-    runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate, portfolioCol: _portfolioCol, alertsCol: _alertsCol })
+    runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate, portfolioCol: _portfolioCol, alertsCol: _alertsCol, sendPush: sendPushToAll })
         .then(results => _persistScans(results))
         .catch(e => console.error('[maya] manual scan error:', e.message));
 });
@@ -1276,7 +1344,7 @@ app.listen(PORT, async () => {
     cron.schedule('0 10-18 * * 1-5', async () => {
         console.log('[maya] Hourly scan triggered by cron');
         try {
-            const results = await runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate, portfolioCol: _portfolioCol, alertsCol: _alertsCol });
+            const results = await runScan({ groq: _groq, ragCol: _ragCol, usdRate: _usdIlsRate, portfolioCol: _portfolioCol, alertsCol: _alertsCol, sendPush: sendPushToAll });
             await _persistScans(results);
         } catch (e) {
             console.error('[maya] cron scan error:', e.message);
