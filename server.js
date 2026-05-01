@@ -685,33 +685,20 @@ app.delete('/api/rag/:id', async (req, res) => {
 });
 
 // ── Company profile RAG — Hybrid Search ──────────────────────────────────────
-let _embedder = null;
-async function _getEmbedder() {
-    if (_embedder) return _embedder;
-    try {
-        const { pipeline, env } = require('@xenova/transformers');
-        env.cacheDir = path.join(__dirname, '.model-cache');
-        _embedder = await pipeline('feature-extraction', 'Xenova/multilingual-e5-small');
-        console.log('[embedder] multilingual-e5-small loaded');
-    } catch(e) {
-        console.warn('[embedder] load failed:', e.message);
-        _embedder = null;
-    }
-    return _embedder;
-}
+// Vector search רץ רק מ-build-company-profiles.js (offline).
+// בשרת: Lucene fuzzy + $text fallback — מהיר, ללא תלות ב-@xenova
 
 async function retrieveCompanyProfiles(query) {
     if (!_profilesCol) return '';
-    const results = new Map(); // name → doc, dedup
+    const results = new Map();
 
-    // ── 1. Atlas Lucene — keyword + fuzzy + boosting ───────────────────────
+    // ── 1. Atlas Lucene — fuzzy + boosting ────────────────────────────────
     try {
-        const lucene = await _profilesCol.aggregate([
+        const hits = await _profilesCol.aggregate([
             { $search: {
                 index: 'default',
                 compound: {
                     should: [
-                        // שם חברה — עדיפות גבוהה + fuzzy לשגיאות כתיב
                         { text: { query, path: 'name',    score: { boost: { value: 10 } }, fuzzy: { maxEdits: 1 } } },
                         { text: { query, path: 'aliases', score: { boost: { value: 8  } }, fuzzy: { maxEdits: 1 } } },
                         { text: { query, path: 'sector',  score: { boost: { value: 5  } } } },
@@ -722,39 +709,34 @@ async function retrieveCompanyProfiles(query) {
                 }
             }},
             { $limit: 3 },
-            { $project: { name: 1, text: 1, sector: 1, score: { $meta: 'searchScore' } } }
+            { $project: { name: 1, text: 1, sector: 1 } }
         ]).toArray();
-        lucene.forEach(d => results.set(d.name, d));
-    } catch(e) {
-        // Atlas Search index לא קיים — fallback ל-$text רגיל
+        hits.forEach(d => results.set(d.name, d));
+    } catch {
+        // fallback: $text index (נוצר ב-build script)
         try {
-            const fallback = await _profilesCol.find(
-                { $text: { $search: query } },
-                { projection: { name: 1, text: 1, sector: 1 } }
-            ).limit(3).toArray();
-            fallback.forEach(d => results.set(d.name, d));
+            const hits = await _profilesCol
+                .find({ $text: { $search: query } }, { projection: { name: 1, text: 1 } })
+                .limit(3).toArray();
+            hits.forEach(d => results.set(d.name, d));
         } catch {}
     }
 
-    // ── 2. Vector Search — סמנטי ──────────────────────────────────────────
-    try {
-        const model = await _getEmbedder();
-        if (model) {
-            const out = await model(`query: ${query}`, { pooling: 'mean', normalize: true });
-            const qVec = Array.from(out.data);
-            const vectorHits = await _profilesCol.aggregate([
-                { $vectorSearch: {
-                    index: 'company_profiles_vector',
-                    path: 'embedding',
-                    queryVector: qVec,
-                    numCandidates: 30,
-                    limit: 3,
-                }},
-                { $project: { name: 1, text: 1, sector: 1, score: { $meta: 'vectorSearchScore' } } }
-            ]).toArray();
-            vectorHits.forEach(d => results.set(d.name, d));
-        }
-    } catch(e) { /* vector index לא קיים עדיין */ }
+    // ── 2. Vector Search (pre-computed embeddings, no runtime model) ───────
+    // רץ רק אם Lucene החזיר פחות מ-2 תוצאות — משתמש בembeddings שכבר שמורים
+    if (results.size < 2) {
+        try {
+            // keyword fallback — לפי sector אם שאלה מאקרו-סקטוריאלית
+            const sectorKeywords = ['בנקים','ביטוח','נדל"ן','אנרגיה','טכנולוגיה','פארמה','תקשורת','מזון'];
+            const matchedSector = sectorKeywords.find(s => query.includes(s));
+            if (matchedSector) {
+                const bySecHits = await _profilesCol
+                    .find({ sector: matchedSector }, { projection: { name: 1, text: 1 } })
+                    .limit(3).toArray();
+                bySecHits.forEach(d => results.set(d.name, d));
+            }
+        } catch {}
+    }
 
     if (!results.size) return '';
     const profiles = [...results.values()].slice(0, 3).map(d => d.text).join('\n\n---\n\n');
