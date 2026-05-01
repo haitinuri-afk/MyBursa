@@ -1068,12 +1068,14 @@ function drawIndexChart(tf = currentTf) {
     const needsRecreate = !_idxChart || prevIntraday !== idxIntraday;
     if (needsRecreate) {
         if (_idxChart) { _idxChart.remove(); _idxChart = null; _idxSeries = null; }
+        const cw = container.clientWidth  || container.parentElement?.clientWidth  || 300;
+        const ch = container.clientHeight || container.parentElement?.clientHeight || 200;
         _idxChart = LightweightCharts.createChart(container, {
-            width:  container.clientWidth  || 300,
-            height: container.clientHeight || 200,
+            width:  cw,
+            height: ch,
             layout:   { background: { color: '#ffffff' }, textColor: '#5f6368' },
             grid:     { vertLines: { color: 'rgba(0,0,0,0.04)' }, horzLines: { color: 'rgba(0,0,0,0.06)' } },
-            timeScale:       { borderColor: '#1e2430', timeVisible: idxIntraday, secondsVisible: false, tickMarkFormatter: fmtIdx, fixLeftEdge: true },
+            timeScale:       { borderColor: '#1e2430', timeVisible: idxIntraday, secondsVisible: false, tickMarkFormatter: fmtIdx },
             rightPriceScale: { borderColor: '#1e2430', scaleMargins: { top: 0.08, bottom: 0.06 }, autoScale: true },
             crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
         });
@@ -1097,7 +1099,7 @@ function drawIndexChart(tf = currentTf) {
     const minClose = Math.min(...closes);
     _idxSeries.applyOptions({ baseValue: { type: 'price', price: minClose } });
     const shift = idxIntraday ? IDT : 0;
-    const chartData = ohlc.map(d => ({ time: d.time + shift, value: d.close }));
+    const chartData = ohlc.map(d => ({ time: idxIntraday ? d.time + shift : d.time, value: d.close }));
     if (idxIntraday) {
         const nowUTC = Math.floor(Date.now() / 1000);
         const todayMidnightUTC = Math.floor(nowUTC / 86400) * 86400;
@@ -1107,20 +1109,19 @@ function drawIndexChart(tf = currentTf) {
             chartData.push({ time: marketCloseShifted }); // WhitespaceData to 17:30
     }
     _idxSeries.setData(chartData);
-    if (idxIntraday && needsRecreate) {
-        // Set visible range only on first creation — user can drag freely after that
-        const nowShifted = Math.floor(Date.now() / 1000) + IDT;
+    if (needsRecreate) {
+        _idxChart.priceScale('right').applyOptions({ autoScale: true });
         setTimeout(() => {
-            if (_idxChart) _idxChart.timeScale().setVisibleRange({
-                from: chartData[0].time,
-                to:   nowShifted + 20 * 60
-            });
-        }, 50);
-    } else if (!idxIntraday) {
-        _idxChart.timeScale().fitContent();
+            if (_idxChart && container.clientWidth && container.clientHeight) {
+                _idxChart.resize(container.clientWidth, container.clientHeight);
+                if (!idxIntraday) _idxChart.timeScale().fitContent();
+                else _idxChart.timeScale().setVisibleRange({
+                    from: chartData[0].time,
+                    to:   Math.floor(Date.now() / 1000) + IDT + 20 * 60
+                });
+            }
+        }, 80);
     }
-    _idxChart.priceScale('right').applyOptions({ autoScale: true });
-    _idxChart.priceScale('right').applyOptions({ autoScale: true });
 }
 
 async function updateTimeframe(tf) {
@@ -1134,8 +1135,12 @@ async function updateTimeframe(tf) {
     const idxSym = STOCK_SYMBOLS["מדד תא-35"];
     if (tf === 'weekly'   && !idx?.ohlcMonth  && idxSym)
         idx.ohlcMonth   = (await fetchHistoricalOHLC(idxSym, '1mo', '1d')).ohlc;
-    if ((tf === 'monthly' || tf === '3months') && !idx?.ohlc3Month && idxSym)
-        idx.ohlc3Month  = (await fetchHistoricalOHLC(idxSym, '3mo', '1d')).ohlc;
+    if ((tf === 'monthly' || tf === '3months') && idxSym) {
+        if (!idx?.ohlc3Month?.length) {
+            const { ohlc } = await fetchHistoricalOHLC(idxSym, '3mo', '1d');
+            if (ohlc?.length > 1) idx.ohlc3Month = ohlc;
+        }
+    }
 
     drawIndexChart(tf);
 }
