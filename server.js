@@ -13,11 +13,17 @@ const { runScan, getLatestScans } = require('./maya-scraper');
 const webpush = require('web-push');
 
 // ── Web Push / VAPID setup ────────────────────────────────────────────────────
-webpush.setVapidDetails(
-    process.env.VAPID_EMAIL,
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-);
+const _vapidReady = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_EMAIL);
+if (_vapidReady) {
+    webpush.setVapidDetails(
+        process.env.VAPID_EMAIL,
+        process.env.VAPID_PUBLIC_KEY,
+        process.env.VAPID_PRIVATE_KEY
+    );
+    console.log('[push] VAPID configured ✓');
+} else {
+    console.warn('[push] VAPID env vars missing — Web Push disabled');
+}
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -1230,7 +1236,7 @@ app.post('/api/push/unsubscribe', express.json(), async (req, res) => {
 
 // Helper: send a push to all subscribers
 async function sendPushToAll(payload) {
-    if (!_subsCol) return;
+    if (!_vapidReady || !_subsCol) return;
     const subs = await _subsCol.find({}).toArray().catch(() => []);
     const dead = [];
     await Promise.allSettled(subs.map(async doc => {
