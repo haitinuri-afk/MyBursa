@@ -793,8 +793,41 @@ async function buildRAGContext(query, quotes) {
         const sector   = nameToSector[name] ?? 'אחר';
         return `  ${name} | סקטור: ${sector} | ${qty} יח׳ | עלות: ₪${avgCost} | עכשיו: ${priceStr} | יומי: ${dayPct} | P/L כולל: ${pl} | שווי: ${value} | ${momentum}`;
     });
+    // ── סיכום כולל של התיק — מחושב בשרת, לא ע"י ה-AI ────────────────────────
+    let _totalValue = 0, _totalCost = 0, _dayGain = 0;
+    Object.entries(portfolioData.portfolio ?? {}).forEach(([name, h]) => {
+        const qty      = h.qty ?? h.quantity ?? 0;
+        const avgCost  = h.buyPrice ?? h.avgCost ?? 0;
+        const costBasis = h.totalCost ?? (qty * avgCost);
+        const yahooSym = STOCK_SYMBOLS_HE[name] ?? name;
+        const quote    = quotes.find(q => q.symbol === yahooSym);
+        if (!quote?.regularMarketPrice) return;
+        const cur  = quote.regularMarketPrice;
+        const prev = quote.regularMarketPreviousClose ?? cur;
+        _totalValue += cur  * qty;
+        _totalCost  += costBasis;
+        _dayGain    += (cur - prev) * qty;
+    });
+    const _totalPLpct  = _totalCost > 0 ? ((_totalValue - _totalCost) / _totalCost * 100).toFixed(2) : '0.00';
+    const _totalPLils  = (_totalValue - _totalCost).toFixed(0);
+    const _dayGainStr  = (_dayGain >= 0 ? '+' : '') + _dayGain.toFixed(0);
+    const portfolioSummary = _totalCost > 0 ? `## סיכום תיק (מחושב):
+  שווי נוכחי: ₪${Math.round(_totalValue).toLocaleString('he-IL')}
+  עלות מקורית: ₪${Math.round(_totalCost).toLocaleString('he-IL')}
+  רווח/הפסד כולל: ${parseFloat(_totalPLpct) >= 0 ? '+' : ''}${_totalPLpct}% (${_totalPLils >= 0 ? '+₪' : '-₪'}${Math.abs(_totalPLils).toLocaleString('he-IL')})
+  שינוי היום: ${_dayGainStr >= 0 ? '+₪' : '-₪'}${Math.abs(_dayGain).toFixed(0)}` : '';
+
+    // ── היסטוריית עסקאות ────────────────────────────────────────────────────
+    const txHistory = (portfolioData.transactionHistory ?? []).slice(-20);
+    const txSection = txHistory.length ? `## היסטוריית עסקאות (20 אחרונות):\n` +
+        txHistory.map(t => {
+            const d = t.date ? new Date(t.date).toLocaleDateString('he-IL') : t.time ?? '';
+            const type = t.type === 'buy' ? 'קנייה' : t.type === 'sell' ? 'מכירה' : t.action ?? '';
+            return `  ${d} | ${type} | ${t.name ?? t.symbol} | ${t.qty} יח׳ | ₪${parseFloat(t.price).toFixed(2)}`;
+        }).join('\n') : '';
+
     const portfolioSection = portfolioLines.length
-        ? `## תיק השקעות נוכחי:\n${portfolioLines.join('\n')}`
+        ? `${portfolioSummary}\n\n## תיק השקעות נוכחי (פירוט):\n${portfolioLines.join('\n')}\n\n${txSection}`
         : '## תיק השקעות: ריק (המשתמש עדיין לא קנה מניות)';
 
     // ── Sector rotation — averages per sector ─────────────────────────────────
@@ -900,6 +933,7 @@ async function buildRAGContext(query, quotes) {
 ## כללים:
 - שמות מניות בעברית בלבד: טבע, לאומי, אלביט וכו' — לא TEVA, לא LUMI
 - נתונים — רק ממה שמופיע ב-Context. אל תמציא מחירים או אחוזים
+- **אסור לחשב סכומים בעצמך** — השתמש רק במספרים מ"סיכום תיק (מחושב)"
 - אל תפתח ב"בוא נבדוק" או "ראשית" — קפוץ ישר לתשובה
 
 ## מבנה תשובה למניה ספציפית:
