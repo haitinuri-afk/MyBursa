@@ -823,7 +823,9 @@ async function buildRAGContext(query, quotes) {
         txHistory.map(t => {
             const d = t.date ? new Date(t.date).toLocaleDateString('he-IL') : t.time ?? '';
             const type = t.type === 'buy' ? 'קנייה' : t.type === 'sell' ? 'מכירה' : t.action ?? '';
-            return `  ${d} | ${type} | ${t.name ?? t.symbol} | ${t.qty} יח׳ | ₪${parseFloat(t.price).toFixed(2)}`;
+            // המר טיקר לשם עברי אם צריך
+            const txName = t.name ?? (t.symbol ? (symToHe[t.symbol] || t.symbol) : '');
+            return `  ${d} | ${type} | ${txName} | ${t.qty} יח׳ | ₪${parseFloat(t.price).toFixed(2)}`;
         }).join('\n') : '';
 
     const portfolioSection = portfolioLines.length
@@ -935,6 +937,7 @@ async function buildRAGContext(query, quotes) {
 - נתונים — רק ממה שמופיע ב-Context. אל תמציא מחירים או אחוזים
 - **אסור לחשב סכומים בעצמך** — השתמש רק במספרים מ"סיכום תיק (מחושב)"
 - אל תפתח ב"בוא נבדוק" או "ראשית" — קפוץ ישר לתשובה
+- פעלים נכונים: מניה **עלתה / ירדה / יציבה** — אסור: "השתכרה", "נפגעה", "הניבה הפסד" ועוד המצאות
 
 ## מבנה תשובה למניה ספציפית:
 שורה 1: שם המניה — מחיר ₪X.XX — שינוי יומי X.XX% (▲ עלייה / ▼ ירידה)
