@@ -1323,6 +1323,27 @@ app.post('/api/portfolio', express.json(), async (req, res) => {
 
 // ── Debug ─────────────────────────────────────────────────────────────────────
 
+// Show exactly what the AI sees for chat
+app.get('/api/debug/chat-context', async (req, res) => {
+    try {
+        const portfolioData = await loadPortfolio();
+        const quotes        = _cachedQuotes;
+        const portfolioKeys = Object.keys(portfolioData.portfolio ?? {});
+        const matchedQuotes = portfolioKeys.map(name => {
+            const sym   = STOCK_SYMBOLS_HE[name];
+            const quote = sym && quotes.find(q => q.symbol === sym);
+            return { name, sym, price: quote?.regularMarketPrice ?? null, prev: quote?.regularMarketPreviousClose ?? null };
+        });
+        res.json({
+            portfolioKeys,
+            matchedQuotes,
+            cachedQuotesCount: quotes.length,
+            mongoReady: !!_portfolioCol,
+            portfolioDoc: portfolioData,
+        });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Quick check: TA-35 price, prevClose and computed %
 app.get('/api/debug/ta35', async (req, res) => {
     try {
