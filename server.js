@@ -1202,8 +1202,8 @@ app.post('/api/chat', express.json(), async (req, res) => {
         const _mentionsPortfolioStock = _portfolioStockNames.some(n => lastMsg.includes(n));
 
         const _Q = {
-            worst:   /מי.*פגע|הכי.*ירד|הכי.*פגע|הפסיד.*היום|פגעה.*היום/u.test(lastMsg),
-            best:    /מי.*עלה|הכי.*עלה|הרוויח.*היום|תרמ|הכי.*תרמ/u.test(lastMsg),
+            worst:   /מי.*פגע|הכי.*ירד|הכי.*פגע|הפסיד.*היום|פגעה.*היום|מוצת|שקע.*הכי|הכי.*שקע|ירד.*הכי|הכי.*נפל/u.test(lastMsg),
+            best:    /מי.*עלה|הכי.*עלה|הרוויח.*היום|תרמ|הכי.*תרמ|עלה.*הכי|הכי.*זינק/u.test(lastMsg),
             toppl:   /הכי.*מורווח|מורווח.*ביותר|הכי.*רווחי|הרווחי.*ביותר|הכי.*מרוויח|הכי.*הרוויח|הכי.*מפסיד|הכי.*הפסיד(?!.*היום)/u.test(lastMsg),
             worstpl: /הכי.*מפסיד|הכי.*הפסיד(?!.*היום)/u.test(lastMsg),
             under:   /תשואת\s*חסר|פיגרו|חסר.*מדד|פיגור.*מדד/u.test(lastMsg),
@@ -1399,6 +1399,8 @@ app.post('/api/chat', express.json(), async (req, res) => {
         let reply = result.choices[0].message.content;
         // 1. החלף XXX.TA → עברי
         reply = reply.replace(/\b([A-Z]{2,6}\.TA)\b/g, (_, t) => _s2h[t] || '');
+        // 1b. הסר עברית.TA (פורמט הלוצינציה: "מדבק.TA", "טאוור.TA")
+        reply = reply.replace(/[֐-׿]+\.TA\b/g, '');
         // 2. החלף ^TAxx → עברי
         reply = reply.replace(/\^(TA\d+)/g, (_, i) => _s2h[`^${i}`] || `מדד ${i.replace('TA','תא-')}`);
         // 3. הסר סוגריים עם טיקרים
