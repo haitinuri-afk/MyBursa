@@ -1602,14 +1602,21 @@ app.get('/api/debug/chat-context', async (req, res) => {
             if (quotes.length) _cachedQuotes = quotes;
         }
 
+        let totalVal = 0;
         const matchedQuotes = portfolioKeys.map(name => {
             const sym   = STOCK_SYMBOLS_HE[name];
             const quote = sym && quotes.find(q => q.symbol === sym);
-            return { name, sym, price: quote?.regularMarketPrice ?? null, prev: quote?.regularMarketPreviousClose ?? null };
+            const h     = portfolioData.portfolio[name];
+            const qty   = h?.qty ?? h?.quantity ?? 0;
+            const price = quote?.regularMarketPrice ?? null;
+            const value = price ? price * qty : null;
+            if (value) totalVal += value;
+            return { name, sym, qty, price, value, prev: quote?.regularMarketPreviousClose ?? null, raw: h };
         });
         res.json({
             portfolioKeys,
             matchedQuotes,
+            totalVal: Math.round(totalVal),
             cachedQuotesCount: quotes.length,
             mongoReady: !!_portfolioCol,
         });
