@@ -688,7 +688,7 @@ app.delete('/api/rag/:id', async (req, res) => {
 // Vector search רץ רק מ-build-company-profiles.js (offline).
 // בשרת: Lucene fuzzy + $text fallback — מהיר, ללא תלות ב-@xenova
 
-async function retrieveCompanyProfiles(query) {
+async function retrieveCompanyProfiles(query, portfolioNames = []) {
     if (!_profilesCol) return '';
     const results = new Map();
 
@@ -722,11 +722,22 @@ async function retrieveCompanyProfiles(query) {
         } catch {}
     }
 
-    // ── 2. Vector Search (pre-computed embeddings, no runtime model) ───────
-    // רץ רק אם Lucene החזיר פחות מ-2 תוצאות — משתמש בembeddings שכבר שמורים
+    // ── 2. Portfolio fallback — when query is about the portfolio ──────────
+    // שאלות תיק לא תואמות Lucene — נשלוף פרופילים של המניות בתיק
+    const portfolioKeywords = ['תיק','פגע','הפסד','הפסדת','ירידה','הכי','קנ','מכר','ביצוע','היום','רווח','כמה שווה'];
+    const isPortfolioQuery  = portfolioKeywords.some(k => query.includes(k));
+    if (results.size < 2 && isPortfolioQuery && portfolioNames.length) {
+        try {
+            const byName = await _profilesCol
+                .find({ name: { $in: portfolioNames.slice(0, 5) } }, { projection: { name: 1, text: 1 } })
+                .toArray();
+            byName.forEach(d => results.set(d.name, d));
+        } catch {}
+    }
+
+    // ── 3. Sector keyword fallback ────────────────────────────────────────
     if (results.size < 2) {
         try {
-            // keyword fallback — לפי sector אם שאלה מאקרו-סקטוריאלית
             const sectorKeywords = ['בנקים','ביטוח','נדל"ן','אנרגיה','טכנולוגיה','פארמה','תקשורת','מזון'];
             const matchedSector = sectorKeywords.find(s => query.includes(s));
             if (matchedSector) {
@@ -932,9 +943,10 @@ async function buildRAGContext(query, quotes) {
         .map(m => `${symToHe[m.symbol] || m.symbol}: ${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(2)}% — ${Math.abs(m.pct) >= 7 ? 'בדוק אירוע ספציפי לחברה' : 'חולשת/חוזקת ענף'}`)
         .join('\n');
 
+    const _portfolioNames = Object.keys(portfolioData.portfolio ?? {});
     const [retrieved, companyProfiles] = await Promise.all([
         retrieveRelevantChunks(query, 2),
-        retrieveCompanyProfiles(query),
+        retrieveCompanyProfiles(query, _portfolioNames),
     ]);
     const knowledgeSection = retrieved.length
         ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}` : '';
@@ -971,6 +983,11 @@ async function buildRAGContext(query, quotes) {
 ## מבנה תשובה לתיק / הפסדים:
 - פרט כל מניה שירדה: שם + % ירידה + סיבה אפשרית
 - המלצה מפורשת בסוף: להחזיק / למכור / להוסיף
+
+## תשובה לשאלות ישירות על תיק (מי פגע / מי עלה / כמה שווה):
+- ענה ישירות מתוך "סיכום תיק (מחושב)" — זה המקור האמין
+- אחרי השם+% הוסף משפט אחד על הסיבה (מהחדשות/מגורמי החברה)
+- אל תפרט את כל התיק — ענה רק על מה שנשאל
 
 ${knowledgeSection}
 
@@ -1109,7 +1126,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
 
         const result = await _groq.chat.completions.create({
             model:      'llama-3.3-70b-versatile',
-            max_tokens: mobile ? 350 : 650,
+            max_tokens: mobile ? 500 : 700,
             messages:   groqMessages,
         });
 
