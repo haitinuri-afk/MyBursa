@@ -751,7 +751,13 @@ async function retrieveCompanyProfiles(query, portfolioNames = []) {
 
     if (!results.size) return '';
     // הסר טיקרים מהטקסט כדי שה-AI לא יחזור עליהם
-    const stripTickers = t => (t || '').replace(/\b[A-Z]{2,6}\.TA\b/g, '').replace(/\bTA-\d+\b/g, '').replace(/\s{2,}/g, ' ');
+    const stripTickers = t => (t || '')
+        .replace(/\b[A-Z]{2,6}\.TA\b/g, '')          // TSEM.TA, BIG.TA
+        .replace(/\bTA-\d+\b/g, '')                   // TA-90, TA-35
+        .replace(/\([A-Z]{2,6}\)/g, '')               // (TSEM), (NICE)
+        .replace(/טיקר[:\s]+[A-Z.]+/g, '')            // טיקר: TSEM.TA
+        .replace(/סימול[:\s]+[A-Z.]+/g, '')           // סימול: BIG.TA
+        .replace(/\s{2,}/g, ' ');
     const profiles = [...results.values()].slice(0, 3).map(d => stripTickers(d.text)).join('\n\n---\n\n');
     return `## פרופילי חברות רלוונטיים:\n${profiles}`;
 }
@@ -1113,6 +1119,12 @@ app.post('/api/chat', express.json(), async (req, res) => {
             }
         }
         // ── End fast-path ──────────────────────────────────────────────────────
+
+        // ── Historical query guard — no past data available ───────────────────
+        const _histWords = ['אתמול','שלשום','שבוע שעבר','חודש שעבר','לפני שבוע','לפני חודש','ביצועי אתמול'];
+        if (_histWords.some(w => lastMsg.includes(w))) {
+            return res.json({ reply: 'אין לי גישה לנתונים היסטוריים — המערכת מציגה רק מחירים חיים של יום המסחר הנוכחי.\nלנתוני אתמול ומעבר לכך — בדוק ב-Bizportal או ב-Google Finance.' });
+        }
 
         await Promise.all([fetchNews(), fetchXPosts()]);
         const systemCtx = await buildRAGContext(lastMsg, quotes);
