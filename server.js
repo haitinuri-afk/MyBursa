@@ -791,7 +791,7 @@ async function buildRAGContext(query, quotes) {
     // ── Portfolio with P&L, DAY%, support/resistance ───────────────────────────
     const portfolioData = await loadPortfolio();
     const portfolioLines = Object.entries(portfolioData.portfolio ?? {}).map(([name, h]) => {
-        const qty      = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
+        const qty      = h.qty      ?? h.quantity ?? 0;
         const avgCost  = h.buyPrice ?? h.avgCost  ?? h.purchasePrice ?? 0;
         const yahooSym = STOCK_SYMBOLS_HE[name] ?? name;
         const quote    = quotes.find(q => q.symbol === yahooSym);
@@ -1244,7 +1244,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
                     if (!qd?.regularMarketPrice) return;
                     const cur  = qd.regularMarketPrice;
                     const prev = qd.regularMarketPreviousClose ?? cur;
-                    const qty  = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
+                    const qty  = h.qty ?? h.quantity ?? 0;
                     const avg  = h.buyPrice ?? h.avgCost ?? 0;
                     const cost = h.totalCost ?? (qty * avg);
                     const dayPct     = prev > 0 ? ((cur - prev) / prev * 100) : 0;
@@ -1602,35 +1602,17 @@ app.get('/api/debug/chat-context', async (req, res) => {
             if (quotes.length) _cachedQuotes = quotes;
         }
 
-        let totalVal = 0;
         const matchedQuotes = portfolioKeys.map(name => {
             const sym   = STOCK_SYMBOLS_HE[name];
             const quote = sym && quotes.find(q => q.symbol === sym);
-            const h     = portfolioData.portfolio[name];
-            const qty   = h?.qty ?? h?.quantity ?? 0;
-            const price = quote?.regularMarketPrice ?? null;
-            const value = price ? price * qty : null;
-            if (value) totalVal += value;
-            return { name, sym, qty, price, value, prev: quote?.regularMarketPreviousClose ?? null, raw: h };
+            return { name, sym, price: quote?.regularMarketPrice ?? null, prev: quote?.regularMarketPreviousClose ?? null };
         });
-        const rows = matchedQuotes.map(m =>
-            `<tr><td>${m.name}</td><td>${m.sym||'—'}</td><td>${m.qty}</td>` +
-            `<td>${m.price!=null?'₪'+m.price.toFixed(2):'❌'}</td>` +
-            `<td>${m.value!=null?'₪'+Math.round(m.value).toLocaleString():'❌'}</td>` +
-            `<td style="font-size:10px;color:#666;word-break:break-all">${JSON.stringify(m.raw).replace(/,/g,', ')}</td></tr>`
-        ).join('');
-        // Also show raw portfolio dump at top for debugging
-        const rawDump = JSON.stringify(portfolioData.portfolio, null, 1)
-            .replace(/&/g,'&amp;').replace(/</g,'&lt;');
-        res.setHeader('Content-Type','text/html; charset=utf-8');
-        res.send(`<html dir="rtl"><body style="font:13px sans-serif;padding:12px">
-        <h3>סה"כ: ₪${Math.round(totalVal).toLocaleString()} | ${matchedQuotes.length} מניות | מונגו: ${!!_portfolioCol}</h3>
-        <table border="1" cellpadding="5" style="border-collapse:collapse;width:100%;font-size:12px">
-        <tr><th>שם</th><th>כמות</th><th>מחיר</th><th>שווי</th><th>raw (fields)</th></tr>
-        ${rows}
-        </table>
-        <hr><pre style="font-size:10px;overflow:auto">${rawDump}</pre>
-        </body></html>`);
+        res.json({
+            portfolioKeys,
+            matchedQuotes,
+            cachedQuotesCount: quotes.length,
+            mongoReady: !!_portfolioCol,
+        });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
