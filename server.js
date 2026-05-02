@@ -1193,88 +1193,143 @@ app.post('/api/chat', express.json(), async (req, res) => {
             return res.json({ reply: 'אין לי גישה לנתונים היסטוריים — אני עובד עם מחירים חיים של היום בלבד.\nלנתוני ימים קודמים — בדוק ב-Bizportal או ב-Google Finance.' });
         }
 
-        // ── Portfolio data fast-path: חשב נתונים ישירות, שלח ל-AI רק לסיכון ──
-        const _isUnderQ = /תשואת\s*חסר|פיגרו|הפסיד.*מדד|ירד.*מדד|חסר.*מדד/u.test(lastMsg);
-        const _isOverQ  = /תשואת\s*יתר|עלו.*מדד|ביצוע\s*עודף/u.test(lastMsg);
-        const _isBestQ  = /מי.*עלה|הכי.*עלה|הרוויח.*היום|תרמ/u.test(lastMsg);
-        const _isWorstQ = /מי.*פגע|הכי.*ירד|הכי.*פגע|הפסיד.*היום/u.test(lastMsg);
+        // ════════════════════════════════════════════════════════════════════
+        // שלב 1 — PORTFOLIO FAST-PATH
+        // זיהוי שאלות תיק → חישוב אריתמטי בשרת → ללא AI לנתוני עובדות
+        // ════════════════════════════════════════════════════════════════════
+        const _Q = {
+            worst:  /מי.*פגע|הכי.*ירד|הכי.*פגע|הפסיד.*היום|פגעה.*היום/u.test(lastMsg),
+            best:   /מי.*עלה|הכי.*עלה|הרוויח.*היום|תרמ|הכי.*תרמ/u.test(lastMsg),
+            under:  /תשואת\s*חסר|פיגרו|חסר.*מדד|פיגור.*מדד/u.test(lastMsg),
+            over:   /תשואת\s*יתר|עלו.*מדד|עודף.*מדד/u.test(lastMsg),
+            total:  /כמה\s*שווה|שווי\s*תיק|סה"כ\s*תיק|רווח\s*כולל|הפסד\s*כולל/u.test(lastMsg),
+            needWhy: /למה|מדוע|בגלל|סיכון|גורם|סיבה|מה\s*קרה/u.test(lastMsg),
+        };
+        const _isPortfolioQ = _Q.worst || _Q.best || _Q.under || _Q.over || _Q.total;
 
-        if (_isUnderQ || _isOverQ || _isBestQ || _isWorstQ) {
+        if (_isPortfolioQ) {
             try {
-                // טעון תיק + ודא שיש quotes
+                // ── 1a. טעון תיק + ודא מחירים ──────────────────────────────
                 const _pd = await loadPortfolio();
                 let _q = quotes.length ? quotes : [];
                 if (!_q.length) {
-                    const _syms = Object.keys(_pd.portfolio ?? {}).map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean);
+                    const _syms = Object.keys(_pd.portfolio ?? {})
+                        .map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean);
                     if (_syms.length) { _q = await fetchQuotesBatch(_syms); _cachedQuotes = _q; }
                 }
-                const _ta35q   = _q.find(q => q.symbol === '^TA35');
-                const _ta35pct = _ta35q?.regularMarketPreviousClose
-                    ? ((_ta35q.regularMarketPrice - _ta35q.regularMarketPreviousClose) / _ta35q.regularMarketPreviousClose * 100)
-                    : null;
 
-                // חשב ביצועי כל מניה בתיק
+                const _ta35q    = _q.find(q => q.symbol === '^TA35');
+                const _ta35pct  = _ta35q?.regularMarketPreviousClose
+                    ? ((_ta35q.regularMarketPrice - _ta35q.regularMarketPreviousClose)
+                       / _ta35q.regularMarketPreviousClose * 100) : null;
+
+                // ── 1b. חשב ביצועי כל מניה ──────────────────────────────────
+                let _totalVal = 0, _totalCost = 0, _totalDayGain = 0;
                 const _hp = [];
                 Object.entries(_pd.portfolio ?? {}).forEach(([name, h]) => {
-                    if (['מדד תא-35','מדד תא-90'].includes(name)) return;
-                    const sym   = STOCK_SYMBOLS_HE[name];
-                    const qd    = sym && _q.find(q => q.symbol === sym);
+                    const sym  = STOCK_SYMBOLS_HE[name];
+                    const qd   = sym && _q.find(q => q.symbol === sym);
                     if (!qd?.regularMarketPrice) return;
-                    const cur   = qd.regularMarketPrice;
-                    const prev  = qd.regularMarketPreviousClose ?? cur;
-                    const dayPct    = prev > 0 ? ((cur - prev) / prev * 100) : 0;
-                    const avgCost   = h.buyPrice ?? h.avgCost ?? 0;
-                    const totPct    = avgCost > 0 ? ((cur - avgCost) / avgCost * 100) : 0;
-                    const dayGainIls = (cur - prev) * (h.qty ?? 0);
-                    const delta     = _ta35pct != null ? dayPct - _ta35pct : null;
-                    _hp.push({ name, dayPct, totPct, dayGainIls, delta });
+                    const cur  = qd.regularMarketPrice;
+                    const prev = qd.regularMarketPreviousClose ?? cur;
+                    const qty  = h.qty ?? h.quantity ?? 0;
+                    const avg  = h.buyPrice ?? h.avgCost ?? 0;
+                    const cost = h.totalCost ?? (qty * avg);
+                    const dayPct     = prev > 0 ? ((cur - prev) / prev * 100) : 0;
+                    const totPct     = avg  > 0 ? ((cur - avg)  / avg  * 100) : 0;
+                    const dayGainIls = (cur - prev) * qty;
+                    const totGainIls = (cur - avg)  * qty;
+                    const delta      = _ta35pct != null ? dayPct - _ta35pct : null;
+                    const isIdx      = ['מדד תא-35','מדד תא-90'].includes(name);
+                    _totalVal      += cur * qty;
+                    _totalCost     += cost;
+                    _totalDayGain  += dayGainIls;
+                    if (!isIdx) _hp.push({ name, cur, prev, qty, avg, dayPct, totPct, dayGainIls, totGainIls, delta });
                 });
 
-                if (_hp.length) {
-                    let _list;
-                    if (_isWorstQ || _isBestQ) {
-                        _list = [..._hp].sort((a,b) => a.dayPct - b.dayPct);
-                        _list = _isWorstQ ? _list.slice(0,3) : _list.slice(-3).reverse();
-                    } else if (_isUnderQ) {
-                        _list = _hp.filter(s => (s.delta ?? 0) < -0.3).sort((a,b) => a.delta - b.delta);
-                    } else {
-                        _list = _hp.filter(s => (s.delta ?? 0) > 0.3).sort((a,b) => b.delta - a.delta);
-                    }
+                // ── 1c. בחר רשימה לפי סוג השאלה ────────────────────────────
+                let _list = [];
+                if (_Q.worst || _Q.best) {
+                    _list = [..._hp].sort((a,b) => a.dayPct - b.dayPct);
+                    _list = _Q.worst ? _list.slice(0,3) : _list.slice(-3).reverse();
+                } else if (_Q.under) {
+                    _list = _hp.filter(s => (s.delta ?? 0) < -0.3)
+                               .sort((a,b) => a.delta - b.delta);
+                } else if (_Q.over) {
+                    _list = _hp.filter(s => (s.delta ?? 0) > 0.3)
+                               .sort((a,b) => b.delta - a.delta);
+                }
 
-                    if (_list.length) {
-                        // ── תשובה ישירה מהשרת — ללא AI לנתוני תיק פשוטים ──────
-                        const _fmt = s => {
-                            const sign   = s.dayPct >= 0 ? '+' : '';
-                            const gainFmt = `${s.dayGainIls >= 0 ? '+' : ''}₪${Math.abs(Math.round(s.dayGainIls)).toLocaleString('he-IL')}`;
-                            const plSign = s.totPct >= 0 ? '+' : '';
-                            const vs     = s.delta != null ? ` | פיגור מתא-35: ${s.delta >= 0 ? '+' : ''}${s.delta.toFixed(2)}%` : '';
-                            return `**${s.name}** — ${sign}${s.dayPct.toFixed(2)}% (${gainFmt}) | P/L מאז קנייה: ${plSign}${s.totPct.toFixed(2)}%${vs}`;
-                        };
+                // ── 1d. פורמט שורה לכל מניה ─────────────────────────────────
+                const _fmtIls = n => (n >= 0 ? '+' : '') + '₪' + Math.abs(Math.round(n)).toLocaleString('he-IL');
+                const _fmtRow = s => {
+                    const daySign = s.dayPct >= 0 ? '+' : '';
+                    const plSign  = s.totPct  >= 0 ? '+' : '';
+                    const vs      = s.delta != null
+                        ? ` | לעומת תא-35: ${s.delta >= 0 ? '+' : ''}${s.delta.toFixed(2)}%` : '';
+                    return `**${s.name}** — ${daySign}${s.dayPct.toFixed(2)}% (${_fmtIls(s.dayGainIls)}) | P/L: ${plSign}${s.totPct.toFixed(2)}% (${_fmtIls(s.totGainIls)})${vs}`;
+                };
 
-                        // לשאלת "מי פגע" / "מי עלה" — תשובה קצרה ישירה
-                        if ((_isWorstQ || _isBestQ) && !_isUnderQ && !_isOverQ) {
-                            const top = _list[0];
-                            const verb = _isWorstQ ? 'הכי פגעה' : 'הכי תרמה';
-                            return res.json({ reply: `המניה ש${verb} לך היום:\n${_fmt(top)}` });
-                        }
+                // ── 1e. שאלת "מי פגע / מי עלה" + אין "למה" → תשובת שרת ישירה
+                if ((_Q.worst || _Q.best) && !_Q.under && !_Q.over && !_Q.needWhy && _list.length) {
+                    const verb = _Q.worst ? 'הכי פגעה' : 'הכי תרמה';
+                    return res.json({ reply: `המניה ש${verb} לך היום:\n${_fmtRow(_list[0])}` });
+                }
 
-                        // לתשואת חסר/יתר — כל הרשימה + AI מוסיף רק סיכון
-                        const _dataStr  = _list.map(_fmt).join('\n');
-                        const _profiles = await retrieveCompanyProfiles(lastMsg, _list.map(s => s.name));
-                        const _miniSys  = `אתה יועץ השקעות. ענה בעברית תקנית.\n⛔ אל תשנה אף מספר מ"רשימת מניות".\n⛔ שמות בעברית בלבד.\nלכל מניה הוסף משפט אחד — הסיכון המרכזי שלה לפי הפרופיל.`;
-                        const _miniUser = `${_dataStr}\n\n${_profiles}\n\nהוסף לכל מניה ברשימה שורת סיכון קצרה בלבד. אל תוסיף מניות.`;
-                        const _r = await _groq.chat.completions.create({
-                            model: 'llama-3.3-70b-versatile', max_tokens: mobile ? 450 : 650, temperature: 0,
-                            messages: [{ role: 'system', content: _miniSys }, { role: 'user', content: _miniUser }],
-                        });
-                        let _reply = _r.choices[0].message.content;
-                        Object.entries(STOCK_SYMBOLS_HE).forEach(([he, sym]) => {
-                            const bare = sym.replace('.TA','').replace('^','');
-                            if (bare.length >= 2) _reply = _reply.replace(new RegExp(`\\b${bare}\\b`, 'g'), he);
-                        });
-                        _reply = _reply.replace(/\b[A-Z]{3,6}\b/g, '').replace(/  +/g, ' ').trim();
-                        return res.json({ reply: _reply });
-                    }
+                // ── 1f. שאלת "כמה שווה התיק" → תשובת שרת ישירה ─────────────
+                if (_Q.total && _totalVal > 0) {
+                    const plPct = _totalCost > 0 ? ((_totalVal - _totalCost) / _totalCost * 100).toFixed(2) : '0';
+                    const plIls = Math.round(_totalVal - _totalCost);
+                    return res.json({ reply:
+                        `**שווי תיק כולל:** ₪${Math.round(_totalVal).toLocaleString('he-IL')}\n` +
+                        `**עלות מקורית:** ₪${Math.round(_totalCost).toLocaleString('he-IL')}\n` +
+                        `**רווח/הפסד כולל:** ${parseFloat(plPct) >= 0 ? '+' : ''}${plPct}% (${_fmtIls(plIls)})\n` +
+                        `**שינוי היום:** ${_fmtIls(_totalDayGain)}`
+                    });
+                }
+
+                // ════════════════════════════════════════════════════════════
+                // שלב 2 — AI CONTEXT
+                // שאלות מורכבות (תשואת חסר / למה ירד / סיכון):
+                // שלח נתונים מחושבים + פרופיל רלוונטי → AI מסביר בלבד
+                // ════════════════════════════════════════════════════════════
+                if (_list.length || (_Q.worst && _hp.length)) {
+                    const _workList = _list.length ? _list : [_hp.sort((a,b) => a.dayPct - b.dayPct)[0]];
+                    const _dataStr  = _workList.map(_fmtRow).join('\n');
+                    const _profiles = await retrieveCompanyProfiles(lastMsg, _workList.map(s => s.name));
+                    const _ta35Str  = _ta35pct != null
+                        ? `מדד תא-35 היום: ${_ta35pct >= 0 ? '+' : ''}${_ta35pct.toFixed(2)}%` : '';
+
+                    const _sys = `אתה יועץ השקעות של MyBursa. ענה בעברית כלכלית תקנית וקצרה.
+
+חוקי ברזל:
+⛔ אסור לשנות אף מספר מ"נתוני תיק" — הם מחושבים מדויקים
+⛔ אסור להזכיר מניות שאינן ב"נתוני תיק" (אין DLEKG, BIG, ENRG וכו')
+⛔ אסור לציין טיקרים (DSCT, AZRG) — שמות בעברית בלבד
+⛔ אסור להמציא אחוזים, מחירים, או סכומים
+
+מה מותר לך לעשות:
+✅ לצטט את הנתונים המחושבים בדיוק
+✅ להסביר את הסיבה לתנועה לפי פרופיל החברה בלבד (אם יש)
+✅ להוסיף הקשר מאקרו-כלכלי מהפרופיל (ריבית, דולר, אנרגיה וכו')
+✅ לסיים עם המלצת פעולה קצרה (להחזיק / לשקול הפחתה / לשקול הגדלה)`;
+
+                    const _user = `${_ta35Str ? _ta35Str + '\n\n' : ''}נתוני תיק מחושבים:\n${_dataStr}\n\n${_profiles}\n\nשאלת המשתמש: "${lastMsg}"\n\nהסבר לכל מניה: מה גרם לתנועה (לפי הפרופיל) + המלצה.`;
+
+                    const _r = await _groq.chat.completions.create({
+                        model: 'llama-3.3-70b-versatile',
+                        max_tokens: mobile ? 480 : 680,
+                        temperature: 0,
+                        messages: [{ role: 'system', content: _sys }, { role: 'user', content: _user }],
+                    });
+                    let _reply = _r.choices[0].message.content;
+                    // נקה טיקרים שנותרו
+                    Object.entries(STOCK_SYMBOLS_HE).forEach(([he, sym]) => {
+                        const bare = sym.replace('.TA','').replace('^','');
+                        if (bare.length >= 2) _reply = _reply.replace(new RegExp(`\\b${bare}\\b`, 'g'), he);
+                    });
+                    _reply = _reply.replace(/\b[A-Z]{3,6}\b/g, '').replace(/  +/g, ' ').trim();
+                    return res.json({ reply: _reply });
                 }
             } catch(e) { console.warn('[portfolio fast-path]', e.message); }
         }
