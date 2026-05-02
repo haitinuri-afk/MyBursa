@@ -859,9 +859,29 @@ async function buildRAGContext(query, quotes) {
     // פרוט ביצועי כל מניה לעומת המדד
     const _allPerf = _holdingPerf.map(s => {
         const vs = _ta35pct != null ? ` | vs תא-35: ${(s.dayPct - _ta35pct) >= 0 ? '+' : ''}${(s.dayPct - _ta35pct).toFixed(2)}%` : '';
-        const tot = `| P/L: ${s.totPct >= 0 ? '+' : ''}${s.totPct.toFixed(2)}%`;
-        return `  ${s.name}: ${s.dayPct >= 0 ? '+' : ''}${s.dayPct.toFixed(2)}% (${s.dayGainIls >= 0 ? '+' : ''}₪${Math.round(s.dayGainIls)}) ${tot}${vs}`;
+        const tot = `| P/L מאז קנייה: ${s.totPct >= 0 ? '+' : ''}${s.totPct.toFixed(2)}%`;
+        return `  ${s.name}: שינוי היום ${s.dayPct >= 0 ? '+' : ''}${s.dayPct.toFixed(2)}% (${s.dayGainIls >= 0 ? '+' : ''}₪${Math.round(s.dayGainIls)}) ${tot}${vs}`;
     }).join('\n');
+
+    // תשואת חסר/יתר מחושבת מראש
+    const _underperf = _ta35pct != null
+        ? [..._holdingPerf]
+            .filter(s => !['מדד תא-35','מדד תא-90'].includes(s.name))
+            .map(s => ({ ...s, delta: s.dayPct - _ta35pct }))
+            .sort((a, b) => a.delta - b.delta)
+        : [];
+    const _underSection = _underperf.filter(s => s.delta < -0.5).length
+        ? `## תשואת חסר מול תא-35 היום (מחושב — ענה רק מכאן):\n` +
+          _underperf.filter(s => s.delta < -0.5)
+            .map(s => `  ${s.name}: ${s.dayPct >= 0 ? '+' : ''}${s.dayPct.toFixed(2)}% | פיגור מהמדד: ${s.delta.toFixed(2)}% | P/L מאז קנייה: ${s.totPct >= 0 ? '+' : ''}${s.totPct.toFixed(2)}%`)
+            .join('\n')
+        : '';
+    const _overSection = _underperf.filter(s => s.delta > 0.5).length
+        ? `## תשואת יתר מול תא-35 היום (מחושב — ענה רק מכאן):\n` +
+          _underperf.filter(s => s.delta > 0.5).reverse()
+            .map(s => `  ${s.name}: +${s.dayPct.toFixed(2)}% | עודף על המדד: +${s.delta.toFixed(2)}% | P/L מאז קנייה: ${s.totPct >= 0 ? '+' : ''}${s.totPct.toFixed(2)}%`)
+            .join('\n')
+        : '';
 
     const portfolioSummary = _totalCost > 0 ? `## סיכום תיק (מחושב — אל תשנה מספרים אלו):
   שווי נוכחי: ₪${Math.round(_totalValue).toLocaleString('he-IL')}
@@ -874,7 +894,9 @@ async function buildRAGContext(query, quotes) {
   הכי תרמו היום (עלייה):\n  ${_bestToday  || 'אין נתון'}
   הכי מפסידות מאז קנייה: ${_worstTotal || 'אין נתון'}
 ## ביצועי כל מניה בתיק היום (מחושב):
-${_allPerf}` : '';
+${_allPerf}
+${_underSection}
+${_overSection}` : '';
 
     const symToHe = Object.fromEntries(Object.entries(STOCK_SYMBOLS_HE).map(([he, sym]) => [sym, he]));
 
@@ -1192,20 +1214,23 @@ app.post('/api/chat', express.json(), async (req, res) => {
 
         // ── Post-process: הסר טיקרים מהתשובה — AI מכיר אותם מהאימון ────────
         const _s2h = Object.fromEntries(Object.entries(STOCK_SYMBOLS_HE).map(([he, sym]) => [sym, he]));
-        // מיפוי גם ללא סיומת .TA: DSCT→דיסקונט, POLI→פועלים
-        const _bare2h = Object.fromEntries(
-            Object.entries(_s2h)
-                .filter(([sym]) => sym.endsWith('.TA'))
-                .map(([sym, he]) => [sym.replace('.TA', ''), he])
-        );
-        const _bareRx = new RegExp(`\\b(${Object.keys(_bare2h).join('|')})\\b`, 'g');
-        let reply = result.choices[0].message.content
-            .replace(/\b([A-Z]{2,6}\.TA)\b/g, (_, t) => _s2h[t] || t)
-            .replace(/\^(TA\d+)/g, (_, i) => _s2h[`^${i}`] || `מדד ${i.replace('TA','תא-')}`)
-            .replace(/\s*\([A-Z]{2,6}(?:\.TA)?\)/g, '')
-            .replace(_bareRx, (_, t) => _bare2h[t] || t)
-            // הסר טיקרים לא מוכרים שנותרו (4-6 אותיות רישיות בודדות)
-            .replace(/\b[A-Z]{4,6}\b/g, '')
+        let reply = result.choices[0].message.content;
+        // 1. החלף XXX.TA → עברי
+        reply = reply.replace(/\b([A-Z]{2,6}\.TA)\b/g, (_, t) => _s2h[t] || t);
+        // 2. החלף ^TAxx → עברי
+        reply = reply.replace(/\^(TA\d+)/g, (_, i) => _s2h[`^${i}`] || `מדד ${i.replace('TA','תא-')}`);
+        // 3. הסר סוגריים עם טיקרים
+        reply = reply.replace(/\s*\([A-Z]{2,6}(?:\.TA)?\)/g, '');
+        // 4. החלף טיקר חשוף לפי שם — כל ערך ב-STOCK_SYMBOLS_HE
+        Object.entries(STOCK_SYMBOLS_HE).forEach(([he, sym]) => {
+            const bare = sym.replace('.TA','').replace('^','');
+            if (bare.length >= 2) {
+                reply = reply.replace(new RegExp(`\\b${bare}\\b`, 'g'), he);
+            }
+        });
+        // 5. הסר שאריות של אותיות רישיות (טיקרים לא מוכרים)
+        reply = reply.replace(/\b[A-Z]{3,6}\b/g, '');
+        reply = reply
             .replace(/השתקע|הסתפח|הניבה הפסד|נפגעה|השתכרה/g, 'ירדה')
             .replace(/  +/g, ' ').trim();
         res.json({ reply });
