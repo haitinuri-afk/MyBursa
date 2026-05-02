@@ -1046,7 +1046,20 @@ app.post('/api/chat', express.json(), async (req, res) => {
 
     try {
         const { messages = [], quotes: clientQuotes = [], mobile = false } = req.body;
-        const quotes    = clientQuotes.length ? clientQuotes : _cachedQuotes;
+        let quotes = clientQuotes.length ? clientQuotes : _cachedQuotes;
+
+        // ── אם אין quotes כלל — שלוף מ-Yahoo לפי מניות התיק ───────────────
+        if (!quotes.length) {
+            try {
+                const _pd  = await loadPortfolio();
+                const syms = Object.keys(_pd.portfolio ?? {}).map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean);
+                if (syms.length) {
+                    const fresh = await fetchV7Quotes(syms);
+                    if (fresh.length) { quotes = fresh; _cachedQuotes = fresh; }
+                }
+            } catch(e) { console.warn('[chat] quote fallback failed:', e.message); }
+        }
+
         const lastMsg   = messages[messages.length - 1]?.content || '';
 
         // ── Fast-path: buy/sell commands bypass AI entirely ───────────────────
