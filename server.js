@@ -1045,6 +1045,9 @@ app.post('/api/chat', express.json(), async (req, res) => {
     _lastChatAt = Date.now();
 
     try {
+        // המתן ל-MongoDB לפני הכל — חיוני אחרי cold start של Render
+        if (_mongoReady) await _mongoReady;
+
         const { messages = [], quotes: clientQuotes = [], mobile = false } = req.body;
         let quotes = clientQuotes.length ? clientQuotes : _cachedQuotes;
 
@@ -1326,6 +1329,7 @@ app.post('/api/portfolio', express.json(), async (req, res) => {
 // Show exactly what the AI sees for chat
 app.get('/api/debug/chat-context', async (req, res) => {
     try {
+        if (_mongoReady) await _mongoReady;
         const portfolioData = await loadPortfolio();
         const quotes        = _cachedQuotes;
         const portfolioKeys = Object.keys(portfolioData.portfolio ?? {});
