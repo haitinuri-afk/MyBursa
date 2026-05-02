@@ -1193,7 +1193,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
             return res.json({ reply: 'אין לי גישה לנתונים היסטוריים — אני עובד עם מחירים חיים של היום בלבד.\nלנתוני ימים קודמים — בדוק ב-Bizportal או ב-Google Finance.' });
         }
 
-        // ── Portfolio data fast-path: חשב תשובה בשרת, שלח ל-AI רק לסיכון ────
+        // ── Portfolio data fast-path: חשב נתונים ישירות, שלח ל-AI רק לסיכון ──
         const _isUnderQ = /תשואת\s*חסר|פיגרו|הפסיד.*מדד|ירד.*מדד|חסר.*מדד/u.test(lastMsg);
         const _isOverQ  = /תשואת\s*יתר|עלו.*מדד|ביצוע\s*עודף/u.test(lastMsg);
         const _isBestQ  = /מי.*עלה|הכי.*עלה|הרוויח.*היום|תרמ/u.test(lastMsg);
@@ -1201,35 +1201,68 @@ app.post('/api/chat', express.json(), async (req, res) => {
 
         if (_isUnderQ || _isOverQ || _isBestQ || _isWorstQ) {
             try {
-                const _ctx = await buildRAGContext(lastMsg, quotes);
-                // חלץ את הסקציה המחושבת הרלוונטית
-                const _secRx = _isUnderQ ? /## תשואת חסר מול תא-35([\s\S]*?)(?=##|$)/
-                             : _isOverQ  ? /## תשואת יתר מול תא-35([\s\S]*?)(?=##|$)/
-                             : /## סיכום תיק([\s\S]*?)(?=##|$)/;
-                const _secMatch = _ctx.match(_secRx);
-                const _computed = _secMatch ? _secMatch[0].trim() : '';
+                // טעון תיק + ודא שיש quotes
+                const _pd = await loadPortfolio();
+                let _q = quotes.length ? quotes : [];
+                if (!_q.length) {
+                    const _syms = Object.keys(_pd.portfolio ?? {}).map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean);
+                    if (_syms.length) { _q = await fetchQuotesBatch(_syms); _cachedQuotes = _q; }
+                }
+                const _ta35q   = _q.find(q => q.symbol === '^TA35');
+                const _ta35pct = _ta35q?.regularMarketPreviousClose
+                    ? ((_ta35q.regularMarketPrice - _ta35q.regularMarketPreviousClose) / _ta35q.regularMarketPreviousClose * 100)
+                    : null;
 
-                if (_computed) {
-                    await Promise.all([fetchNews(), fetchXPosts()]);
-                    const _companyProfiles = await retrieveCompanyProfiles(lastMsg, Object.keys((await loadPortfolio()).portfolio ?? {}));
-                    const _miniSys = `אתה יועץ השקעות. ענה בעברית תקנית בלבד.
-⛔ השתמש אך ורק במניות ובמספרים מ"נתונים מחושבים" — אסור להוסיף מניות אחרות.
-⛔ אסור לציין טיקרים (DSCT, BIG וכו') — שמות בעברית בלבד.
-לכל מניה ברשימה: הוסף משפט אחד על הסיכון המרכזי שלה (מהפרופיל אם יש).`;
-                    const _miniUser = `שאלה: ${lastMsg}\n\nנתונים מחושבים (אמין — השתמש רק בהם):\n${_computed}\n\n${_companyProfiles}\n\nעצב תשובה קצרה ומסודרת. אל תוסיף מניות שלא ברשימה.`;
-                    const _r = await _groq.chat.completions.create({
-                        model: 'llama-3.3-70b-versatile',
-                        max_tokens: mobile ? 500 : 700,
-                        temperature: 0,
-                        messages: [{ role: 'system', content: _miniSys }, { role: 'user', content: _miniUser }],
-                    });
-                    let _reply = _r.choices[0].message.content;
-                    Object.entries(STOCK_SYMBOLS_HE).forEach(([he, sym]) => {
-                        const bare = sym.replace('.TA','').replace('^','');
-                        if (bare.length >= 2) _reply = _reply.replace(new RegExp(`\\b${bare}\\b`, 'g'), he);
-                    });
-                    _reply = _reply.replace(/\b[A-Z]{3,6}\b/g, '').replace(/  +/g, ' ').trim();
-                    return res.json({ reply: _reply });
+                // חשב ביצועי כל מניה בתיק
+                const _hp = [];
+                Object.entries(_pd.portfolio ?? {}).forEach(([name, h]) => {
+                    if (['מדד תא-35','מדד תא-90'].includes(name)) return;
+                    const sym   = STOCK_SYMBOLS_HE[name];
+                    const qd    = sym && _q.find(q => q.symbol === sym);
+                    if (!qd?.regularMarketPrice) return;
+                    const cur   = qd.regularMarketPrice;
+                    const prev  = qd.regularMarketPreviousClose ?? cur;
+                    const dayPct    = prev > 0 ? ((cur - prev) / prev * 100) : 0;
+                    const avgCost   = h.buyPrice ?? h.avgCost ?? 0;
+                    const totPct    = avgCost > 0 ? ((cur - avgCost) / avgCost * 100) : 0;
+                    const dayGainIls = (cur - prev) * (h.qty ?? 0);
+                    const delta     = _ta35pct != null ? dayPct - _ta35pct : null;
+                    _hp.push({ name, dayPct, totPct, dayGainIls, delta });
+                });
+
+                if (_hp.length) {
+                    let _list;
+                    if (_isWorstQ || _isBestQ) {
+                        _list = [..._hp].sort((a,b) => a.dayPct - b.dayPct);
+                        _list = _isWorstQ ? _list.slice(0,3) : _list.slice(-3).reverse();
+                    } else if (_isUnderQ) {
+                        _list = _hp.filter(s => (s.delta ?? 0) < -0.3).sort((a,b) => a.delta - b.delta);
+                    } else {
+                        _list = _hp.filter(s => (s.delta ?? 0) > 0.3).sort((a,b) => b.delta - a.delta);
+                    }
+
+                    if (_list.length) {
+                        const _dataStr = _list.map(s => {
+                            const vs = s.delta != null ? ` | פיגור מתא-35: ${s.delta >= 0 ? '+' : ''}${s.delta.toFixed(2)}%` : '';
+                            return `${s.name}: ${s.dayPct >= 0 ? '+' : ''}${s.dayPct.toFixed(2)}% (${s.dayGainIls >= 0 ? '+' : ''}₪${Math.round(s.dayGainIls)}) | P/L מאז קנייה: ${s.totPct >= 0 ? '+' : ''}${s.totPct.toFixed(2)}%${vs}`;
+                        }).join('\n');
+
+                        const _profiles = await retrieveCompanyProfiles(lastMsg, _list.map(s => s.name));
+                        const _miniSys  = `אתה יועץ השקעות. ענה בעברית תקנית קצרה.\n⛔ השתמש רק במניות מ"רשימת מניות" — אסור להוסיף מניות אחרות.\n⛔ שמות בעברית בלבד, אסור טיקרים.`;
+                        const _miniUser = `שאלה: ${lastMsg}\n\nרשימת מניות (נתונים מדויקים, אל תשנה):\n${_dataStr}\n\n${_profiles}\n\nעצב תשובה: לכל מניה — שם | % יומי | P/L | (אם רלוונטי) פיגור מהמדד | סיכון מרכזי משפט אחד.`;
+
+                        const _r = await _groq.chat.completions.create({
+                            model: 'llama-3.3-70b-versatile', max_tokens: mobile ? 450 : 650, temperature: 0,
+                            messages: [{ role: 'system', content: _miniSys }, { role: 'user', content: _miniUser }],
+                        });
+                        let _reply = _r.choices[0].message.content;
+                        Object.entries(STOCK_SYMBOLS_HE).forEach(([he, sym]) => {
+                            const bare = sym.replace('.TA','').replace('^','');
+                            if (bare.length >= 2) _reply = _reply.replace(new RegExp(`\\b${bare}\\b`, 'g'), he);
+                        });
+                        _reply = _reply.replace(/\b[A-Z]{3,6}\b/g, '').replace(/  +/g, ' ').trim();
+                        return res.json({ reply: _reply });
+                    }
                 }
             } catch(e) { console.warn('[portfolio fast-path]', e.message); }
         }
