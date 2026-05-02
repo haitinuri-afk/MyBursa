@@ -1134,9 +1134,9 @@ app.post('/api/chat', express.json(), async (req, res) => {
         // ── End fast-path ──────────────────────────────────────────────────────
 
         // ── Historical query guard — no past data available ───────────────────
-        const _histWords = ['אתמול','שלשום','שבוע שעבר','חודש שעבר','לפני שבוע','לפני חודש','ביצועי אתמול'];
-        if (_histWords.some(w => lastMsg.includes(w))) {
-            return res.json({ reply: 'אין לי גישה לנתונים היסטוריים — המערכת מציגה רק מחירים חיים של יום המסחר הנוכחי.\nלנתוני אתמול ומעבר לכך — בדוק ב-Bizportal או ב-Google Finance.' });
+        const _histRx = /אתמול|שלשום|שבוע\s*שעבר|חודש\s*שעבר|לפני\s*שבוע|לפני\s*חודש|ביום\s*שישי|ביום\s*חמישי/u;
+        if (_histRx.test(lastMsg)) {
+            return res.json({ reply: 'אין לי גישה לנתונים היסטוריים — אני עובד עם מחירים חיים של היום בלבד.\nלנתוני ימים קודמים — בדוק ב-Bizportal או ב-Google Finance.' });
         }
 
         await Promise.all([fetchNews(), fetchXPosts()]);
@@ -1154,7 +1154,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
         const result = await _groq.chat.completions.create({
             model:       'llama-3.3-70b-versatile',
             max_tokens:  mobile ? 500 : 700,
-            temperature: 0.1,
+            temperature: 0,
             messages:    groqMessages,
         });
 
