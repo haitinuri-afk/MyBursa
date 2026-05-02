@@ -410,23 +410,14 @@ async function fetchV7Quotes(symList) {
     }
 }
 
-// GET /api/stock/batch?symbols=LUMI.TA,POLI.TA,^TA35,...
-app.get('/api/stock/batch', async (req, res) => {
-    const { symbols } = req.query;
-    if (!symbols) return res.status(400).json({ error: 'symbols required' });
-
-    const symList = symbols.split(',').map(s => s.trim()).filter(Boolean);
+// Core quote fetching — reused by HTTP endpoint and chat fallback
+async function fetchQuotesBatch(symList) {
     const todayUtcMs = new Date().setUTCHours(0, 0, 0, 0);
-
     const settled = await Promise.allSettled(symList.map(async sym => {
         const { meta, result: chartResult, canonicalSymbol } = await fetchChartMeta(sym, '5d');
         const currency  = meta.currency;
         const rawCloses = chartResult?.indicators?.quote?.[0]?.close ?? [];
         const timestamps = chartResult?.timestamp ?? [];
-
-        // Collect the last two distinct-day closes before today.
-        // When market is closed in the morning, regularMarketPrice == latestClose (no new session yet),
-        // so we use secondClose as prevClose to show yesterday's actual change.
         let latestClose = null, secondClose = null, latestDay = null;
         for (let i = timestamps.length - 1; i >= 0; i--) {
             const val = rawCloses[i];
@@ -436,7 +427,6 @@ app.get('/api/stock/batch', async (req, res) => {
             if (latestClose === null) { latestClose = val; latestDay = dayMs; }
             else if (dayMs < latestDay) { secondClose = val; break; }
         }
-        // If price == latestClose the current session hasn't diverged yet — show yesterday's move
         const livePrice = meta.regularMarketPrice;
         const useSecond = secondClose !== null && latestClose !== null &&
                           Math.abs(livePrice - latestClose) / latestClose < 0.0001;
@@ -451,14 +441,21 @@ app.get('/api/stock/batch', async (req, res) => {
         _lastKnownPrices[sym] = result;
         return result;
     }));
-
     const results = [];
     settled.forEach((r, i) => {
         if (r.status === 'fulfilled') results.push(r.value);
         else if (_lastKnownPrices[symList[i]]) results.push(_lastKnownPrices[symList[i]]);
         else console.warn(`[batch] ${symList[i]}: ${r.reason?.message}`);
     });
+    return results;
+}
 
+// GET /api/stock/batch?symbols=LUMI.TA,POLI.TA,^TA35,...
+app.get('/api/stock/batch', async (req, res) => {
+    const { symbols } = req.query;
+    if (!symbols) return res.status(400).json({ error: 'symbols required' });
+    const symList = symbols.split(',').map(s => s.trim()).filter(Boolean);
+    const results = await fetchQuotesBatch(symList);
     const serverOpen  = isMarketOpen();
     const marketState = serverOpen ? 'REGULAR' : 'CLOSED';
     console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen}`);
@@ -1051,13 +1048,14 @@ app.post('/api/chat', express.json(), async (req, res) => {
         const { messages = [], quotes: clientQuotes = [], mobile = false } = req.body;
         let quotes = clientQuotes.length ? clientQuotes : _cachedQuotes;
 
-        // ── אם אין quotes כלל — שלוף מ-Yahoo לפי מניות התיק ───────────────
+        // ── אם אין quotes — שלוף עם applyDivisor מלא ────────────────────────
         if (!quotes.length) {
             try {
                 const _pd  = await loadPortfolio();
                 const syms = Object.keys(_pd.portfolio ?? {}).map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean);
                 if (syms.length) {
-                    const fresh = await fetchV7Quotes(syms);
+                    console.log('[chat] cold-start: fetching', syms.length, 'portfolio quotes');
+                    const fresh = await fetchQuotesBatch(syms);
                     if (fresh.length) { quotes = fresh; _cachedQuotes = fresh; }
                 }
             } catch(e) { console.warn('[chat] quote fallback failed:', e.message); }
@@ -1331,8 +1329,16 @@ app.get('/api/debug/chat-context', async (req, res) => {
     try {
         if (_mongoReady) await _mongoReady;
         const portfolioData = await loadPortfolio();
-        const quotes        = _cachedQuotes;
         const portfolioKeys = Object.keys(portfolioData.portfolio ?? {});
+        const syms = portfolioKeys.map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean);
+
+        // Fetch fresh quotes for portfolio stocks
+        let quotes = _cachedQuotes;
+        if (!quotes.length && syms.length) {
+            quotes = await fetchQuotesBatch(syms);
+            if (quotes.length) _cachedQuotes = quotes;
+        }
+
         const matchedQuotes = portfolioKeys.map(name => {
             const sym   = STOCK_SYMBOLS_HE[name];
             const quote = sym && quotes.find(q => q.symbol === sym);
@@ -1343,7 +1349,6 @@ app.get('/api/debug/chat-context', async (req, res) => {
             matchedQuotes,
             cachedQuotesCount: quotes.length,
             mongoReady: !!_portfolioCol,
-            portfolioDoc: portfolioData,
         });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
