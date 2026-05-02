@@ -1159,7 +1159,18 @@ app.post('/api/chat', express.json(), async (req, res) => {
             messages:    groqMessages,
         });
 
-        res.json({ reply: result.choices[0].message.content });
+        // ── Post-process: הסר טיקרים מהתשובה — AI מכיר אותם מהאימון ────────
+        const _s2h = Object.fromEntries(Object.entries(STOCK_SYMBOLS_HE).map(([he, sym]) => [sym, he]));
+        let reply = result.choices[0].message.content
+            // החלף XXX.TA → שם עברי
+            .replace(/\b([A-Z]{2,6}\.TA)\b/g, (_, t) => _s2h[t] || t)
+            // החלף ^TA35/^TA90 → שם עברי
+            .replace(/\^(TA\d+)/g, (_, i) => _s2h[`^${i}`] || `מדד ${i.replace('TA', 'תא-')}`)
+            // הסר טיקרים בסוגריים: (NICE), (TSEM)
+            .replace(/\s*\([A-Z]{2,6}\)/g, '')
+            // תיקוני Hebrew פועלים שגויים
+            .replace(/השתקע|הסתפח|הניבה הפסד|נפגעה|השתכרה/g, 'ירדה');
+        res.json({ reply });
     } catch (e) {
         console.error('[/api/chat]', e.message);
         if (e.status === 429 || e.message?.includes('rate')) {
