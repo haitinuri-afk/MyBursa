@@ -1242,15 +1242,27 @@ app.post('/api/chat', express.json(), async (req, res) => {
                     }
 
                     if (_list.length) {
-                        const _dataStr = _list.map(s => {
-                            const vs = s.delta != null ? ` | פיגור מתא-35: ${s.delta >= 0 ? '+' : ''}${s.delta.toFixed(2)}%` : '';
-                            return `${s.name}: ${s.dayPct >= 0 ? '+' : ''}${s.dayPct.toFixed(2)}% (${s.dayGainIls >= 0 ? '+' : ''}₪${Math.round(s.dayGainIls)}) | P/L מאז קנייה: ${s.totPct >= 0 ? '+' : ''}${s.totPct.toFixed(2)}%${vs}`;
-                        }).join('\n');
+                        // ── תשובה ישירה מהשרת — ללא AI לנתוני תיק פשוטים ──────
+                        const _fmt = s => {
+                            const sign   = s.dayPct >= 0 ? '+' : '';
+                            const gainFmt = `${s.dayGainIls >= 0 ? '+' : ''}₪${Math.abs(Math.round(s.dayGainIls)).toLocaleString('he-IL')}`;
+                            const plSign = s.totPct >= 0 ? '+' : '';
+                            const vs     = s.delta != null ? ` | פיגור מתא-35: ${s.delta >= 0 ? '+' : ''}${s.delta.toFixed(2)}%` : '';
+                            return `**${s.name}** — ${sign}${s.dayPct.toFixed(2)}% (${gainFmt}) | P/L מאז קנייה: ${plSign}${s.totPct.toFixed(2)}%${vs}`;
+                        };
 
+                        // לשאלת "מי פגע" / "מי עלה" — תשובה קצרה ישירה
+                        if ((_isWorstQ || _isBestQ) && !_isUnderQ && !_isOverQ) {
+                            const top = _list[0];
+                            const verb = _isWorstQ ? 'הכי פגעה' : 'הכי תרמה';
+                            return res.json({ reply: `המניה ש${verb} לך היום:\n${_fmt(top)}` });
+                        }
+
+                        // לתשואת חסר/יתר — כל הרשימה + AI מוסיף רק סיכון
+                        const _dataStr  = _list.map(_fmt).join('\n');
                         const _profiles = await retrieveCompanyProfiles(lastMsg, _list.map(s => s.name));
-                        const _miniSys  = `אתה יועץ השקעות. ענה בעברית תקנית קצרה.\n⛔ השתמש רק במניות מ"רשימת מניות" — אסור להוסיף מניות אחרות.\n⛔ שמות בעברית בלבד, אסור טיקרים.`;
-                        const _miniUser = `שאלה: ${lastMsg}\n\nרשימת מניות (נתונים מדויקים, אל תשנה):\n${_dataStr}\n\n${_profiles}\n\nעצב תשובה: לכל מניה — שם | % יומי | P/L | (אם רלוונטי) פיגור מהמדד | סיכון מרכזי משפט אחד.`;
-
+                        const _miniSys  = `אתה יועץ השקעות. ענה בעברית תקנית.\n⛔ אל תשנה אף מספר מ"רשימת מניות".\n⛔ שמות בעברית בלבד.\nלכל מניה הוסף משפט אחד — הסיכון המרכזי שלה לפי הפרופיל.`;
+                        const _miniUser = `${_dataStr}\n\n${_profiles}\n\nהוסף לכל מניה ברשימה שורת סיכון קצרה בלבד. אל תוסיף מניות.`;
                         const _r = await _groq.chat.completions.create({
                             model: 'llama-3.3-70b-versatile', max_tokens: mobile ? 450 : 650, temperature: 0,
                             messages: [{ role: 'system', content: _miniSys }, { role: 'user', content: _miniUser }],
