@@ -2232,6 +2232,13 @@ async function sendAIMessage() {
     _aiHistory.push({ role: 'user', content: text });
     try { localStorage.setItem('aiHistory', JSON.stringify(_aiHistory.slice(-20))); } catch {}
 
+    // ── חסום שאלות היסטוריות לפני קריאה לשרת ─────────────────────────────
+    if (/אתמול|שלשום|שבוע שעבר|חודש שעבר|לפני שבוע|לפני חודש|ביום שישי|ביום חמישי/.test(text)) {
+        addAIMessage('assistant', 'אין לי גישה לנתונים היסטוריים — אני עובד עם מחירים חיים של היום בלבד.\nלנתוני ימים קודמים — בדוק ב-Bizportal או ב-Google Finance.');
+        btn.disabled = false;
+        return;
+    }
+
     const thinkRow = document.createElement('div');
     thinkRow.id = 'ai-thinking';
     thinkRow.style.cssText = 'display:flex;justify-content:flex-start;margin:2px 0';
