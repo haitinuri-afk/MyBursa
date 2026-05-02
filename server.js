@@ -1193,6 +1193,47 @@ app.post('/api/chat', express.json(), async (req, res) => {
             return res.json({ reply: 'אין לי גישה לנתונים היסטוריים — אני עובד עם מחירים חיים של היום בלבד.\nלנתוני ימים קודמים — בדוק ב-Bizportal או ב-Google Finance.' });
         }
 
+        // ── Portfolio data fast-path: חשב תשובה בשרת, שלח ל-AI רק לסיכון ────
+        const _isUnderQ = /תשואת\s*חסר|פיגרו|הפסיד.*מדד|ירד.*מדד|חסר.*מדד/u.test(lastMsg);
+        const _isOverQ  = /תשואת\s*יתר|עלו.*מדד|ביצוע\s*עודף/u.test(lastMsg);
+        const _isBestQ  = /מי.*עלה|הכי.*עלה|הרוויח.*היום|תרמ/u.test(lastMsg);
+        const _isWorstQ = /מי.*פגע|הכי.*ירד|הכי.*פגע|הפסיד.*היום/u.test(lastMsg);
+
+        if (_isUnderQ || _isOverQ || _isBestQ || _isWorstQ) {
+            try {
+                const _ctx = await buildRAGContext(lastMsg, quotes);
+                // חלץ את הסקציה המחושבת הרלוונטית
+                const _secRx = _isUnderQ ? /## תשואת חסר מול תא-35([\s\S]*?)(?=##|$)/
+                             : _isOverQ  ? /## תשואת יתר מול תא-35([\s\S]*?)(?=##|$)/
+                             : /## סיכום תיק([\s\S]*?)(?=##|$)/;
+                const _secMatch = _ctx.match(_secRx);
+                const _computed = _secMatch ? _secMatch[0].trim() : '';
+
+                if (_computed) {
+                    await Promise.all([fetchNews(), fetchXPosts()]);
+                    const _companyProfiles = await retrieveCompanyProfiles(lastMsg, Object.keys((await loadPortfolio()).portfolio ?? {}));
+                    const _miniSys = `אתה יועץ השקעות. ענה בעברית תקנית בלבד.
+⛔ השתמש אך ורק במניות ובמספרים מ"נתונים מחושבים" — אסור להוסיף מניות אחרות.
+⛔ אסור לציין טיקרים (DSCT, BIG וכו') — שמות בעברית בלבד.
+לכל מניה ברשימה: הוסף משפט אחד על הסיכון המרכזי שלה (מהפרופיל אם יש).`;
+                    const _miniUser = `שאלה: ${lastMsg}\n\nנתונים מחושבים (אמין — השתמש רק בהם):\n${_computed}\n\n${_companyProfiles}\n\nעצב תשובה קצרה ומסודרת. אל תוסיף מניות שלא ברשימה.`;
+                    const _r = await _groq.chat.completions.create({
+                        model: 'llama-3.3-70b-versatile',
+                        max_tokens: mobile ? 500 : 700,
+                        temperature: 0,
+                        messages: [{ role: 'system', content: _miniSys }, { role: 'user', content: _miniUser }],
+                    });
+                    let _reply = _r.choices[0].message.content;
+                    Object.entries(STOCK_SYMBOLS_HE).forEach(([he, sym]) => {
+                        const bare = sym.replace('.TA','').replace('^','');
+                        if (bare.length >= 2) _reply = _reply.replace(new RegExp(`\\b${bare}\\b`, 'g'), he);
+                    });
+                    _reply = _reply.replace(/\b[A-Z]{3,6}\b/g, '').replace(/  +/g, ' ').trim();
+                    return res.json({ reply: _reply });
+                }
+            } catch(e) { console.warn('[portfolio fast-path]', e.message); }
+        }
+
         await Promise.all([fetchNews(), fetchXPosts()]);
         const systemCtx = await buildRAGContext(lastMsg, quotes);
         console.log('[chat] quotes used:', quotes.length, '| portfolio:', systemCtx.slice(systemCtx.indexOf('## תיק'), systemCtx.indexOf('## תיק') + 200));
