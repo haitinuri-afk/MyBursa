@@ -1613,13 +1613,19 @@ app.get('/api/debug/chat-context', async (req, res) => {
             if (value) totalVal += value;
             return { name, sym, qty, price, value, prev: quote?.regularMarketPreviousClose ?? null, raw: h };
         });
-        res.json({
-            portfolioKeys,
-            matchedQuotes,
-            totalVal: Math.round(totalVal),
-            cachedQuotesCount: quotes.length,
-            mongoReady: !!_portfolioCol,
-        });
+        const rows = matchedQuotes.map(m =>
+            `<tr><td>${m.name}</td><td>${m.sym||'—'}</td><td>${m.qty}</td>` +
+            `<td>${m.price!=null?'₪'+m.price.toFixed(2):'❌'}</td>` +
+            `<td>${m.value!=null?'₪'+Math.round(m.value).toLocaleString():'❌'}</td>` +
+            `<td style="font-size:11px;color:#666">${JSON.stringify(m.raw)}</td></tr>`
+        ).join('');
+        res.setHeader('Content-Type','text/html; charset=utf-8');
+        res.send(`<html dir="rtl"><body style="font:14px sans-serif;padding:12px">
+        <h3>תיק — ${matchedQuotes.length} מניות | סה"כ: ₪${Math.round(totalVal).toLocaleString()} | מונגו: ${!!_portfolioCol}</h3>
+        <table border="1" cellpadding="6" style="border-collapse:collapse;width:100%">
+        <tr><th>שם</th><th>סימול</th><th>כמות</th><th>מחיר</th><th>שווי</th><th>raw</th></tr>
+        ${rows}
+        </table></body></html>`);
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
