@@ -1609,6 +1609,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (new URLSearchParams(location.search).has('toast'))
         setTimeout(() => showToast('✅ MyBursa מחובר ועדכני'), 1000);
 
+    // ── ברכת כניסה ──────────────────────────────────────────────────────────
+    const _h = new Date().getHours();
+    const _greet = _h < 12 ? 'בוקר טוב ☀️' : _h < 17 ? 'צהריים טובים 🌤️' : _h < 21 ? 'ערב טוב 🌆' : 'לילה טוב 🌙';
+    setTimeout(() => showToast(`${_greet} — MyBursa מוכן`, { duration: 4000, color: '#1a73e8' }), 600);
+
     // Refresh intraday session bars every 5 minutes
     setInterval(loadSessionHistory, 5 * 60 * 1000);
 
