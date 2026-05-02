@@ -1218,14 +1218,19 @@ app.post('/api/chat', express.json(), async (req, res) => {
             try {
                 // ── 1a. טעון תיק + ודא מחירים ──────────────────────────────
                 const _pd = await loadPortfolio();
-                let _q = quotes.length ? quotes : [];
-                if (!_q.length) {
-                    const _syms = Object.keys(_pd.portfolio ?? {})
-                        .map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean);
-                    if (_syms.length) { _q = await fetchQuotesBatch(_syms); _cachedQuotes = _q; }
+                const _portSyms = Object.keys(_pd.portfolio ?? {})
+                    .map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean);
+                // Use client quotes if they cover the portfolio; otherwise fetch fresh
+                let _q = quotes.filter(q => _portSyms.includes(q.symbol));
+                if (_q.length < _portSyms.length * 0.8) {
+                    // Client quotes are incomplete — fetch server-side
+                    if (_portSyms.length) { _q = await fetchQuotesBatch(_portSyms); _cachedQuotes = _q; }
                 }
+                // Merge with _cachedQuotes for any remaining gaps
+                const _merge = sym => _q.find(q => q.symbol === sym)
+                    ?? _cachedQuotes.find(q => q.symbol === sym);
 
-                const _ta35q    = _q.find(q => q.symbol === '^TA35');
+                const _ta35q    = _merge('^TA35');
                 const _ta35pct  = _ta35q?.regularMarketPreviousClose
                     ? ((_ta35q.regularMarketPrice - _ta35q.regularMarketPreviousClose)
                        / _ta35q.regularMarketPreviousClose * 100) : null;
@@ -1235,7 +1240,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
                 const _hp = [];
                 Object.entries(_pd.portfolio ?? {}).forEach(([name, h]) => {
                     const sym  = STOCK_SYMBOLS_HE[name];
-                    const qd   = sym && _q.find(q => q.symbol === sym);
+                    const qd   = sym && _merge(sym);
                     if (!qd?.regularMarketPrice) return;
                     const cur  = qd.regularMarketPrice;
                     const prev = qd.regularMarketPreviousClose ?? cur;

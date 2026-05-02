@@ -9,30 +9,33 @@ function showToast(msg, { duration = 3000, color = '#1db954' } = {}) {
         el.id = '_app-toast';
         el.style.cssText = [
             'position:fixed',
-            'top:0','left:0','right:0',
-            'padding:14px 20px',
-            'padding-top:calc(14px + env(safe-area-inset-top, 0px))',
-            'background:#1a1a2e','color:#fff',
-            'font-size:15px','font-weight:600',
-            'text-align:center','direction:rtl',
+            'top:calc(18px + env(safe-area-inset-top, 0px))',
+            'left:50%',
+            '-webkit-transform:translateX(-50%) translateY(-80px)',
+            'transform:translateX(-50%) translateY(-80px)',
+            'background:rgba(20,20,35,0.92)',
+            'color:#fff',
+            'padding:10px 22px',
+            'border-radius:32px',
+            'font-size:14px','font-weight:600',
+            'white-space:nowrap','direction:rtl',
             'z-index:2147483647','pointer-events:none',
-            'border-bottom:3px solid #1db954',
-            'box-shadow:0 2px 12px rgba(0,0,0,.5)',
-            '-webkit-transform:translateY(-110%)','transform:translateY(-110%)',
-            '-webkit-transition:-webkit-transform .3s ease','transition:transform .3s ease'
+            'backdrop-filter:blur(12px)','-webkit-backdrop-filter:blur(12px)',
+            'box-shadow:0 4px 24px rgba(0,0,0,.35)',
+            '-webkit-transition:-webkit-transform .35s cubic-bezier(.34,1.56,.64,1)',
+            'transition:transform .35s cubic-bezier(.34,1.56,.64,1)'
         ].join(';');
         document.documentElement.appendChild(el);
     }
     el.textContent = msg;
-    el.style.borderBottomColor = color;
-    // force reflow so transition fires on iOS
+    el.style.borderBottom = `2px solid ${color}`;
     void el.offsetHeight;
-    el.style.webkitTransform = 'translateY(0)';
-    el.style.transform       = 'translateY(0)';
+    el.style.webkitTransform = 'translateX(-50%) translateY(0)';
+    el.style.transform       = 'translateX(-50%) translateY(0)';
     clearTimeout(el._t);
     el._t = setTimeout(() => {
-        el.style.webkitTransform = 'translateY(-110%)';
-        el.style.transform       = 'translateY(-110%)';
+        el.style.webkitTransform = 'translateX(-50%) translateY(-80px)';
+        el.style.transform       = 'translateX(-50%) translateY(-80px)';
     }, duration);
 }
 
