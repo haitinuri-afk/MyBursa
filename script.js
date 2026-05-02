@@ -1,6 +1,32 @@
 const STORAGE_KEY   = 'trading_station_pro_data_v2';
 const PORTFOLIO_KEY = 'trading_station_portfolio';
 
+// ── Toast notifications ────────────────────────────────────────────────────
+function showToast(msg, { duration = 3000, color = '#1db954' } = {}) {
+    let el = document.getElementById('_app-toast');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = '_app-toast';
+        el.style.cssText = [
+            'position:fixed','bottom:80px','left:50%','transform:translateX(-50%) translateY(20px)',
+            'background:#1a1a2e','color:#fff','padding:10px 20px','border-radius:24px',
+            'font-size:14px','font-weight:600','z-index:9999','opacity:0',
+            'transition:opacity .3s,transform .3s','pointer-events:none',
+            'box-shadow:0 4px 20px rgba(0,0,0,.4)','direction:rtl','white-space:nowrap'
+        ].join(';');
+        document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.style.borderLeft = `4px solid ${color}`;
+    el.style.opacity    = '1';
+    el.style.transform  = 'translateX(-50%) translateY(0)';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => {
+        el.style.opacity   = '0';
+        el.style.transform = 'translateX(-50%) translateY(20px)';
+    }, duration);
+}
+
 
 // Yahoo Finance ticker symbols for each Hebrew stock name
 const STOCK_SYMBOLS = {
@@ -375,6 +401,7 @@ async function refreshRealData() {
         }
         return;
     }
+    if (window._wakeAttempts > 0) showToast('✅ MyBursa מחובר ועדכני');
     window._wakeAttempts = 0;
 
     const { marketState = 'CLOSED', quotes: quoteList } = quotes;
