@@ -8,22 +8,31 @@ function showToast(msg, { duration = 3000, color = '#1db954' } = {}) {
         el = document.createElement('div');
         el.id = '_app-toast';
         el.style.cssText = [
-            'position:fixed','bottom:80px','left:50%','transform:translateX(-50%) translateY(20px)',
-            'background:#1a1a2e','color:#fff','padding:10px 20px','border-radius:24px',
-            'font-size:14px','font-weight:600','z-index:9999','opacity:0',
-            'transition:opacity .3s,transform .3s','pointer-events:none',
-            'box-shadow:0 4px 20px rgba(0,0,0,.4)','direction:rtl','white-space:nowrap'
+            'position:fixed',
+            'top:0','left:0','right:0',
+            'padding:14px 20px',
+            'padding-top:calc(14px + env(safe-area-inset-top, 0px))',
+            'background:#1a1a2e','color:#fff',
+            'font-size:15px','font-weight:600',
+            'text-align:center','direction:rtl',
+            'z-index:2147483647','pointer-events:none',
+            'border-bottom:3px solid #1db954',
+            'box-shadow:0 2px 12px rgba(0,0,0,.5)',
+            '-webkit-transform:translateY(-110%)','transform:translateY(-110%)',
+            '-webkit-transition:-webkit-transform .3s ease','transition:transform .3s ease'
         ].join(';');
-        document.body.appendChild(el);
+        document.documentElement.appendChild(el);
     }
     el.textContent = msg;
-    el.style.borderLeft = `4px solid ${color}`;
-    el.style.opacity    = '1';
-    el.style.transform  = 'translateX(-50%) translateY(0)';
+    el.style.borderBottomColor = color;
+    // force reflow so transition fires on iOS
+    void el.offsetHeight;
+    el.style.webkitTransform = 'translateY(0)';
+    el.style.transform       = 'translateY(0)';
     clearTimeout(el._t);
     el._t = setTimeout(() => {
-        el.style.opacity   = '0';
-        el.style.transform = 'translateX(-50%) translateY(20px)';
+        el.style.webkitTransform = 'translateY(-110%)';
+        el.style.transform       = 'translateY(-110%)';
     }, duration);
 }
 
@@ -390,19 +399,22 @@ async function refreshRealData() {
 
     if (quotes === null) {
         setDataStatus('wake', 'השרת מתעורר…');
+        window._wasWaking   = true;
         window._wakeAttempts = (window._wakeAttempts || 0) + 1;
-        // נסה כל 5 שניות עד 10 ניסיונות (50 שניות) — מספיק לכל cold-start
-        if (window._wakeAttempts <= 10) {
+        // נסה כל 5 שניות עד 24 ניסיונות (120 שניות) — מספיק לכל cold-start של Render
+        if (window._wakeAttempts <= 24) {
             setTimeout(refreshRealData, 5000);
         } else {
             window._wakeAttempts = 0;
+            window._wasWaking    = false;
             setDataStatus('error', 'לא ניתן להתחבר — בדוק חיבור אינטרנט');
             scheduleFetch();
         }
         return;
     }
-    if (window._wakeAttempts > 0) showToast('✅ MyBursa מחובר ועדכני');
+    if (window._wasWaking) showToast('✅ MyBursa מחובר ועדכני');
     window._wakeAttempts = 0;
+    window._wasWaking    = false;
 
     const { marketState = 'CLOSED', quotes: quoteList } = quotes;
     window._lastQuotes = quoteList;
@@ -1594,6 +1606,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     refreshRealData().then(loadSessionHistory);
     scheduleFetch();
+    if (new URLSearchParams(location.search).has('toast'))
+        setTimeout(() => showToast('✅ MyBursa מחובר ועדכני'), 1000);
 
     // Refresh intraday session bars every 5 minutes
     setInterval(loadSessionHistory, 5 * 60 * 1000);

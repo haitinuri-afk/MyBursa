@@ -1197,15 +1197,22 @@ app.post('/api/chat', express.json(), async (req, res) => {
         // שלב 1 — PORTFOLIO FAST-PATH
         // זיהוי שאלות תיק → חישוב אריתמטי בשרת → ללא AI לנתוני עובדות
         // ════════════════════════════════════════════════════════════════════
+        // Check if question mentions a portfolio stock by Hebrew name
+        const _portfolioStockNames = Object.keys(STOCK_SYMBOLS_HE).filter(n => !n.startsWith('מדד'));
+        const _mentionsPortfolioStock = _portfolioStockNames.some(n => lastMsg.includes(n));
+
         const _Q = {
-            worst:  /מי.*פגע|הכי.*ירד|הכי.*פגע|הפסיד.*היום|פגעה.*היום/u.test(lastMsg),
-            best:   /מי.*עלה|הכי.*עלה|הרוויח.*היום|תרמ|הכי.*תרמ/u.test(lastMsg),
-            under:  /תשואת\s*חסר|פיגרו|חסר.*מדד|פיגור.*מדד/u.test(lastMsg),
-            over:   /תשואת\s*יתר|עלו.*מדד|עודף.*מדד/u.test(lastMsg),
-            total:  /כמה\s*שווה|שווי\s*תיק|סה"כ\s*תיק|רווח\s*כולל|הפסד\s*כולל/u.test(lastMsg),
+            worst:   /מי.*פגע|הכי.*ירד|הכי.*פגע|הפסיד.*היום|פגעה.*היום/u.test(lastMsg),
+            best:    /מי.*עלה|הכי.*עלה|הרוויח.*היום|תרמ|הכי.*תרמ/u.test(lastMsg),
+            toppl:   /הכי.*מורווח|מורווח.*ביותר|הכי.*רווחי|הרווחי.*ביותר|הכי.*מרוויח|הכי.*הרוויח|הכי.*מפסיד|הכי.*הפסיד(?!.*היום)/u.test(lastMsg),
+            worstpl: /הכי.*מפסיד|הכי.*הפסיד(?!.*היום)/u.test(lastMsg),
+            under:   /תשואת\s*חסר|פיגרו|חסר.*מדד|פיגור.*מדד/u.test(lastMsg),
+            over:    /תשואת\s*יתר|עלו.*מדד|עודף.*מדד/u.test(lastMsg),
+            total:   /כמה\s*שווה|שווי\s*תיק|סה"כ\s*תיק|רווח\s*כולל|הפסד\s*כולל/u.test(lastMsg),
             needWhy: /למה|מדוע|בגלל|סיכון|גורם|סיבה|מה\s*קרה/u.test(lastMsg),
+            stock:   _mentionsPortfolioStock,
         };
-        const _isPortfolioQ = _Q.worst || _Q.best || _Q.under || _Q.over || _Q.total;
+        const _isPortfolioQ = _Q.worst || _Q.best || _Q.toppl || _Q.worstpl || _Q.under || _Q.over || _Q.total || _Q.stock;
 
         if (_isPortfolioQ) {
             try {
@@ -1252,6 +1259,9 @@ app.post('/api/chat', express.json(), async (req, res) => {
                 if (_Q.worst || _Q.best) {
                     _list = [..._hp].sort((a,b) => a.dayPct - b.dayPct);
                     _list = _Q.worst ? _list.slice(0,3) : _list.slice(-3).reverse();
+                } else if (_Q.toppl || _Q.worstpl) {
+                    _list = [..._hp].sort((a,b) => a.totPct - b.totPct);
+                    _list = _Q.worstpl ? _list.slice(0,3) : _list.slice(-3).reverse();
                 } else if (_Q.under) {
                     _list = _hp.filter(s => (s.delta ?? 0) < -0.3)
                                .sort((a,b) => a.delta - b.delta);
@@ -1259,6 +1269,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
                     _list = _hp.filter(s => (s.delta ?? 0) > 0.3)
                                .sort((a,b) => b.delta - a.delta);
                 }
+                const _portfolioNames = _hp.map(s => s.name).join(', ');
 
                 // ── 1d. פורמט שורה לכל מניה ─────────────────────────────────
                 const _fmtIls = n => (n >= 0 ? '+' : '') + '₪' + Math.abs(Math.round(n)).toLocaleString('he-IL');
@@ -1270,10 +1281,16 @@ app.post('/api/chat', express.json(), async (req, res) => {
                     return `**${s.name}** — ${daySign}${s.dayPct.toFixed(2)}% (${_fmtIls(s.dayGainIls)}) | P/L: ${plSign}${s.totPct.toFixed(2)}% (${_fmtIls(s.totGainIls)})${vs}`;
                 };
 
-                // ── 1e. שאלת "מי פגע / מי עלה" + אין "למה" → תשובת שרת ישירה
+                // ── 1e. תשובות ישירות בלי AI ────────────────────────────────
                 if ((_Q.worst || _Q.best) && !_Q.under && !_Q.over && !_Q.needWhy && _list.length) {
                     const verb = _Q.worst ? 'הכי פגעה' : 'הכי תרמה';
-                    return res.json({ reply: `המניה ש${verb} לך היום:\n${_fmtRow(_list[0])}` });
+                    const extra = _list.length > 1 ? `\n${_list.slice(1).map(_fmtRow).join('\n')}` : '';
+                    return res.json({ reply: `המניה ש${verb} לך היום:\n${_fmtRow(_list[0])}${extra}` });
+                }
+                if ((_Q.toppl || _Q.worstpl) && !_Q.needWhy && _list.length) {
+                    const verb = _Q.worstpl ? 'הכי מפסידה' : 'הכי מורווחת';
+                    const extra = _list.length > 1 ? `\n${_list.slice(1).map(_fmtRow).join('\n')}` : '';
+                    return res.json({ reply: `המניה ה${verb} בתיק (P/L כולל):\n${_fmtRow(_list[0])}${extra}` });
                 }
 
                 // ── 1f. שאלת "כמה שווה התיק" → תשובת שרת ישירה ─────────────
@@ -1293,20 +1310,37 @@ app.post('/api/chat', express.json(), async (req, res) => {
                 // שאלות מורכבות (תשואת חסר / למה ירד / סיכון):
                 // שלח נתונים מחושבים + פרופיל רלוונטי → AI מסביר בלבד
                 // ════════════════════════════════════════════════════════════
-                if (_list.length || (_Q.worst && _hp.length)) {
-                    const _workList = _list.length ? _list : [_hp.sort((a,b) => a.dayPct - b.dayPct)[0]];
-                    const _dataStr  = _workList.map(_fmtRow).join('\n');
-                    const _profiles = await retrieveCompanyProfiles(lastMsg, _workList.map(s => s.name));
-                    const _ta35Str  = _ta35pct != null
+                // ── Tier 2: send computed data to AI for explanation ──────────
+                // Enter Tier 2 whenever we have portfolio data, regardless of whether
+                // _list is empty (e.g. no underperformers — that itself is the answer)
+                if (_hp.length > 0) {
+                    // Determine which stocks to explain
+                    const _mentionedInQ = _Q.stock
+                        ? _hp.filter(s => lastMsg.includes(s.name))
+                        : [];
+                    // Build work-list: for worst/best use sorted list; for under/over use filtered
+                    // If _list is empty (e.g. no underperformers), pass full portfolio so AI can say so
+                    const _workList = _list.length
+                        ? _list
+                        : _mentionedInQ.length
+                            ? _mentionedInQ
+                            : (_Q.worst || _Q.best)
+                                ? [[..._hp].sort((a,b) => a.dayPct - b.dayPct)[0]]
+                                : _hp;   // under/over with empty result → send all so AI can say "none"
+
+                    const _allDataStr  = _hp.map(_fmtRow).join('\n');
+                    const _profiles    = await retrieveCompanyProfiles(lastMsg, _workList.map(s => s.name));
+                    const _ta35Str     = _ta35pct != null
                         ? `מדד תא-35 היום: ${_ta35pct >= 0 ? '+' : ''}${_ta35pct.toFixed(2)}%` : '';
 
                     const _sys = `אתה יועץ השקעות של MyBursa. ענה בעברית כלכלית תקנית וקצרה.
 
-חוקי ברזל:
+חוקי ברזל — אסור לפרוץ אף אחד:
 ⛔ אסור לשנות אף מספר מ"נתוני תיק" — הם מחושבים מדויקים
-⛔ אסור להזכיר מניות שאינן ב"נתוני תיק" (אין DLEKG, BIG, ENRG וכו')
-⛔ אסור לציין טיקרים (DSCT, AZRG) — שמות בעברית בלבד
-⛔ אסור להמציא אחוזים, מחירים, או סכומים
+⛔ המניות בתיק הן בלבד: ${_portfolioNames}
+⛔ אסור להזכיר מניה שאינה ברשימה הזו — אפילו לא כדוגמה
+⛔ אסור לציין טיקרים (כגון DSCT, AZRG, POLI) — שמות בעברית בלבד
+⛔ אסור להמציא אחוזים, מחירים, או סכומים שאינם ב"נתוני תיק"
 
 מה מותר לך לעשות:
 ✅ לצטט את הנתונים המחושבים בדיוק
@@ -1314,7 +1348,10 @@ app.post('/api/chat', express.json(), async (req, res) => {
 ✅ להוסיף הקשר מאקרו-כלכלי מהפרופיל (ריבית, דולר, אנרגיה וכו')
 ✅ לסיים עם המלצת פעולה קצרה (להחזיק / לשקול הפחתה / לשקול הגדלה)`;
 
-                    const _user = `${_ta35Str ? _ta35Str + '\n\n' : ''}נתוני תיק מחושבים:\n${_dataStr}\n\n${_profiles}\n\nשאלת המשתמש: "${lastMsg}"\n\nהסבר לכל מניה: מה גרם לתנועה (לפי הפרופיל) + המלצה.`;
+                    const _noMatch = (_Q.under || _Q.over) && _list.length === 0
+                        ? `\n\n⚠️ לא נמצאו מניות ב${_Q.under ? 'תשואת חסר' : 'תשואת יתר'} משמעותית ביחס לתא-35 היום.` : '';
+
+                    const _user = `${_ta35Str ? _ta35Str + '\n\n' : ''}נתוני תיק מחושבים (כל המניות):\n${_allDataStr}${_noMatch}\n\n${_profiles}\n\nשאלת המשתמש: "${lastMsg}"\n\nהסבר בלבד על סמך הנתונים לעיל.`;
 
                     const _r = await _groq.chat.completions.create({
                         model: 'llama-3.3-70b-versatile',
@@ -1323,7 +1360,11 @@ app.post('/api/chat', express.json(), async (req, res) => {
                         messages: [{ role: 'system', content: _sys }, { role: 'user', content: _user }],
                     });
                     let _reply = _r.choices[0].message.content;
-                    // נקה טיקרים שנותרו
+                    // נקה טיקרים — שלב מלא (זהה ל-Tier 3)
+                    const _s2hT2 = Object.fromEntries(Object.entries(STOCK_SYMBOLS_HE).map(([he, sym]) => [sym, he]));
+                    _reply = _reply.replace(/\b([A-Z]{2,6}\.TA)\b/g, (_, t) => _s2hT2[t] || '');
+                    _reply = _reply.replace(/\^(TA\d+)/g, (_, i) => _s2hT2[`^${i}`] || `מדד ${i.replace('TA','תא-')}`);
+                    _reply = _reply.replace(/\s*\([A-Z]{2,6}(?:\.TA)?\)/g, '');
                     Object.entries(STOCK_SYMBOLS_HE).forEach(([he, sym]) => {
                         const bare = sym.replace('.TA','').replace('^','');
                         if (bare.length >= 2) _reply = _reply.replace(new RegExp(`\\b${bare}\\b`, 'g'), he);
@@ -1357,7 +1398,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
         const _s2h = Object.fromEntries(Object.entries(STOCK_SYMBOLS_HE).map(([he, sym]) => [sym, he]));
         let reply = result.choices[0].message.content;
         // 1. החלף XXX.TA → עברי
-        reply = reply.replace(/\b([A-Z]{2,6}\.TA)\b/g, (_, t) => _s2h[t] || t);
+        reply = reply.replace(/\b([A-Z]{2,6}\.TA)\b/g, (_, t) => _s2h[t] || '');
         // 2. החלף ^TAxx → עברי
         reply = reply.replace(/\^(TA\d+)/g, (_, i) => _s2h[`^${i}`] || `מדד ${i.replace('TA','תא-')}`);
         // 3. הסר סוגריים עם טיקרים
