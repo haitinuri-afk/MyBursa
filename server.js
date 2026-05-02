@@ -835,21 +835,46 @@ async function buildRAGContext(query, quotes) {
 
     // מיון לפי ביצועי יום
     const _sorted     = [..._holdingPerf].sort((a, b) => a.dayPct - b.dayPct);
-    const _worstToday = _sorted.slice(0, 3).map(s =>
-        `${s.name}: ${s.dayPct.toFixed(2)}% (${s.dayGainIls >= 0 ? '+' : ''}₪${Math.round(s.dayGainIls)})`).join(', ');
-    const _bestToday  = _sorted.slice(-3).reverse().map(s =>
-        `${s.name}: +${s.dayPct.toFixed(2)}% (+₪${Math.round(s.dayGainIls)})`).join(', ');
+    // מדד ייחוס — תא-35
+    const _ta35q   = quotes.find(q => q.symbol === '^TA35');
+    const _ta90q   = quotes.find(q => q.symbol === '^TA90');
+    const _ta35pct = _ta35q?.regularMarketPreviousClose
+        ? ((_ta35q.regularMarketPrice - _ta35q.regularMarketPreviousClose) / _ta35q.regularMarketPreviousClose * 100)
+        : null;
+    const _ta90pct = _ta90q?.regularMarketPreviousClose
+        ? ((_ta90q.regularMarketPrice - _ta90q.regularMarketPreviousClose) / _ta90q.regularMarketPreviousClose * 100)
+        : null;
+
+    const _worstToday = _sorted.slice(0, 3).map(s => {
+        const vs = _ta35pct != null ? ` | לעומת תא-35: ${(s.dayPct - _ta35pct) >= 0 ? '+' : ''}${(s.dayPct - _ta35pct).toFixed(2)}%` : '';
+        return `${s.name}: ${s.dayPct.toFixed(2)}% (${s.dayGainIls >= 0 ? '+' : ''}₪${Math.round(s.dayGainIls)})${vs}`;
+    }).join('\n  ');
+    const _bestToday = _sorted.slice(-3).reverse().map(s => {
+        const vs = _ta35pct != null ? ` | לעומת תא-35: +${(s.dayPct - _ta35pct).toFixed(2)}%` : '';
+        return `${s.name}: +${s.dayPct.toFixed(2)}% (+₪${Math.round(s.dayGainIls)})${vs}`;
+    }).join('\n  ');
     const _worstTotal = [..._holdingPerf].sort((a, b) => a.totPct - b.totPct).slice(0, 3)
         .map(s => `${s.name}: ${s.totPct.toFixed(2)}%`).join(', ');
+
+    // פרוט ביצועי כל מניה לעומת המדד
+    const _allPerf = _holdingPerf.map(s => {
+        const vs = _ta35pct != null ? ` | vs תא-35: ${(s.dayPct - _ta35pct) >= 0 ? '+' : ''}${(s.dayPct - _ta35pct).toFixed(2)}%` : '';
+        const tot = `| P/L: ${s.totPct >= 0 ? '+' : ''}${s.totPct.toFixed(2)}%`;
+        return `  ${s.name}: ${s.dayPct >= 0 ? '+' : ''}${s.dayPct.toFixed(2)}% (${s.dayGainIls >= 0 ? '+' : ''}₪${Math.round(s.dayGainIls)}) ${tot}${vs}`;
+    }).join('\n');
 
     const portfolioSummary = _totalCost > 0 ? `## סיכום תיק (מחושב — אל תשנה מספרים אלו):
   שווי נוכחי: ₪${Math.round(_totalValue).toLocaleString('he-IL')}
   עלות מקורית: ₪${Math.round(_totalCost).toLocaleString('he-IL')}
   רווח/הפסד כולל: ${parseFloat(_totalPLpct) >= 0 ? '+' : ''}${_totalPLpct}% (${_totalPLils >= 0 ? '+₪' : '-₪'}${Math.abs(_totalPLils).toLocaleString('he-IL')})
   שינוי היום: ${_dayGainRnd >= 0 ? '+' : ''}₪${_dayGainRnd.toLocaleString('he-IL')}
-  הכי פגעו היום (ירידה): ${_worstToday || 'אין נתון'}
-  הכי תרמו היום (עלייה): ${_bestToday  || 'אין נתון'}
-  הכי מפסידות מאז קנייה: ${_worstTotal || 'אין נתון'}` : '';
+  מדד תא-35 היום: ${_ta35pct != null ? `${_ta35pct >= 0 ? '+' : ''}${_ta35pct.toFixed(2)}%` : 'אין נתון'}
+  מדד תא-90 היום: ${_ta90pct != null ? `${_ta90pct >= 0 ? '+' : ''}${_ta90pct.toFixed(2)}%` : 'אין נתון'}
+  הכי פגעו היום (ירידה):\n  ${_worstToday || 'אין נתון'}
+  הכי תרמו היום (עלייה):\n  ${_bestToday  || 'אין נתון'}
+  הכי מפסידות מאז קנייה: ${_worstTotal || 'אין נתון'}
+## ביצועי כל מניה בתיק היום (מחושב):
+${_allPerf}` : '';
 
     const symToHe = Object.fromEntries(Object.entries(STOCK_SYMBOLS_HE).map(([he, sym]) => [sym, he]));
 
