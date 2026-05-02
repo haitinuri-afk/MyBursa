@@ -260,10 +260,11 @@ function setDataStatus(state, detail = '') {
     if (!el) return;
     if (state === 'error' && !isMarketOpen()) state = 'sim';
     const styles = {
-        live:  { text: 'LIVE', color: '#16a34a', bg: 'rgba(29,185,84,0.15)' },
-        sim:   { text: 'SIM',  color: '#5f6368', bg: '#f1f3f4' },
-        error: { text: 'ERR',  color: '#dc2626', bg: 'rgba(234,67,53,0.12)' },
-        fetch: { text: '...',  color: '#f0b90b', bg: 'rgba(240,185,11,0.10)' }
+        live:  { text: 'LIVE',  color: '#16a34a', bg: 'rgba(29,185,84,0.15)' },
+        sim:   { text: 'SIM',   color: '#5f6368', bg: '#f1f3f4' },
+        error: { text: 'ERR',   color: '#dc2626', bg: 'rgba(234,67,53,0.12)' },
+        fetch: { text: '...',   color: '#f0b90b', bg: 'rgba(240,185,11,0.10)' },
+        wake:  { text: '⏳',    color: '#f0b90b', bg: 'rgba(240,185,11,0.10)' }
     };
     const s = styles[state] || styles.sim;
     el.textContent = s.text;
@@ -362,10 +363,17 @@ async function refreshRealData() {
     const quotes  = await fetchBatchPrices(symbols);
 
     if (quotes === null) {
-        setDataStatus('error', 'Network failure');
-        scheduleFetch();
+        // Cold-start: השרת מתעורר — נסה שוב בעוד 5 שניות
+        setDataStatus('wake', 'השרת מתעורר…');
+        if (!window._coldStartRetry) {
+            window._coldStartRetry = true;
+            setTimeout(() => { window._coldStartRetry = false; refreshRealData(); }, 5000);
+        } else {
+            scheduleFetch();
+        }
         return;
     }
+    window._coldStartRetry = false;
 
     const { marketState = 'CLOSED', quotes: quoteList } = quotes;
     window._lastQuotes = quoteList;
