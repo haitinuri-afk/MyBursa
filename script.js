@@ -363,17 +363,19 @@ async function refreshRealData() {
     const quotes  = await fetchBatchPrices(symbols);
 
     if (quotes === null) {
-        // Cold-start: השרת מתעורר — נסה שוב בעוד 5 שניות
         setDataStatus('wake', 'השרת מתעורר…');
-        if (!window._coldStartRetry) {
-            window._coldStartRetry = true;
-            setTimeout(() => { window._coldStartRetry = false; refreshRealData(); }, 5000);
+        window._wakeAttempts = (window._wakeAttempts || 0) + 1;
+        // נסה כל 5 שניות עד 10 ניסיונות (50 שניות) — מספיק לכל cold-start
+        if (window._wakeAttempts <= 10) {
+            setTimeout(refreshRealData, 5000);
         } else {
+            window._wakeAttempts = 0;
+            setDataStatus('error', 'לא ניתן להתחבר — בדוק חיבור אינטרנט');
             scheduleFetch();
         }
         return;
     }
-    window._coldStartRetry = false;
+    window._wakeAttempts = 0;
 
     const { marketState = 'CLOSED', quotes: quoteList } = quotes;
     window._lastQuotes = quoteList;
