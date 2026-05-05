@@ -1567,6 +1567,80 @@ app.get('/api/portfolio', async (req, res) => {
     catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Portfolio Analytics ──────────────────────────────────────────────────────
+const _SECTORS = {
+    'בנקים':       ['לאומי','פועלים','דיסקונט','מזרחי טפחות','הבינלאומי','בנק ירושלים'],
+    'ביטוח':       ['הפניקס','הראל','כלל ביטוח'],
+    'טכנולוגיה':   ['נייס','טאוור','אאורה'],
+    'ביטחון':      ['אלביט'],
+    'פארמה/כימיה': ['טבע','כיל'],
+    'נדל״ן':       ['עזריאלי','מליסרון','אמות','ביג','גב ים','שיכון ובינוי','ריט1'],
+    'אנרגיה':      ["אנרג'יקס",'אנלייט','אורמת','קבוצת דלק'],
+    'תקשורת':      ['בזק','סלקום','פרטנר'],
+    'מסחר':        ['שטראוס','שופרסל','פוקס','רמי לוי'],
+    'שוק הון':     ['אי.בי.אי'],
+    'מדדים':       ['מדד תא-35','מדד תא-90'],
+};
+
+app.get('/api/portfolio/analytics', async (req, res) => {
+    try {
+        if (_mongoReady) await _mongoReady;
+        const pd = await loadPortfolio();
+        const port = pd.portfolio ?? {};
+        const names = Object.keys(port);
+        if (!names.length) return res.json({ sectors: [], riskScore: 0, riskLabel: '—', totalValue: 0 });
+
+        // Fetch live quotes for value weighting
+        const syms = names.map(n => STOCK_SYMBOLS_HE[n]).filter(Boolean);
+        let quoteMap = {};
+        if (syms.length) {
+            try {
+                const qs = await fetchQuotesBatch(syms);
+                quoteMap = Object.fromEntries(qs.map(q => [q.symbol, q]));
+            } catch {}
+        }
+
+        // Compute value per stock and group by sector
+        const sectorVal = {};
+        let totalVal = 0;
+        names.forEach(name => {
+            const h   = port[name];
+            const sym = STOCK_SYMBOLS_HE[name];
+            const q   = sym && quoteMap[sym];
+            const cur  = q?.regularMarketPrice ?? (h.buyPrice ?? h.avgPrice ?? 0);
+            const qty  = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
+            const val  = cur * qty;
+            totalVal += val;
+            const sector = Object.entries(_SECTORS).find(([, s]) => s.includes(name))?.[0] ?? 'אחר';
+            sectorVal[sector] = (sectorVal[sector] ?? 0) + val;
+        });
+
+        const sectors = Object.entries(sectorVal)
+            .map(([name, value]) => ({ name, value: totalVal > 0 ? Math.round(value / totalVal * 1000) / 10 : 0 }))
+            .sort((a, b) => b.value - a.value);
+
+        // Risk score 1-5
+        const maxSectorPct = sectors[0]?.value ?? 0;
+        const numHoldings  = names.length;
+        let riskScore = 3;
+        if (maxSectorPct > 60) riskScore++;
+        if (maxSectorPct > 80) riskScore++;
+        if (numHoldings <= 3) riskScore++;
+        if (numHoldings >= 8) riskScore--;
+        if (Object.keys(sectorVal).length >= 4) riskScore--;
+        riskScore = Math.max(1, Math.min(5, riskScore));
+        const riskLabels = ['','נמוך מאוד','נמוך','בינוני','גבוה','גבוה מאוד'];
+        const riskColors = ['','#22c55e','#86efac','#facc15','#f97316','#ef4444'];
+
+        res.json({
+            sectors, totalValue: Math.round(totalVal),
+            riskScore, riskLabel: riskLabels[riskScore], riskColor: riskColors[riskScore],
+            numHoldings, topSector: sectors[0]?.name ?? '—',
+            diversification: Object.keys(sectorVal).length >= 4 ? 'טובה' : 'מוגבלת',
+        });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/portfolio', express.json(), async (req, res) => {
     try {
         const data = req.body;

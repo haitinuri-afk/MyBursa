@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" href="style.css?v=38">
+    <link rel="stylesheet" href="style.css?v=39">
 </head>
 <body>
     <div class="main-wrapper">
@@ -268,6 +268,43 @@
             </div>
 
 
+            <!-- Portfolio Analytics Widget -->
+            <div id="win-portfolio-analytics" class="card" style="top:420px;left:4px;width:358px">
+                <div class="window-header">
+                    <h3>ניתוח תיק חכם</h3>
+                    <div class="window-controls">
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-portfolio-analytics')"></button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
+                    </div>
+                </div>
+                <div class="card-body" style="padding:12px 14px;gap:10px;display:flex;flex-direction:column">
+                    <!-- Donut chart + legend row -->
+                    <div style="display:flex;gap:12px;align-items:center">
+                        <div style="position:relative;flex-shrink:0;width:84px;height:84px">
+                            <canvas id="portfolio-donut" width="84" height="84"></canvas>
+                            <div id="donut-center" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700;color:var(--text3);text-align:center;line-height:1.2;pointer-events:none"></div>
+                        </div>
+                        <div id="donut-legend" style="flex:1;display:flex;flex-direction:column;gap:3px;font-size:11px;min-width:0"></div>
+                    </div>
+                    <!-- Risk bar -->
+                    <div id="analytics-risk" style="display:flex;flex-direction:column;gap:4px">
+                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px">
+                            <span style="color:var(--text3);font-weight:600">רמת סיכון תיק</span>
+                            <span id="risk-label" style="font-weight:700;font-size:12px"></span>
+                        </div>
+                        <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+                            <div id="risk-bar" style="height:100%;border-radius:3px;transition:width .4s"></div>
+                        </div>
+                        <div id="analytics-meta" style="font-size:10.5px;color:var(--text3)"></div>
+                    </div>
+                    <!-- AI button + output -->
+                    <button id="insights-btn" onclick="askPortfolioInsights()" style="width:100%;padding:8px;border-radius:10px;border:1px solid var(--primary);background:transparent;color:var(--primary);font-size:12px;font-weight:600;cursor:pointer;transition:background .15s">
+                        💡 תובנות AI על התיק
+                    </button>
+                    <div id="insights-output" style="font-size:12px;line-height:1.55;color:var(--text);white-space:pre-wrap;display:none;background:var(--bg2,#f9fafb);border-radius:8px;padding:8px 10px;max-height:140px;overflow-y:auto"></div>
+                </div>
+            </div>
+
             <!-- AI Chat Window — now a floating side panel -->
             <div id="win-ai-chat" class="card" style="display:none;flex-direction:column;position:fixed;bottom:148px;left:24px;width:360px;height:520px;z-index:500;box-shadow:0 8px 40px rgba(0,0,0,0.22);border-radius:16px;transition:opacity .25s,transform .25s;transform:translateY(16px);opacity:0">
                 <div class="window-header">
@@ -304,51 +341,12 @@
         </div>
     </div>
 
-    <!-- Analysis floating panel -->
-    <div id="win-analysis" style="display:none;flex-direction:column;position:fixed;bottom:148px;left:24px;width:370px;height:540px;z-index:500;background:var(--surface);border:1px solid rgba(5,150,105,0.25);box-shadow:0 8px 40px rgba(0,0,0,0.22);border-radius:16px;transition:opacity .25s,transform .25s;transform:translateY(16px);opacity:0">
-      <div class="window-header">
-        <h3>📊 ניתוח תיק</h3>
-        <div class="window-controls">
-          <button class="win-btn win-close" onclick="toggleAnalysis()"></button>
-        </div>
-      </div>
-      <div class="card-body" style="padding:8px;overflow:hidden;display:flex;flex-direction:column">
-        <div id="analysis-summary" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:0 4px;font-size:12px;flex-shrink:0"></div>
-        <div class="scroll-container" style="flex:1;min-height:0">
-          <div id="analysis-cards" style="display:flex;flex-direction:column;gap:8px">
-            <div style="text-align:center;color:var(--text3);font-size:13px;padding:20px">טוען נתונים...</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Analysis FAB -->
-    <button id="analysis-fab-btn" onclick="toggleAnalysis()" title="ניתוח תיק" style="position:fixed;bottom:calc(80px + env(safe-area-inset-bottom,0px));left:88px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#059669,#047857);border:none;color:#fff;font-size:1.4rem;line-height:1;box-shadow:0 4px 18px rgba(5,150,105,.5);cursor:pointer;z-index:501;display:flex;align-items:center;justify-content:center;transition:transform .2s;overflow:visible">
-      📊
-    </button>
-
     <!-- Chat FAB -->
-    <button id="chat-fab-btn" onclick="toggleAIChat()" title="יועץ AI" style="position:fixed;bottom:calc(80px + env(safe-area-inset-bottom,0px));left:24px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#1a73e8,#0d47a1);border:none;color:#fff;font-size:1.5rem;line-height:1;box-shadow:0 4px 18px rgba(26,115,232,.5);cursor:pointer;z-index:501;display:flex;align-items:center;justify-content:center;transition:transform .2s;overflow:visible">
+    <button id="chat-fab-btn" onclick="toggleAIChat()" title="יועץ AI" style="position:fixed;bottom:calc(24px + env(safe-area-inset-bottom,0px));left:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#1a73e8,#0d47a1);border:none;color:#fff;font-size:1.4rem;line-height:1;box-shadow:0 4px 18px rgba(26,115,232,.5);cursor:pointer;z-index:501;display:flex;align-items:center;justify-content:center;transition:transform .2s;overflow:visible">
       💬
       <span id="chat-fab-badge" style="display:none;position:absolute;top:-3px;right:-3px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 5px;min-width:17px;text-align:center;line-height:17px"></span>
     </button>
     <script>
-    let _analysisOpen = false;
-    function toggleAnalysis() {
-        const panel = document.getElementById('win-analysis');
-        _analysisOpen = !_analysisOpen;
-        if (_analysisOpen) {
-            panel.style.display = 'flex';
-            requestAnimationFrame(() => { panel.style.opacity='1'; panel.style.transform='translateY(0)'; });
-            if (window.loadPortfolioAnalysis) loadPortfolioAnalysis();
-        } else {
-            panel.style.opacity = '0';
-            panel.style.transform = 'translateY(16px)';
-            setTimeout(() => { panel.style.display = 'none'; }, 250);
-        }
-        document.getElementById('analysis-fab-btn').style.transform = _analysisOpen ? 'rotate(15deg) scale(1.05)' : '';
-    }
-
     let _chatOpen = false;
     function toggleAIChat() {
         const panel = document.getElementById('win-ai-chat');
@@ -404,7 +402,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=47"></script>
+    <script src="script.js?v=48"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js');

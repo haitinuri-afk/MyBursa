@@ -1379,7 +1379,7 @@ function _initFloatDrag(modal) {
 
 function updatePortfolioList() {
     _analysisLoaded = false;
-    if (window._analysisOpen) loadPortfolioAnalysis();
+    setTimeout(initPortfolioAnalytics, 500);
     const list = document.getElementById('portfolio-list');
     const totalDisplay = document.getElementById('total-portfolio-value');
     if (!list || !totalDisplay) return;
@@ -1507,6 +1507,96 @@ function sellStock(symbol) {
     updateTransactionHistory();
 }
 
+// ── Portfolio Analytics Widget ─────────────────────────────────────────────
+const _DONUT_COLORS = ['#4f8ef7','#34a853','#fbbc04','#ea4335','#a142f4','#00acc1','#e8710a','#0f9d58','#7b61ff','#ff6d00','#1a73e8'];
+let _donutChart = null;
+
+async function initPortfolioAnalytics() {
+    const widget = document.getElementById('win-portfolio-analytics');
+    if (!widget) return;
+    try {
+        const res  = await fetch('/api/portfolio/analytics', { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) return;
+        const data = await res.json();
+        const { sectors = [], riskScore = 0, riskLabel = '', riskColor = '#9aa0a6',
+                numHoldings = 0, topSector = '—', diversification = '—', totalValue = 0 } = data;
+
+        // Donut chart
+        const canvas = document.getElementById('portfolio-donut');
+        if (canvas && sectors.length) {
+            if (_donutChart) { _donutChart.destroy(); _donutChart = null; }
+            _donutChart = new Chart(canvas.getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: sectors.map(s => s.name),
+                    datasets: [{ data: sectors.map(s => s.value),
+                        backgroundColor: _DONUT_COLORS,
+                        borderWidth: 1.5, borderColor: '#fff',
+                        hoverOffset: 4 }],
+                },
+                options: {
+                    responsive: false, cutout: '68%',
+                    plugins: { legend: { display: false }, tooltip: {
+                        callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}%` }
+                    }},
+                    animation: { duration: 600 },
+                },
+            });
+        }
+
+        // Center label
+        const center = document.getElementById('donut-center');
+        if (center) center.innerHTML = `${numHoldings}<br>החזקות`;
+
+        // Legend
+        const legend = document.getElementById('donut-legend');
+        if (legend) legend.innerHTML = sectors.slice(0, 6).map((s, i) =>
+            `<div style="display:flex;align-items:center;gap:4px;min-width:0">
+               <span style="flex-shrink:0;width:8px;height:8px;border-radius:2px;background:${_DONUT_COLORS[i % _DONUT_COLORS.length]}"></span>
+               <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">${s.name}</span>
+               <span style="font-weight:600;color:var(--text3)">${s.value}%</span>
+             </div>`
+        ).join('');
+
+        // Risk bar
+        const riskBar = document.getElementById('risk-bar');
+        if (riskBar) { riskBar.style.width = `${riskScore * 20}%`; riskBar.style.background = riskColor; }
+        const riskLbl = document.getElementById('risk-label');
+        if (riskLbl) { riskLbl.textContent = riskLabel; riskLbl.style.color = riskColor; }
+        const meta = document.getElementById('analytics-meta');
+        if (meta) meta.textContent = `סקטור מוביל: ${topSector} | פיזור: ${diversification} | ${numHoldings} מניות`;
+
+    } catch(e) { console.warn('[analytics]', e.message); }
+}
+
+async function askPortfolioInsights() {
+    const btn = document.getElementById('insights-btn');
+    const out = document.getElementById('insights-output');
+    if (!btn || !out) return;
+    btn.disabled = true;
+    btn.textContent = '⏳ מחשב...';
+    out.style.display = 'block';
+    out.textContent = '';
+    try {
+        const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [{ role: 'user', content: 'תן לי תובנות קצרות ומעשיות על מצב התיק שלי: חוזקות, חולשות, והמלצה אחת.' }],
+                quotes: window._lastQuotes || [],
+            }),
+            signal: AbortSignal.timeout(30000),
+        });
+        const data = await res.json();
+        out.textContent = data.reply ?? data.content ?? 'אין תשובה';
+    } catch(e) {
+        out.textContent = e.name === 'TimeoutError' ? 'הבקשה לקחה יותר מדי זמן.' : `שגיאה: ${e.message}`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '💡 תובנות AI על התיק';
+    }
+}
+
 // ── Portfolio Analysis ─────────────────────────────────────────────────────
 let _analysisLoaded = false;
 function loadPortfolioAnalysis() {
@@ -1614,8 +1704,8 @@ let highestZIndex = 100;
 // ── Mobile Tabs ─────────────────────────────────────────────────────────────
 const MOB_TABS = {
     market:    ['win-indices-tase', 'win-stocks', 'win-realestate', 'win-main-chart'],
-    portfolio: ['win-portfolio', 'win-simulator'],
-    analysis:  ['win-analysis'],
+    portfolio: ['win-portfolio', 'win-portfolio-analytics', 'win-simulator'],
+    analysis:  ['win-portfolio-analytics'],
 };
 const MOB_ALL = Object.values(MOB_TABS).flat();
 
@@ -1627,11 +1717,12 @@ const PANEL_DEFS = {
         { id: 'win-main-chart',   label: 'גרף מניה' },
     ],
     portfolio: [
-        { id: 'win-portfolio',  label: 'תיק השקעות' },
-        { id: 'win-simulator',  label: 'קנה / מכור' },
+        { id: 'win-portfolio',            label: 'תיק השקעות' },
+        { id: 'win-portfolio-analytics',  label: 'ניתוח תיק' },
+        { id: 'win-simulator',            label: 'קנה / מכור' },
     ],
     analysis:  [
-        { id: 'win-analysis', label: 'ניתוח תיק' },
+        { id: 'win-portfolio-analytics', label: 'ניתוח תיק' },
     ],
 };
 const PANEL_TAB_LABELS = { market: 'שוק', portfolio: 'תיק', analysis: 'ניתוח' };
@@ -1691,6 +1782,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTicker(); initStockSuggestions(); updateStockList(); updateRealEstateList(); updatePortfolioList(); updateTransactionHistory();
     fetchScanStrip();
     drawChart(); drawIndexChart();
+    setTimeout(initPortfolioAnalytics, 3000);
 
     document.getElementById('buy-btn').onclick      = buyStock;
     document.getElementById('sell-btn-sim').onclick = sellStockSim;
