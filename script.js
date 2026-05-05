@@ -1778,6 +1778,7 @@ function _renderPanelPicker() {
 
 document.addEventListener('DOMContentLoaded', () => {
     if (window.innerWidth <= 768) switchMobileTab('market');
+    else resetWindows();   // apply default layout on desktop first load
     try { initWindowManager(); } catch(e) { console.error("Window manager failed:", e); }
     requestNotifPermission();
 
@@ -1898,14 +1899,53 @@ function toggleDarkMode() {
 const POPUP_WINDOWS = ['win-portfolio-chart'];
 
 function resetWindows() {
-    const cards = document.querySelectorAll('.card');
-    cards.forEach(card => {
-        const isPopup = POPUP_WINDOWS.includes(card.id) || card.id?.startsWith('win-detail-');
-        const display = card.style.display;
+    // Clear all card styles
+    document.querySelectorAll('.card').forEach(card => {
         card.removeAttribute('style');
         card.classList.remove('maximized', 'mob-hidden');
-        if (isPopup && display === 'none') card.style.display = 'none';
     });
+
+    // Keep popup windows hidden
+    POPUP_WINDOWS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    // Restore chat as fixed hidden panel (not part of grid)
+    const chat = document.getElementById('win-ai-chat');
+    if (chat) {
+        chat.style.cssText = 'display:none;flex-direction:column;position:fixed;bottom:148px;left:24px;width:360px;height:520px;z-index:500;box-shadow:0 8px 40px rgba(0,0,0,0.22);border-radius:16px;transition:opacity .25s,transform .25s;transform:translateY(16px);opacity:0';
+        window._chatOpen = false;
+        const fab = document.getElementById('chat-fab-btn');
+        if (fab) fab.style.transform = '';
+    }
+
+    // Apply default layout based on dashboard width
+    const dw = document.getElementById('dashboard')?.clientWidth || window.innerWidth;
+    const lw  = 362;                               // left column width
+    const gap = 8;
+    const cl  = lw + gap;                          // center starts here
+    const cw  = Math.max(380, dw - lw * 2 - gap * 3); // center width
+    const rl  = cl + cw + gap;                     // right column start
+    const ch  = 390;                               // chart height
+
+    const LAYOUT = {
+        'win-portfolio':           { top:0,        left:0,  width:lw },
+        'win-simulator':           { top:500,       left:0,  width:lw },
+        'win-main-chart':          { top:0,        left:cl, width:cw, height:ch },
+        'win-portfolio-analytics': { top:ch+gap,   left:cl, width:cw },
+        'win-indices-tase':        { top:0,        left:rl, width:lw },
+        'win-stocks':              { top:248,       left:rl, width:lw },
+    };
+
+    Object.entries(LAYOUT).forEach(([id, styles]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        Object.entries(styles).forEach(([k, v]) => {
+            el.style[k] = typeof v === 'number' ? v + 'px' : v;
+        });
+    });
+
     if (indexChart) indexChart.resize();
     Object.keys(activeStockWindows).forEach(name => {
         if (activeStockWindows[name].chart) activeStockWindows[name].chart.resize();
