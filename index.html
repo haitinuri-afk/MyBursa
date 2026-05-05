@@ -268,8 +268,8 @@
             </div>
 
 
-            <!-- AI Chat Window -->
-            <div id="win-ai-chat" class="card" style="display:flex;flex-direction:column">
+            <!-- AI Chat Window — now a floating side panel -->
+            <div id="win-ai-chat" class="card" style="display:none;flex-direction:column;position:fixed;bottom:80px;left:24px;width:360px;height:520px;z-index:500;box-shadow:0 8px 40px rgba(0,0,0,0.22);border-radius:16px;transition:opacity .25s,transform .25s;transform:translateY(16px);opacity:0">
                 <div class="window-header">
                     <h3>יועץ AI</h3>
                     <div class="window-controls">
@@ -303,6 +303,45 @@
 
         </div>
     </div>
+
+    <!-- Chat FAB -->
+    <button id="chat-fab-btn" onclick="toggleAIChat()" title="יועץ AI" style="position:fixed;bottom:24px;left:24px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#1a73e8,#0d47a1);border:none;color:#fff;font-size:1.4rem;box-shadow:0 4px 18px rgba(26,115,232,.5);cursor:pointer;z-index:501;display:flex;align-items:center;justify-content:center;transition:transform .2s">
+      💬
+      <span id="chat-fab-badge" style="display:none;position:absolute;top:-3px;right:-3px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 5px;min-width:17px;text-align:center;line-height:17px"></span>
+    </button>
+    <script>
+    let _chatOpen = false;
+    function toggleAIChat() {
+        const panel = document.getElementById('win-ai-chat');
+        _chatOpen = !_chatOpen;
+        if (_chatOpen) {
+            panel.style.display = 'flex';
+            requestAnimationFrame(() => { panel.style.opacity='1'; panel.style.transform='translateY(0)'; });
+            document.getElementById('ai-input')?.focus();
+            document.getElementById('chat-fab-badge').style.display = 'none';
+        } else {
+            panel.style.opacity = '0';
+            panel.style.transform = 'translateY(16px)';
+            setTimeout(() => { panel.style.display = 'none'; }, 250);
+        }
+        document.getElementById('chat-fab-btn').style.transform = _chatOpen ? 'rotate(15deg) scale(1.05)' : '';
+    }
+    // Show badge when AI responds while panel is closed
+    const _origAddAI = window.addAIMessage;
+    document.addEventListener('DOMContentLoaded', () => {
+        // patch addAIMessage to show badge
+        const origFn = window.addAIMessage;
+        if (origFn) window.addAIMessage = function(...args) {
+            const r = origFn.apply(this, args);
+            if (!_chatOpen) {
+                const b = document.getElementById('chat-fab-badge');
+                b.textContent = (parseInt(b.textContent)||0) + 1;
+                b.style.display = 'inline-block';
+            }
+            return r;
+        };
+    });
+    </script>
 
     <!-- Transaction History Floating Window -->
     <div id="tx-modal" style="display:none;position:fixed;z-index:9999;top:50%;left:50%;transform:translate(-50%,-50%);width:340px;background:#fff;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.18);border:1px solid rgba(5,150,105,0.15);overflow:hidden">
