@@ -1568,9 +1568,9 @@ function initPortfolioAnalytics() {
             const q        = qMap[name];
             const cur      = q?.price ?? h.buyPrice ?? h.avgPrice ?? 0;
             const qty      = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
-            const buyPrice = h.buyPrice ?? h.avgPrice ?? cur;
+            const buyPrice = h.buyPrice ?? h.avgPrice ?? h.avgCost ?? cur;
             const val      = cur * qty;
-            const cost     = buyPrice * qty;
+            const cost     = h.totalCost ?? (buyPrice * qty);
             totalVal      += val;
             totalCost     += cost;
             betaWeighted  += val * (_BETAS[name] ?? 1.0);
