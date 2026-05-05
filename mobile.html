@@ -3,233 +3,357 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#1a73e8">
-<title>בורסה AI — מובייל</title>
+<meta name="theme-color" content="#1a1a2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>MyBursa</title>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  :root {
-    --bg:       #f1f3f4;
-    --surface:  #ffffff;
-    --primary:  #1a73e8;
-    --text:     #202124;
-    --text2:    #5f6368;
-    --border:   rgba(0,0,0,0.12);
-    --up:       #1e8e3e;
-    --down:     #d93025;
-    --radius:   16px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg:      #111;
-      --surface: #1e1e1e;
-      --text:    #e8eaed;
-      --text2:   #9aa0a6;
-      --border:  rgba(255,255,255,0.1);
-    }
-  }
+:root {
+  --bg:      #0f0f1a;
+  --surface: #1a1a2e;
+  --card:    #1e1e35;
+  --primary: #4f8ef7;
+  --text:    #e8eaed;
+  --text2:   #9aa0a6;
+  --up:      #34a853;
+  --down:    #ea4335;
+  --border:  rgba(255,255,255,0.08);
+  --radius:  16px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+}
 
-  body {
-    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    height: 100dvh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+body {
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
-  /* ── Header ── */
-  header {
-    background: var(--primary);
-    color: #fff;
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(0,0,0,.2);
-  }
-  header h1 { font-size: 1rem; font-weight: 600; }
-  #server-btn {
-    background: rgba(255,255,255,.2);
-    border: none;
-    color: #fff;
-    padding: 5px 10px;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    cursor: pointer;
-    white-space: nowrap;
-  }
+/* ── Header ── */
+header {
+  background: var(--surface);
+  padding: calc(12px + var(--safe-top)) 16px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.header-title { font-size: 1.05rem; font-weight: 700; letter-spacing: .3px; }
+.header-actions { display: flex; gap: 8px; }
+.hbtn {
+  background: var(--border);
+  border: none; color: var(--text2);
+  padding: 6px 12px; border-radius: 20px;
+  font-size: 0.75rem; cursor: pointer;
+}
 
-  /* ── Messages ── */
-  #messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    -webkit-overflow-scrolling: touch;
-  }
+/* ── Main scroll area ── */
+#main {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 14px calc(90px + var(--safe-bot));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 
-  .msg {
-    max-width: 88%;
-    padding: 10px 14px;
-    border-radius: var(--radius);
-    font-size: 0.9rem;
-    line-height: 1.55;
-    word-break: break-word;
-  }
-  .msg.user {
-    align-self: flex-start;
-    background: var(--primary);
-    color: #fff;
-    border-bottom-right-radius: 4px;
-  }
-  .msg.ai {
-    align-self: flex-end;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-bottom-left-radius: 4px;
-    color: var(--text);
-    white-space: pre-wrap;
-  }
-  .msg.system {
-    align-self: center;
-    background: transparent;
-    color: var(--text2);
-    font-size: 0.78rem;
-    text-align: center;
-    padding: 4px 8px;
-  }
-  .msg.error {
-    align-self: flex-end;
-    background: #fce8e6;
-    color: var(--down);
-    border: 1px solid #f5c6c3;
-  }
+/* ── Portfolio summary card ── */
+.summary-card {
+  background: linear-gradient(135deg, #1a2a5e 0%, #1a1a2e 100%);
+  border: 1px solid rgba(79,142,247,.25);
+  border-radius: var(--radius);
+  padding: 18px 16px;
+}
+.summary-label { font-size: 0.75rem; color: var(--text2); margin-bottom: 4px; }
+.summary-value { font-size: 1.7rem; font-weight: 700; letter-spacing: -.5px; }
+.summary-sub { font-size: 0.8rem; margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; }
+.pill {
+  padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 600;
+}
+.pill.up { background: rgba(52,168,83,.18); color: var(--up); }
+.pill.down { background: rgba(234,67,53,.18); color: var(--down); }
+.pill.neutral { background: var(--border); color: var(--text2); }
 
-  /* Typing indicator */
-  .typing { display: flex; gap: 4px; padding: 12px 16px; align-items: center; }
-  .typing span {
-    width: 7px; height: 7px; border-radius: 50%;
-    background: var(--text2);
-    animation: bounce 1.2s infinite;
-  }
-  .typing span:nth-child(2) { animation-delay: .2s; }
-  .typing span:nth-child(3) { animation-delay: .4s; }
-  @keyframes bounce {
-    0%,60%,100% { transform: translateY(0); }
-    30%          { transform: translateY(-6px); }
-  }
+/* ── Section title ── */
+.section-title {
+  font-size: 0.72rem; font-weight: 600;
+  color: var(--text2); letter-spacing: .8px;
+  text-transform: uppercase; padding: 0 2px;
+}
 
-  /* ── Input bar ── */
-  #input-bar {
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    padding: 10px 12px;
-    display: flex;
-    gap: 8px;
-    align-items: flex-end;
-    flex-shrink: 0;
-  }
-  #question {
-    flex: 1;
-    border: 1.5px solid var(--border);
-    border-radius: 24px;
-    padding: 10px 16px;
-    font-size: 0.95rem;
-    background: var(--bg);
-    color: var(--text);
-    resize: none;
-    max-height: 120px;
-    line-height: 1.4;
-    outline: none;
-    font-family: inherit;
-  }
-  #question:focus { border-color: var(--primary); }
-  #send-btn {
-    width: 44px; height: 44px;
-    border-radius: 50%;
-    background: var(--primary);
-    border: none;
-    color: #fff;
-    font-size: 1.2rem;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-    transition: opacity .15s;
-  }
-  #send-btn:disabled { opacity: .45; cursor: default; }
+/* ── Stock row ── */
+.stock-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.stock-name { font-size: 0.9rem; font-weight: 600; }
+.stock-meta { font-size: 0.72rem; color: var(--text2); margin-top: 2px; }
+.stock-right { text-align: left; }
+.stock-pct {
+  font-size: 0.9rem; font-weight: 700;
+}
+.stock-pct.up { color: var(--up); }
+.stock-pct.down { color: var(--down); }
+.stock-price { font-size: 0.72rem; color: var(--text2); margin-top: 2px; }
 
-  /* ── Server modal ── */
-  .overlay {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,.5);
-    display: flex; align-items: flex-end;
-    z-index: 100;
-  }
-  .overlay.hidden { display: none; }
-  .modal {
-    background: var(--surface);
-    width: 100%;
-    border-radius: 24px 24px 0 0;
-    padding: 24px 20px 32px;
-  }
-  .modal h2 { font-size: 1rem; margin-bottom: 16px; }
-  .modal input {
-    width: 100%;
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    padding: 12px 14px;
-    font-size: 0.9rem;
-    background: var(--bg);
-    color: var(--text);
-    outline: none;
-    margin-bottom: 12px;
-    direction: ltr;
-  }
-  .modal input:focus { border-color: var(--primary); }
-  .modal button {
-    width: 100%;
-    padding: 13px;
-    border-radius: 12px;
-    border: none;
-    background: var(--primary);
-    color: #fff;
-    font-size: 1rem;
-    cursor: pointer;
-    font-weight: 600;
-  }
+/* ── Loading skeleton ── */
+.skeleton {
+  background: linear-gradient(90deg, var(--card) 25%, var(--surface) 50%, var(--card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 8px; height: 16px;
+}
+@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
-  /* Markdown-ish styling */
-  .msg.ai strong { font-weight: 700; }
-  .msg.ai em { font-style: italic; color: var(--text2); }
+/* ── Status bar ── */
+#status-bar {
+  font-size: 0.72rem; color: var(--text2);
+  text-align: center; padding: 4px;
+}
+
+/* ── FAB chat button ── */
+#chat-fab {
+  position: fixed;
+  bottom: calc(24px + var(--safe-bot));
+  left: 20px;
+  width: 58px; height: 58px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: none;
+  color: #fff;
+  font-size: 1.5rem;
+  box-shadow: 0 4px 20px rgba(79,142,247,.5);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 90;
+  transition: transform .2s, box-shadow .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+#chat-fab:active { transform: scale(.92); }
+#chat-fab .badge {
+  position: absolute; top: -2px; right: -2px;
+  width: 18px; height: 18px;
+  background: #ea4335; border-radius: 50%;
+  font-size: 0.65rem; font-weight: 700;
+  display: none; align-items: center; justify-content: center;
+}
+
+/* ── Chat drawer ── */
+#chat-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 100;
+  opacity: 0; pointer-events: none;
+  transition: opacity .3s;
+}
+#chat-backdrop.open { opacity: 1; pointer-events: all; }
+
+#chat-drawer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 88dvh;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  z-index: 101;
+  display: flex; flex-direction: column;
+  transform: translateY(100%);
+  transition: transform .35s cubic-bezier(.4,0,.2,1);
+}
+#chat-drawer.open { transform: translateY(0); }
+
+.drawer-handle {
+  width: 40px; height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 10px auto 0;
+  flex-shrink: 0;
+}
+.drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.drawer-title { font-size: 0.95rem; font-weight: 700; }
+#drawer-close {
+  background: var(--border); border: none; color: var(--text2);
+  width: 32px; height: 32px; border-radius: 50%;
+  font-size: 1rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ── Chat messages ── */
+#messages {
+  flex: 1; overflow-y: auto;
+  padding: 12px; display: flex;
+  flex-direction: column; gap: 10px;
+  -webkit-overflow-scrolling: touch;
+}
+.msg {
+  max-width: 88%; padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 0.88rem; line-height: 1.55;
+  word-break: break-word;
+}
+.msg.user {
+  align-self: flex-start;
+  background: var(--primary); color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.msg.ai {
+  align-self: flex-end;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+  white-space: pre-wrap;
+}
+.msg.system {
+  align-self: center; background: transparent;
+  color: var(--text2); font-size: 0.75rem;
+  text-align: center; padding: 4px 8px;
+}
+.msg.error {
+  align-self: flex-end;
+  background: rgba(234,67,53,.12);
+  color: var(--down);
+  border: 1px solid rgba(234,67,53,.3);
+}
+.msg.ai strong { font-weight: 700; }
+.msg.ai em { font-style: italic; color: var(--text2); }
+
+.typing { display: flex; gap: 4px; padding: 12px 16px; align-items: center; }
+.typing span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text2); animation: bounce 1.2s infinite;
+}
+.typing span:nth-child(2) { animation-delay: .2s; }
+.typing span:nth-child(3) { animation-delay: .4s; }
+@keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+
+/* ── Input bar ── */
+#input-bar {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  padding-bottom: calc(10px + var(--safe-bot));
+  display: flex; gap: 8px; align-items: flex-end;
+  flex-shrink: 0;
+}
+#question {
+  flex: 1; border: 1.5px solid var(--border);
+  border-radius: 24px; padding: 10px 16px;
+  font-size: 0.9rem; background: var(--bg);
+  color: var(--text); resize: none;
+  max-height: 120px; line-height: 1.4;
+  outline: none; font-family: inherit;
+}
+#question:focus { border-color: var(--primary); }
+#send-btn {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--primary); border: none;
+  color: #fff; font-size: 1.2rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: opacity .15s;
+}
+#send-btn:disabled { opacity: .4; cursor: default; }
+
+/* ── Server modal ── */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.6);
+  display: flex; align-items: flex-end;
+  z-index: 200;
+}
+.overlay.hidden { display: none; }
+.modal {
+  background: var(--surface); width: 100%;
+  border-radius: 24px 24px 0 0;
+  padding: 24px 20px calc(32px + var(--safe-bot));
+}
+.modal h2 { font-size: 1rem; margin-bottom: 16px; }
+.modal input {
+  width: 100%; border: 1.5px solid var(--border);
+  border-radius: 12px; padding: 12px 14px;
+  font-size: 0.9rem; background: var(--bg);
+  color: var(--text); outline: none;
+  margin-bottom: 12px; direction: ltr;
+}
+.modal input:focus { border-color: var(--primary); }
+.modal button {
+  width: 100%; padding: 13px; border-radius: 12px;
+  border: none; background: var(--primary);
+  color: #fff; font-size: 1rem; cursor: pointer; font-weight: 600;
+}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>📈 בורסה AI</h1>
-  <div style="display:flex;gap:6px">
-    <button onclick="showLatestScans()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:5px 10px;border-radius:20px;font-size:0.75rem;cursor:pointer;white-space:nowrap">🔍 דוחות</button>
-    <button id="server-btn" onclick="openModal()">⚙️ שרת</button>
+  <span class="header-title">📈 MyBursa</span>
+  <div class="header-actions">
+    <button class="hbtn" onclick="showLatestScans()">🔍 דוחות</button>
+    <button class="hbtn" id="server-btn" onclick="openModal()">⚙️</button>
   </div>
 </header>
 
-<div id="messages">
-  <div class="msg system">שלום! שאל אותי כל שאלה על שוק ההון הישראלי 🇮🇱</div>
+<div id="main">
+  <!-- Portfolio summary -->
+  <div class="summary-card" id="summary-card">
+    <div class="summary-label">שווי תיק</div>
+    <div class="summary-value" id="total-val">—</div>
+    <div class="summary-sub" id="summary-sub">
+      <span class="pill neutral">טוען...</span>
+    </div>
+  </div>
+
+  <div class="section-title">מניות בתיק</div>
+  <div id="stock-list">
+    <div class="stock-row"><div style="flex:1"><div class="skeleton" style="width:60%;margin-bottom:8px"></div><div class="skeleton" style="width:40%"></div></div></div>
+    <div class="stock-row"><div style="flex:1"><div class="skeleton" style="width:55%;margin-bottom:8px"></div><div class="skeleton" style="width:35%"></div></div></div>
+    <div class="stock-row"><div style="flex:1"><div class="skeleton" style="width:65%;margin-bottom:8px"></div><div class="skeleton" style="width:45%"></div></div></div>
+  </div>
+
+  <div id="status-bar"></div>
 </div>
 
-<div id="input-bar">
-  <label id="pdf-btn" title="העלה דוח PDF" style="width:40px;height:40px;border-radius:50%;background:var(--surface);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.1rem;flex-shrink:0">
-    📄
-    <input type="file" accept="application/pdf" style="display:none" onchange="uploadPDF(this)">
-  </label>
-  <textarea id="question" placeholder="שאל שאלה..." rows="1"></textarea>
-  <button id="send-btn" onclick="sendQuestion()">➤</button>
+<!-- FAB -->
+<button id="chat-fab" onclick="openChat()">
+  💬
+  <span class="badge" id="chat-badge"></span>
+</button>
+
+<!-- Chat drawer -->
+<div id="chat-backdrop" onclick="closeChat()"></div>
+<div id="chat-drawer">
+  <div class="drawer-handle"></div>
+  <div class="drawer-header">
+    <span class="drawer-title">🤖 יועץ AI</span>
+    <button id="drawer-close" onclick="closeChat()">✕</button>
+  </div>
+  <div id="messages">
+    <div class="msg system">שאל אותי כל שאלה על התיק שלך 💼</div>
+  </div>
+  <div id="input-bar">
+    <label title="העלה דוח PDF" style="width:40px;height:40px;border-radius:50%;background:var(--card);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;flex-shrink:0">
+      📄<input type="file" accept="application/pdf" style="display:none" onchange="uploadPDF(this)">
+    </label>
+    <textarea id="question" placeholder="שאל על התיק..." rows="1"></textarea>
+    <button id="send-btn" onclick="sendQuestion()">➤</button>
+  </div>
 </div>
 
 <!-- Server config modal -->
@@ -242,229 +366,312 @@
 </div>
 
 <script>
+// ── Config ────────────────────────────────────────────────────────────────────
 const DEFAULT_SERVER = window.location.origin.includes('localhost')
     ? 'http://localhost:3000'
     : 'https://mybursa.onrender.com';
-
 let SERVER = localStorage.getItem('bursa_server') || DEFAULT_SERVER;
 
-// ── Auto-resize textarea ──────────────────────────────────────────────────
-const ta = document.getElementById('question');
-ta.addEventListener('input', () => {
-    ta.style.height = 'auto';
-    ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
-});
-ta.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
-});
+// ── Chat drawer ───────────────────────────────────────────────────────────────
+let _unread = 0;
+function openChat() {
+    document.getElementById('chat-drawer').classList.add('open');
+    document.getElementById('chat-backdrop').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    _unread = 0;
+    document.getElementById('chat-badge').style.display = 'none';
+    setTimeout(() => document.getElementById('question').focus(), 350);
+}
+function closeChat() {
+    document.getElementById('chat-drawer').classList.remove('open');
+    document.getElementById('chat-backdrop').classList.remove('open');
+    document.body.style.overflow = '';
+}
 
-// ── Messages ──────────────────────────────────────────────────────────────
+// ── Portfolio data ────────────────────────────────────────────────────────────
+const STOCK_SYMBOLS = {
+  "מדד תא-35":"^TA35","מדד תא-90":"^TA90",
+  "לאומי":"LUMI.TA","פועלים":"POLI.TA","דיסקונט":"DSCT.TA","מזרחי טפחות":"MZTF.TA",
+  "אלביט":"ESLT.TA","נייס":"NICE.TA","טאוור":"TSEM.TA","אאורה":"AURA.TA",
+  "טבע":"TEVA.TA","כיל":"ICL.TA","הבינלאומי":"FIBI.TA","בנק ירושלים":"JBNK.TA",
+  "אי.בי.אי":"IBI.TA","הפניקס":"PHOE.TA","הראל":"HARL.TA","כלל ביטוח":"CLIS.TA",
+  "עזריאלי":"AZRG.TA","מליסרון":"MLSR.TA","אמות":"AMOT.TA","ביג":"BIG.TA",
+  "גב ים":"GVYM.TA","שיכון ובינוי":"SKBN.TA","ריט1":"RIT1.TA",
+  "אנרג'יקס":"ENRG.TA","אנלייט":"ENLT.TA","אורמת":"ORA.TA","קבוצת דלק":"DLEKG.TA",
+  "בזק":"BEZQ.TA","סלקום":"CEL.TA","פרטנר":"PTNR.TA",
+  "שטראוס":"STRS.TA","שופרסל":"SAE.TA","פוקס":"FOX.TA","רמי לוי":"RMLI.TA",
+};
+
+async function loadPortfolioView() {
+    if (!SERVER) return;
+    try {
+        // Fetch portfolio holdings
+        const pRes = await fetch(`${SERVER}/api/portfolio`, { signal: AbortSignal.timeout(8000) });
+        if (!pRes.ok) return;
+        const pd = await pRes.json();
+        const portfolio = pd.portfolio ?? {};
+        const names = Object.keys(portfolio);
+        if (!names.length) return;
+
+        // Fetch prices
+        const syms = names.map(n => STOCK_SYMBOLS[n]).filter(Boolean);
+        const bRes = await fetch(`${SERVER}/api/stock/batch?symbols=${syms.join(',')}`, { signal: AbortSignal.timeout(15000) });
+        if (!bRes.ok) return;
+        const bd = await bRes.json();
+        const quotes = bd.quotes ?? [];
+        const qMap = Object.fromEntries(quotes.map(q => [q.symbol, q]));
+
+        // Compute totals
+        let totalVal = 0, totalCost = 0, totalDay = 0;
+        const rows = [];
+
+        names.forEach(name => {
+            const h = portfolio[name];
+            const sym = STOCK_SYMBOLS[name];
+            const q = sym && qMap[sym];
+            if (!q?.regularMarketPrice) return;
+            const cur  = q.regularMarketPrice;
+            const prev = q.regularMarketPreviousClose ?? cur;
+            const qty  = h.qty ?? h.quantity ?? 0;
+            const avg  = h.buyPrice ?? 0;
+            const cost = h.totalCost ?? qty * avg;
+            const dayPct = prev > 0 ? (cur - prev) / prev * 100 : 0;
+            const dayGain = (cur - prev) * qty;
+            const totPct  = avg > 0 ? (cur - avg) / avg * 100 : 0;
+            totalVal  += cur * qty;
+            totalCost += cost;
+            totalDay  += dayGain;
+            rows.push({ name, cur, qty, dayPct, dayGain, totPct, sym });
+        });
+
+        // Sort by day % descending
+        rows.sort((a, b) => b.dayPct - a.dayPct);
+
+        // Render summary
+        const fmt = n => Math.abs(Math.round(n)).toLocaleString('he-IL');
+        document.getElementById('total-val').textContent = `₪${fmt(totalVal)}`;
+        const plPct = totalCost > 0 ? ((totalVal - totalCost) / totalCost * 100).toFixed(1) : 0;
+        const plIls = totalVal - totalCost;
+        const dayClass = totalDay >= 0 ? 'up' : 'down';
+        const plClass  = plIls >= 0 ? 'up' : 'down';
+        document.getElementById('summary-sub').innerHTML =
+            `<span class="pill ${dayClass}">${totalDay >= 0 ? '+' : ''}₪${fmt(totalDay)} היום</span>` +
+            `<span class="pill ${plClass}">${plIls >= 0 ? '+' : '-'}₪${fmt(plIls)} כולל (${plIls >= 0 ? '+' : ''}${plPct}%)</span>`;
+
+        // Render stock list
+        const list = document.getElementById('stock-list');
+        list.innerHTML = rows.map(r => {
+            const isIdx = r.name.startsWith('מדד');
+            const cls   = r.dayPct >= 0 ? 'up' : 'down';
+            const sign  = r.dayPct >= 0 ? '+' : '';
+            const totSign = r.totPct >= 0 ? '+' : '';
+            return `<div class="stock-row">
+              <div>
+                <div class="stock-name">${r.name}${isIdx ? ' 📊' : ''}</div>
+                <div class="stock-meta">${r.qty} יח׳ | P/L: ${totSign}${r.totPct.toFixed(1)}%</div>
+              </div>
+              <div class="stock-right">
+                <div class="stock-pct ${cls}">${sign}${r.dayPct.toFixed(2)}%</div>
+                <div class="stock-price">₪${r.cur.toLocaleString('he-IL', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+              </div>
+            </div>`;
+        }).join('');
+
+        document.getElementById('status-bar').textContent =
+            `עדכון אחרון: ${new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}`;
+
+    } catch(e) {
+        document.getElementById('status-bar').textContent = 'שגיאה בטעינת נתונים';
+    }
+}
+
+// ── Auto-resize textarea ──────────────────────────────────────────────────────
+const ta = document.getElementById('question');
+ta.addEventListener('input', () => { ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,120)+'px'; });
+ta.addEventListener('keydown', e => { if (e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendQuestion();} });
+
+// ── Markdown renderer ─────────────────────────────────────────────────────────
 function renderMarkdown(text) {
     let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
-    s = s.replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
-    s = s.replace(/^(\d+)\.\s+(.+)$/gm, '<div style="margin:.2em 0"><strong>$1.</strong> $2</div>');
-    s = s.replace(/^[-•]\s+(.+)$/gm, '<div style="margin:.2em 0">• $1</div>');
-    s = s.replace(/\n/g, '<br>');
+    s = s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    s = s.replace(/__(.+?)__/g,'<strong>$1</strong>');
+    s = s.replace(/\*([^*\n]+?)\*/g,'<em>$1</em>');
+    s = s.replace(/^(\d+)\.\s+(.+)$/gm,'<div style="margin:.2em 0"><strong>$1.</strong> $2</div>');
+    s = s.replace(/^[-•]\s+(.+)$/gm,'<div style="margin:.2em 0">• $1</div>');
+    s = s.replace(/\n/g,'<br>');
     return s;
 }
 
 function addMsg(text, cls) {
     const div = document.createElement('div');
     div.className = `msg ${cls}`;
-    if (cls === 'ai') {
-        div.innerHTML = renderMarkdown(text);
-    } else {
-        div.textContent = text;
-    }
+    if (cls === 'ai') div.innerHTML = renderMarkdown(text);
+    else div.textContent = text;
     document.getElementById('messages').appendChild(div);
     div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    if (cls === 'ai' && !document.getElementById('chat-drawer').classList.contains('open')) {
+        _unread++;
+        const badge = document.getElementById('chat-badge');
+        badge.textContent = _unread;
+        badge.style.display = 'flex';
+    }
     return div;
 }
-
 function addTyping() {
     const div = document.createElement('div');
     div.className = 'msg ai typing';
     div.innerHTML = '<span></span><span></span><span></span>';
     document.getElementById('messages').appendChild(div);
-    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    div.scrollIntoView({ behavior:'smooth', block:'end' });
     return div;
 }
 
-// ── Send question ─────────────────────────────────────────────────────────
+// ── Send question ─────────────────────────────────────────────────────────────
+let _history = [];
 let busy = false;
 
 async function sendQuestion() {
     const q = ta.value.trim();
     if (!q || busy) return;
-
     if (!SERVER) { openModal(); return; }
+
+    // Historical guard
+    if (/אתמול|שלשום|שבוע שעבר|חודש שעבר|לפני שבוע|לפני חודש|ביום שישי|ביום חמישי/.test(q)) {
+        addMsg('אין לי גישה לנתונים היסטוריים — אני עובד עם מחירים חיים של היום בלבד.', 'ai');
+        return;
+    }
 
     busy = true;
     document.getElementById('send-btn').disabled = true;
-    ta.value = '';
-    ta.style.height = 'auto';
-
+    ta.value = ''; ta.style.height = 'auto';
     addMsg(q, 'user');
+    _history.push({ role: 'user', content: q });
     const typing = addTyping();
 
     try {
         const res = await fetch(`${SERVER}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messages: [{ role: 'user', content: q }],
-                mobile: true     // hint to server to keep answers concise
-            }),
+            body: JSON.stringify({ messages: _history, mobile: true }),
             signal: AbortSignal.timeout(30_000),
         });
-
         typing.remove();
-
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            addMsg(err.error || `שגיאה ${res.status}`, 'error');
-            return;
-        }
-
+        if (!res.ok) { const e = await res.json().catch(()=>({})); addMsg(e.error||`שגיאה ${res.status}`,'error'); return; }
         const data = await res.json();
-        const answer = data.content ?? data.message ?? data.reply ?? JSON.stringify(data);
+        const answer = data.reply ?? data.content ?? data.message ?? JSON.stringify(data);
         addMsg(answer, 'ai');
-
+        _history.push({ role: 'assistant', content: answer });
+        if (_history.length > 10) _history = _history.slice(-10);
     } catch(e) {
         typing.remove();
-        if (e.name === 'TimeoutError') addMsg('הבקשה לקחה יותר מדי זמן. נסה שוב.', 'error');
-        else addMsg(`שגיאת חיבור: ${e.message}`, 'error');
+        addMsg(e.name==='TimeoutError' ? 'הבקשה לקחה יותר מדי זמן. נסה שוב.' : `שגיאת חיבור: ${e.message}`, 'error');
     } finally {
         busy = false;
         document.getElementById('send-btn').disabled = false;
     }
 }
 
-// ── Server modal ──────────────────────────────────────────────────────────
-function openModal() {
-    document.getElementById('server-url').value = SERVER;
-    document.getElementById('overlay').classList.remove('hidden');
-}
-function closeModal() {
-    document.getElementById('overlay').classList.add('hidden');
-}
+// ── Server modal ──────────────────────────────────────────────────────────────
+function openModal() { document.getElementById('server-url').value=SERVER; document.getElementById('overlay').classList.remove('hidden'); }
+function closeModal() { document.getElementById('overlay').classList.add('hidden'); }
 function saveServer() {
-    const url = document.getElementById('server-url').value.trim().replace(/\/$/, '');
+    const url = document.getElementById('server-url').value.trim().replace(/\/$/,'');
     if (!url) return;
-    SERVER = url;
-    localStorage.setItem('bursa_server', SERVER);
-    closeModal();
-    addMsg(`מחובר ל: ${SERVER}`, 'system');
+    SERVER = url; localStorage.setItem('bursa_server', SERVER); closeModal();
 }
-
-// Show server button label
-document.getElementById('server-btn').title = SERVER || 'לא מוגדר';
 
 // ── Latest Scans ──────────────────────────────────────────────────────────────
 async function showLatestScans() {
     if (!SERVER) { openModal(); return; }
+    openChat();
     addMsg('🔍 מביא דוחות אחרונים...', 'system');
     try {
         const res  = await fetch(`${SERVER}/api/latest-scans`, { signal: AbortSignal.timeout(10_000) });
         const data = await res.json();
         const scans = data.scans ?? [];
-        if (!scans.length) {
-            addMsg('אין דוחות שנסרקו עדיין. הסריקה פועלת כל שעה בשעות המסחר.', 'system');
-            return;
-        }
-        const recIcon = r => r === 'קנייה' ? '🟢' : r === 'מכירה' ? '🔴' : '🟡';
+        if (!scans.length) { addMsg('אין דוחות שנסרקו עדיין.','system'); return; }
+        const recIcon = r => r==='קנייה'?'🟢':r==='מכירה'?'🔴':'🟡';
         const lines = scans.map(s => {
             const time = new Date(s.scannedAt).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
             const rec  = s.recommendation ? ` ${recIcon(s.recommendation)} ${s.recommendation}` : '';
-            return `**${s.company}**${rec} — ${time}\n${s.summary ?? s.title ?? ''}`;
+            return `**${s.company}**${rec} — ${time}\n${s.summary??s.title??''}`;
         }).join('\n\n');
         addMsg(lines, 'ai');
-    } catch(e) {
-        addMsg(`שגיאה: ${e.message}`, 'error');
-    }
+    } catch(e) { addMsg(`שגיאה: ${e.message}`,'error'); }
 }
 
 // ── PDF Upload ────────────────────────────────────────────────────────────────
 async function uploadPDF(input) {
-    const file = input.files[0];
-    if (!file) return;
-    input.value = '';   // reset so same file can be re-selected
-
+    const file = input.files[0]; if (!file) return; input.value='';
     if (!SERVER) { openModal(); return; }
-
-    const btn = document.getElementById('pdf-btn');
-    btn.style.opacity = '0.5';
-    btn.style.pointerEvents = 'none';
-
+    openChat();
     addMsg(`📄 מנתח: ${file.name}`, 'system');
     const typing = addTyping();
-
     try {
-        const form = new FormData();
-        form.append('file', file);
-
-        const res = await fetch(`${SERVER}/api/analyze-report`, {
-            method: 'POST',
-            body: form,
-            signal: AbortSignal.timeout(60_000),
-        });
-
+        const form = new FormData(); form.append('file', file);
+        const res = await fetch(`${SERVER}/api/analyze-report`, { method:'POST', body:form, signal:AbortSignal.timeout(60_000) });
         typing.remove();
-
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            addMsg(err.error || `שגיאה ${res.status}`, 'error');
-            return;
-        }
-
+        if (!res.ok) { const e=await res.json().catch(()=>({})); addMsg(e.error||`שגיאה ${res.status}`,'error'); return; }
         const data = await res.json();
-        const reply = _formatReportResult(data);
-        addMsg(reply, 'ai');
-
-    } catch(e) {
-        typing.remove();
-        if (e.name === 'TimeoutError') addMsg('הניתוח לקח יותר מדי זמן. נסה שוב.', 'error');
-        else addMsg(`שגיאה: ${e.message}`, 'error');
-    } finally {
-        btn.style.opacity = '';
-        btn.style.pointerEvents = '';
-    }
+        addMsg(_formatReport(data), 'ai');
+    } catch(e) { typing.remove(); addMsg(e.name==='TimeoutError'?'הניתוח לקח יותר מדי זמן.':`שגיאה: ${e.message}`,'error'); }
 }
-
-function _formatReportResult(a) {
-    if (!a || typeof a !== 'object') return JSON.stringify(a);
-    const rec = a.recommendation ?? '—';
-    const conf = a.confidence ?? 0;
-    const m = a.metrics ?? {};
-    const metric = (label, val, sfx='') => val != null ? `${label}: ${val}${sfx}` : null;
-    const metrics = [
-        metric('הכנסות', m.revenue != null ? Number(m.revenue).toLocaleString('he-IL') : null, ' ₪'),
-        metric('EBITDA', m.ebitda != null ? Number(m.ebitda).toLocaleString('he-IL') : null, ' ₪'),
-        metric('רווח נקי', m.netProfit != null ? Number(m.netProfit).toLocaleString('he-IL') : null, ' ₪'),
-        metric('EPS', m.eps),
-        metric('P/E', m.peRatio),
-        metric('ROE', m.roe, '%'),
+function _formatReport(a) {
+    if (!a||typeof a!=='object') return JSON.stringify(a);
+    const rec=a.recommendation??'—'; const conf=a.confidence??0;
+    const m=a.metrics??{};
+    const metric=(l,v,s='')=>v!=null?`${l}: ${v}${s}`:null;
+    const metrics=[
+        metric('הכנסות',m.revenue!=null?Number(m.revenue).toLocaleString('he-IL'):null,' ₪'),
+        metric('EBITDA',m.ebitda!=null?Number(m.ebitda).toLocaleString('he-IL'):null,' ₪'),
+        metric('רווח נקי',m.netProfit!=null?Number(m.netProfit).toLocaleString('he-IL'):null,' ₪'),
+        metric('EPS',m.eps),metric('P/E',m.peRatio),metric('ROE',m.roe,'%'),
     ].filter(Boolean).join(' | ');
-
-    const swot = [
-        a.swot?.strengths?.length   ? `💪 ${a.swot.strengths.join(', ')}`      : null,
-        a.swot?.weaknesses?.length  ? `⚠️ ${a.swot.weaknesses.join(', ')}`     : null,
-        a.swot?.opportunities?.length ? `🚀 ${a.swot.opportunities.join(', ')}` : null,
-        a.swot?.threats?.length     ? `🔴 ${a.swot.threats.join(', ')}`        : null,
+    const swot=[
+        a.swot?.strengths?.length?`💪 ${a.swot.strengths.join(', ')}`:null,
+        a.swot?.weaknesses?.length?`⚠️ ${a.swot.weaknesses.join(', ')}`:null,
+        a.swot?.opportunities?.length?`🚀 ${a.swot.opportunities.join(', ')}`:null,
+        a.swot?.threats?.length?`🔴 ${a.swot.threats.join(', ')}`:null,
     ].filter(Boolean).join('\n');
-
-    const recIcon = rec === 'קנייה' ? '🟢' : rec === 'מכירה' ? '🔴' : '🟡';
-    return [
-        `**${a.company ?? '—'}** ${a.period ?? ''}`,
-        `${recIcon} **${rec}** (ביטחון: ${conf}%)`,
-        a.summary ?? '',
-        metrics ? `\n${metrics}` : '',
-        swot ? `\n${swot}` : '',
-        a.fxImpact?.explanation ? `\n💱 ${a.fxImpact.explanation}` : '',
-    ].filter(Boolean).join('\n');
+    const icon=rec==='קנייה'?'🟢':rec==='מכירה'?'🔴':'🟡';
+    return [`**${a.company??'—'}** ${a.period??''}`,`${icon} **${rec}** (ביטחון: ${conf}%)`,
+        a.summary??'',metrics?`\n${metrics}`:'',swot?`\n${swot}`:'',
+        a.fxImpact?.explanation?`\n💱 ${a.fxImpact.explanation}`:'',].filter(Boolean).join('\n');
 }
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, { duration=3000, color='#1db954' }={}) {
+    let el = document.getElementById('_app-toast');
+    if (!el) {
+        el = document.createElement('div'); el.id='_app-toast';
+        el.style.cssText=[
+            'position:fixed','top:calc(18px + env(safe-area-inset-top, 0px))','left:50%',
+            '-webkit-transform:translateX(-50%) translateY(-80px)','transform:translateX(-50%) translateY(-80px)',
+            'background:rgba(20,20,35,0.92)','color:#fff','padding:10px 22px','border-radius:32px',
+            'font-size:14px','font-weight:600','white-space:nowrap','direction:rtl',
+            'z-index:2147483647','pointer-events:none',
+            'backdrop-filter:blur(12px)','-webkit-backdrop-filter:blur(12px)',
+            'box-shadow:0 4px 24px rgba(0,0,0,.35)',
+            '-webkit-transition:-webkit-transform .35s cubic-bezier(.34,1.56,.64,1)',
+            'transition:transform .35s cubic-bezier(.34,1.56,.64,1)',
+        ].join(';');
+        document.documentElement.appendChild(el);
+    }
+    el.textContent=msg; el.style.borderBottom=`2px solid ${color}`;
+    void el.offsetHeight;
+    el.style.webkitTransform='translateX(-50%) translateY(0)';
+    el.style.transform='translateX(-50%) translateY(0)';
+    clearTimeout(el._t);
+    el._t=setTimeout(()=>{ el.style.webkitTransform='translateX(-50%) translateY(-80px)'; el.style.transform='translateX(-50%) translateY(-80px)'; }, duration);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadPortfolioView();
+setInterval(loadPortfolioView, 60_000);   // refresh every minute
+
+const _h2 = new Date().getHours();
+const _g = _h2<12?'בוקר טוב ☀️':_h2<17?'צהריים טובים 🌤️':_h2<21?'ערב טוב 🌆':'לילה טוב 🌙';
+setTimeout(() => showToast(`${_g} — MyBursa מוכן`, { duration:4000, color:'#4f8ef7' }), 700);
 </script>
 </body>
 </html>
