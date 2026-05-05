@@ -1535,7 +1535,7 @@ async function initPortfolioAnalytics() {
                         hoverOffset: 4 }],
                 },
                 options: {
-                    responsive: false, cutout: '68%',
+                    responsive: true, maintainAspectRatio: true, cutout: '68%',
                     plugins: { legend: { display: false }, tooltip: {
                         callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}%` }
                     }},
