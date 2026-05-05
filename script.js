@@ -1635,6 +1635,7 @@ function initPortfolioAnalytics() {
                 },
                 options: {
                     responsive: false, cutout: '68%',
+                    devicePixelRatio: window.devicePixelRatio || 2,
                     plugins: { legend: { display: false }, tooltip: {
                         callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}%` }
                     }},
