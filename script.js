@@ -1511,20 +1511,70 @@ function sellStock(symbol) {
 const _DONUT_COLORS = ['#4f8ef7','#34a853','#fbbc04','#ea4335','#a142f4','#00acc1','#e8710a','#0f9d58','#7b61ff','#ff6d00','#1a73e8'];
 let _donutChart = null;
 
-async function initPortfolioAnalytics() {
+const _SECTORS_CLIENT = {
+    'בנקים':       ['לאומי','פועלים','דיסקונט','מזרחי טפחות','הבינלאומי','בנק ירושלים'],
+    'ביטוח':       ['הפניקס','הראל','כלל ביטוח'],
+    'טכנולוגיה':   ['נייס','טאוור','אאורה'],
+    'ביטחון':      ['אלביט'],
+    'פארמה/כימיה': ['טבע','כיל'],
+    'נדל"ן':       ['עזריאלי','מליסרון','אמות','ביג','גב ים','שיכון ובינוי','ריט1'],
+    'אנרגיה':      ["אנרג'יקס",'אנלייט','אורמת','קבוצת דלק'],
+    'תקשורת':      ['בזק','סלקום','פרטנר'],
+    'מסחר':        ['שטראוס','שופרסל','פוקס','רמי לוי'],
+    'שוק הון':     ['אי.בי.אי'],
+    'מדדים':       ['מדד תא-35','מדד תא-90'],
+};
+
+function initPortfolioAnalytics() {
     const widget = document.getElementById('win-portfolio-analytics');
     if (!widget) return;
     try {
-        const res  = await fetch('/api/portfolio/analytics', { signal: AbortSignal.timeout(8000) });
-        if (!res.ok) {
-            console.error('[analytics] HTTP', res.status, await res.text().catch(()=>''));
-            document.getElementById('donut-legend').textContent = `שגיאה ${res.status}`;
+        const ptf   = portfolio ?? {};
+        const names = Object.keys(ptf);
+        if (!names.length) {
+            const leg = document.getElementById('donut-legend');
+            if (leg) leg.textContent = 'אין מניות בתיק';
             return;
         }
-        const data = await res.json();
-        console.log('[analytics]', data);
-        const { sectors = [], riskScore = 0, riskLabel = '', riskColor = '#9aa0a6',
-                numHoldings = 0, topSector = '—', diversification = '—', totalValue = 0 } = data;
+
+        // Build quote map from window._lastQuotes
+        const qMap = {};
+        (window._lastQuotes || []).forEach(q => { if (q.name) qMap[q.name] = q; });
+
+        // Group by sector, weighted by value
+        const sectorVal = {};
+        let totalVal = 0;
+        names.forEach(name => {
+            const h   = ptf[name];
+            const q   = qMap[name];
+            const cur = q?.price ?? h.buyPrice ?? h.avgPrice ?? 0;
+            const qty = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
+            const val = cur * qty;
+            totalVal += val;
+            const sector = Object.entries(_SECTORS_CLIENT).find(([, s]) => s.includes(name))?.[0] ?? 'אחר';
+            sectorVal[sector] = (sectorVal[sector] ?? 0) + val;
+        });
+
+        const sectors = Object.entries(sectorVal)
+            .map(([name, value]) => ({ name, value: totalVal > 0 ? Math.round(value / totalVal * 1000) / 10 : 0 }))
+            .sort((a, b) => b.value - a.value);
+
+        // Risk score 1-5
+        const maxSectorPct = sectors[0]?.value ?? 0;
+        const numHoldings  = names.length;
+        let riskScore = 3;
+        if (maxSectorPct > 60) riskScore++;
+        if (maxSectorPct > 80) riskScore++;
+        if (numHoldings <= 3) riskScore++;
+        if (numHoldings >= 8) riskScore--;
+        if (Object.keys(sectorVal).length >= 4) riskScore--;
+        riskScore = Math.max(1, Math.min(5, riskScore));
+        const riskLabels = ['','נמוך מאוד','נמוך','בינוני','גבוה','גבוה מאוד'];
+        const riskColors = ['','#22c55e','#86efac','#facc15','#f97316','#ef4444'];
+        const riskLabel  = riskLabels[riskScore];
+        const riskColor  = riskColors[riskScore];
+        const topSector  = sectors[0]?.name ?? '—';
+        const diversification = Object.keys(sectorVal).length >= 4 ? 'טובה' : 'מוגבלת';
 
         // Donut chart
         const canvas = document.getElementById('portfolio-donut');
