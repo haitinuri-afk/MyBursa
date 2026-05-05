@@ -119,6 +119,49 @@ header {
 }
 @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 
+/* ── Tabs ── */
+.tab-btn {
+  flex: 1; padding: 8px 4px; border: none;
+  background: var(--card); color: var(--text2);
+  border-radius: 10px; font-size: 0.78rem;
+  font-weight: 600; cursor: pointer;
+  transition: background .2s, color .2s;
+}
+.tab-btn.active { background: var(--primary); color: #fff; }
+
+/* ── Detail card ── */
+.detail-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.detail-card .dc-header {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.detail-card .dc-name { font-size: 0.95rem; font-weight: 700; }
+.detail-card .dc-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+}
+.detail-card .dc-item label {
+  font-size: 0.65rem; color: var(--text2);
+  display: block; margin-bottom: 1px;
+}
+.detail-card .dc-item span { font-size: 0.82rem; font-weight: 600; }
+
+/* ── TX row ── */
+.tx-row {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 14px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.tx-row .tx-left { font-size: 0.82rem; }
+.tx-row .tx-name { font-weight: 600; }
+.tx-row .tx-meta { font-size: 0.7rem; color: var(--text2); margin-top: 2px; }
+.tx-row .tx-right { text-align: left; font-size: 0.82rem; font-weight: 600; }
+
 /* ── Status bar ── */
 #status-bar {
   font-size: 0.72rem; color: var(--text2);
@@ -320,11 +363,29 @@ header {
     </div>
   </div>
 
-  <div class="section-title">מניות בתיק</div>
-  <div id="stock-list">
-    <div class="stock-row"><div style="flex:1"><div class="skeleton" style="width:60%;margin-bottom:8px"></div><div class="skeleton" style="width:40%"></div></div></div>
-    <div class="stock-row"><div style="flex:1"><div class="skeleton" style="width:55%;margin-bottom:8px"></div><div class="skeleton" style="width:35%"></div></div></div>
-    <div class="stock-row"><div style="flex:1"><div class="skeleton" style="width:65%;margin-bottom:8px"></div><div class="skeleton" style="width:45%"></div></div></div>
+  <!-- Tabs -->
+  <div style="display:flex;gap:8px;padding:2px 0">
+    <button class="tab-btn active" id="tab-holdings" onclick="switchTab('holdings')">📋 אחזקות</button>
+    <button class="tab-btn" id="tab-analysis" onclick="switchTab('analysis')">📊 ניתוח</button>
+    <button class="tab-btn" id="tab-txs" onclick="switchTab('txs')">🔄 עסקאות</button>
+  </div>
+
+  <!-- Holdings tab -->
+  <div id="tab-holdings-content">
+    <div id="stock-list">
+      <div class="stock-row"><div style="flex:1"><div class="skeleton" style="width:60%;margin-bottom:8px"></div><div class="skeleton" style="width:40%"></div></div></div>
+      <div class="stock-row"><div style="flex:1"><div class="skeleton" style="width:55%;margin-bottom:8px"></div><div class="skeleton" style="width:35%"></div></div></div>
+    </div>
+  </div>
+
+  <!-- Analysis tab -->
+  <div id="tab-analysis-content" style="display:none">
+    <div id="analysis-list"></div>
+  </div>
+
+  <!-- Transactions tab -->
+  <div id="tab-txs-content" style="display:none">
+    <div id="tx-list"></div>
   </div>
 
   <div id="status-bar"></div>
@@ -402,83 +463,138 @@ const STOCK_SYMBOLS = {
   "שטראוס":"STRS.TA","שופרסל":"SAE.TA","פוקס":"FOX.TA","רמי לוי":"RMLI.TA",
 };
 
+function switchTab(tab) {
+    ['holdings','analysis','txs'].forEach(t => {
+        document.getElementById(`tab-${t}-content`).style.display = t === tab ? '' : 'none';
+        document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+    });
+}
+
 async function loadPortfolioView() {
     if (!SERVER) return;
     try {
-        // Fetch portfolio holdings
         const pRes = await fetch(`${SERVER}/api/portfolio`, { signal: AbortSignal.timeout(8000) });
         if (!pRes.ok) return;
         const pd = await pRes.json();
         const portfolio = pd.portfolio ?? {};
+        const txHistory = pd.transactionHistory ?? [];
         const names = Object.keys(portfolio);
         if (!names.length) return;
+
+        // First buy date per stock
+        const firstBuy = {};
+        [...txHistory].reverse().forEach(tx => {
+            if ((tx.action === 'Buy' || tx.type === 'buy') && !firstBuy[tx.symbol ?? tx.name]) {
+                firstBuy[tx.symbol ?? tx.name] = tx.date ?? tx.time ?? '';
+            }
+        });
 
         // Fetch prices
         const syms = names.map(n => STOCK_SYMBOLS[n]).filter(Boolean);
         const bRes = await fetch(`${SERVER}/api/stock/batch?symbols=${syms.join(',')}`, { signal: AbortSignal.timeout(15000) });
         if (!bRes.ok) return;
         const bd = await bRes.json();
-        const quotes = bd.quotes ?? [];
-        const qMap = Object.fromEntries(quotes.map(q => [q.symbol, q]));
+        const qMap = Object.fromEntries((bd.quotes ?? []).map(q => [q.symbol, q]));
 
-        // Compute totals
         let totalVal = 0, totalCost = 0, totalDay = 0;
         const rows = [];
 
         names.forEach(name => {
-            const h = portfolio[name];
+            const h   = portfolio[name];
             const sym = STOCK_SYMBOLS[name];
-            const q = sym && qMap[sym];
+            const q   = sym && qMap[sym];
             if (!q?.regularMarketPrice) return;
-            const cur  = q.regularMarketPrice;
-            const prev = q.regularMarketPreviousClose ?? cur;
-            const qty  = h.qty ?? h.quantity ?? 0;
-            const avg  = h.buyPrice ?? 0;
-            const cost = h.totalCost ?? qty * avg;
-            const dayPct = prev > 0 ? (cur - prev) / prev * 100 : 0;
+            const cur     = q.regularMarketPrice;
+            const prev    = q.regularMarketPreviousClose ?? cur;
+            const qty     = h.qty ?? h.quantity ?? 0;
+            const avg     = h.buyPrice ?? 0;
+            const cost    = h.totalCost ?? qty * avg;
+            const dayPct  = prev > 0 ? (cur - prev) / prev * 100 : 0;
             const dayGain = (cur - prev) * qty;
             const totPct  = avg > 0 ? (cur - avg) / avg * 100 : 0;
+            const totGain = (cur - avg) * qty;
+            const buyDate = firstBuy[name] ?? '';
             totalVal  += cur * qty;
             totalCost += cost;
             totalDay  += dayGain;
-            rows.push({ name, cur, qty, dayPct, dayGain, totPct, sym });
+            rows.push({ name, cur, prev, qty, avg, cost, dayPct, dayGain, totPct, totGain, sym, buyDate });
         });
 
-        // Sort by day % descending
         rows.sort((a, b) => b.dayPct - a.dayPct);
 
-        // Render summary
-        const fmt = n => Math.abs(Math.round(n)).toLocaleString('he-IL');
+        // ── Summary ──
+        const fmt  = n => Math.abs(Math.round(n)).toLocaleString('he-IL');
+        const fmtP = n => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
         document.getElementById('total-val').textContent = `₪${fmt(totalVal)}`;
-        const plPct = totalCost > 0 ? ((totalVal - totalCost) / totalCost * 100).toFixed(1) : 0;
+        const plPct = totalCost > 0 ? ((totalVal - totalCost) / totalCost * 100) : 0;
         const plIls = totalVal - totalCost;
-        const dayClass = totalDay >= 0 ? 'up' : 'down';
-        const plClass  = plIls >= 0 ? 'up' : 'down';
         document.getElementById('summary-sub').innerHTML =
-            `<span class="pill ${dayClass}">${totalDay >= 0 ? '+' : ''}₪${fmt(totalDay)} היום</span>` +
-            `<span class="pill ${plClass}">${plIls >= 0 ? '+' : '-'}₪${fmt(plIls)} כולל (${plIls >= 0 ? '+' : ''}${plPct}%)</span>`;
+            `<span class="pill ${totalDay>=0?'up':'down'}">${totalDay>=0?'+':''}₪${fmt(totalDay)} היום</span>` +
+            `<span class="pill ${plIls>=0?'up':'down'}">${plIls>=0?'+':'-'}₪${fmt(plIls)} (${fmtP(plPct)})</span>`;
 
-        // Render stock list
-        const list = document.getElementById('stock-list');
-        list.innerHTML = rows.map(r => {
-            const isIdx = r.name.startsWith('מדד');
-            const cls   = r.dayPct >= 0 ? 'up' : 'down';
-            const sign  = r.dayPct >= 0 ? '+' : '';
-            const totSign = r.totPct >= 0 ? '+' : '';
+        // ── Tab 1: Holdings (simple rows) ──
+        document.getElementById('stock-list').innerHTML = rows.map(r => {
+            const cls = r.dayPct >= 0 ? 'up' : 'down';
             return `<div class="stock-row">
               <div>
-                <div class="stock-name">${r.name}${isIdx ? ' 📊' : ''}</div>
-                <div class="stock-meta">${r.qty} יח׳ | P/L: ${totSign}${r.totPct.toFixed(1)}%</div>
+                <div class="stock-name">${r.name}</div>
+                <div class="stock-meta">${r.qty} יח׳ | קנייה ₪${r.avg.toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
               </div>
               <div class="stock-right">
-                <div class="stock-pct ${cls}">${sign}${r.dayPct.toFixed(2)}%</div>
-                <div class="stock-price">₪${r.cur.toLocaleString('he-IL', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+                <div class="stock-pct ${cls}">${fmtP(r.dayPct)}</div>
+                <div class="stock-price">₪${r.cur.toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
               </div>
             </div>`;
         }).join('');
 
+        // ── Tab 2: Analysis (detail cards) ──
+        document.getElementById('analysis-list').innerHTML = rows.map(r => {
+            const plCls = r.totPct >= 0 ? 'up' : 'down';
+            const dCls  = r.dayPct >= 0 ? 'up' : 'down';
+            const dateStr = r.buyDate
+                ? (r.buyDate.length > 10 ? new Date(r.buyDate).toLocaleDateString('he-IL') : r.buyDate)
+                : '—';
+            return `<div class="detail-card">
+              <div class="dc-header">
+                <span class="dc-name">${r.name}</span>
+                <span class="stock-pct ${plCls}" style="font-size:0.9rem">${fmtP(r.totPct)}</span>
+              </div>
+              <div class="dc-grid">
+                <div class="dc-item"><label>כמות</label><span>${r.qty} יח׳</span></div>
+                <div class="dc-item"><label>שער קנייה</label><span>₪${r.avg.toLocaleString('he-IL',{maximumFractionDigits:2})}</span></div>
+                <div class="dc-item"><label>שער נוכחי</label><span>₪${r.cur.toLocaleString('he-IL',{maximumFractionDigits:2})}</span></div>
+                <div class="dc-item"><label>שינוי יומי</label><span class="${dCls}">${fmtP(r.dayPct)}</span></div>
+                <div class="dc-item"><label>עלות</label><span>₪${fmt(r.cost)}</span></div>
+                <div class="dc-item"><label>שווי</label><span>₪${fmt(r.cur * r.qty)}</span></div>
+                <div class="dc-item"><label>רווח/הפסד ₪</label><span class="${plCls}">${r.totGain>=0?'+':'-'}₪${fmt(r.totGain)}</span></div>
+                <div class="dc-item"><label>תאריך קנייה ראשון</label><span>${dateStr}</span></div>
+              </div>
+            </div>`;
+        }).join('');
+
+        // ── Tab 3: Transactions ──
+        const recentTx = [...txHistory].reverse().slice(0, 50);
+        document.getElementById('tx-list').innerHTML = recentTx.length
+            ? recentTx.map(tx => {
+                const isBuy = (tx.action === 'Buy' || tx.type === 'buy');
+                const name  = tx.symbol ?? tx.name ?? '—';
+                const dateStr = tx.date
+                    ? new Date(tx.date).toLocaleDateString('he-IL')
+                    : (tx.time ?? '');
+                return `<div class="tx-row">
+                  <div class="tx-left">
+                    <div class="tx-name">${isBuy?'🟢':'🔴'} ${name}</div>
+                    <div class="tx-meta">${dateStr}</div>
+                  </div>
+                  <div class="tx-right">
+                    ${tx.qty} יח׳ × ₪${parseFloat(tx.price||0).toFixed(2)}
+                  </div>
+                </div>`;
+            }).join('')
+            : '<div class="msg system">אין עסקאות</div>';
+
         document.getElementById('status-bar').textContent =
-            `עדכון אחרון: ${new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}`;
+            `עדכון: ${new Date().toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}`;
 
     } catch(e) {
         document.getElementById('status-bar').textContent = 'שגיאה בטעינת נתונים';
