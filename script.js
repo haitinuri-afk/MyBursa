@@ -290,7 +290,7 @@ function scheduleFetch() {
 
     clearInterval(fetchInterval);
     fetchInterval = setInterval(refreshRealData, open ? 15000 : 60000);
-    console.log(`[Eco] Market ${open ? 'OPEN → 2s' : 'CLOSED → 60s'}`);
+    console.log(`[Eco] Market ${open ? 'OPEN → 15s' : 'CLOSED → 60s'}`);
 }
 
 function setDataStatus(state, detail = '') {
