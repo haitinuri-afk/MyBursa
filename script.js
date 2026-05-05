@@ -1516,8 +1516,13 @@ async function initPortfolioAnalytics() {
     if (!widget) return;
     try {
         const res  = await fetch('/api/portfolio/analytics', { signal: AbortSignal.timeout(8000) });
-        if (!res.ok) return;
+        if (!res.ok) {
+            console.error('[analytics] HTTP', res.status, await res.text().catch(()=>''));
+            document.getElementById('donut-legend').textContent = `שגיאה ${res.status}`;
+            return;
+        }
         const data = await res.json();
+        console.log('[analytics]', data);
         const { sectors = [], riskScore = 0, riskLabel = '', riskColor = '#9aa0a6',
                 numHoldings = 0, topSector = '—', diversification = '—', totalValue = 0 } = data;
 
@@ -1568,7 +1573,11 @@ async function initPortfolioAnalytics() {
         const meta = document.getElementById('analytics-meta');
         if (meta) meta.textContent = `סקטור מוביל: ${topSector} | פיזור: ${diversification} | ${numHoldings} מניות`;
 
-    } catch(e) { console.warn('[analytics]', e.message); }
+    } catch(e) {
+        console.error('[analytics]', e);
+        const leg = document.getElementById('donut-legend');
+        if (leg) leg.textContent = `שגיאה: ${e.message}`;
+    }
 }
 
 async function askPortfolioInsights() {
