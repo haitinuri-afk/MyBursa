@@ -1653,9 +1653,10 @@ function initPortfolioAnalytics() {
         const topSectorEl = ge('analytics-top-sector');
         if (topSectorEl) topSectorEl.textContent = topSector ? topSector : '';
 
-        // Legend (top 4 sectors)
+        // Legend (all when maximized, top 4 otherwise)
+        const isMaxMode = !!widget.dataset.maxMode;
         const legend = ge('donut-legend');
-        if (legend) legend.innerHTML = sectors.slice(0, 4).map((s, i) =>
+        if (legend) legend.innerHTML = sectors.slice(0, isMaxMode ? sectors.length : 4).map((s, i) =>
             `<div style="display:flex;align-items:center;gap:4px;min-width:0">
                <span style="flex-shrink:0;width:8px;height:8px;border-radius:2px;background:${_DONUT_COLORS[i % _DONUT_COLORS.length]}"></span>
                <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">${s.name}</span>
@@ -1687,17 +1688,34 @@ async function askPortfolioInsights() {
     out.style.display = 'block';
     out.textContent = '';
     try {
+        // Build portfolio summary for AI context
+        const qMap = {};
+        (window._lastQuotes || []).forEach(q => { if (q.name) qMap[q.name] = q; });
+        const ptf = portfolio ?? {};
+        const holdings = Object.entries(ptf).map(([name, h]) => {
+            const cur = qMap[name]?.price ?? h.buyPrice ?? 0;
+            const qty = h.qty ?? h.quantity ?? h.shares ?? 0;
+            const buy = h.buyPrice ?? h.avgPrice ?? cur;
+            const pnl = ((cur - buy) / buy * 100).toFixed(1);
+            return `${name}: ${qty} מניות, מחיר ${cur.toFixed(2)}, P&L ${pnl}%`;
+        }).join('\n');
+        const prompt = `להלן תיק ההשקעות שלי:\n${holdings}\n\nתן תובנות קצרות ומעשיות: חוזקות, חולשות, והמלצה אחת.`;
+
         const res = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                messages: [{ role: 'user', content: 'תן לי תובנות קצרות ומעשיות על מצב התיק שלי: חוזקות, חולשות, והמלצה אחת.' }],
+                messages: [{ role: 'user', content: prompt }],
                 quotes: window._lastQuotes || [],
             }),
             signal: AbortSignal.timeout(30000),
         });
         const data = await res.json();
-        out.textContent = data.reply ?? data.content ?? 'אין תשובה';
+        if (!res.ok) {
+            out.textContent = data.error ?? `שגיאת שרת ${res.status}`;
+            return;
+        }
+        out.textContent = data.reply ?? data.content ?? 'השרת לא החזיר תשובה.';
     } catch(e) {
         out.textContent = e.name === 'TimeoutError' ? 'הבקשה לקחה יותר מדי זמן.' : `שגיאה: ${e.message}`;
     } finally {
@@ -1963,11 +1981,35 @@ function toggleMaximize(winId) {
     const win = document.getElementById(winId);
     if (!win) return;
     win.classList.toggle('maximized');
-    if (winId === 'win-indices-tase' && indexChart) indexChart.resize();
+    const isMax = win.classList.contains('maximized');
+
+    if (winId === 'win-indices-tase' && indexChart) setTimeout(() => indexChart.resize(), 50);
+
+    if (winId === 'win-portfolio-analytics') {
+        setTimeout(() => {
+            const sz = isMax ? 200 : 72;
+            const c  = document.getElementById('portfolio-donut');
+            if (c) {
+                c.width = sz; c.height = sz;
+                c.style.width = sz + 'px'; c.style.height = sz + 'px';
+                if (c.parentElement) {
+                    c.parentElement.style.width  = sz + 'px';
+                    c.parentElement.style.height = sz + 'px';
+                }
+            }
+            // Widen donut grid column
+            const grid = win.querySelector('[style*="grid-template-columns"]');
+            if (grid) grid.style.gridTemplateColumns = isMax ? `${sz + 24}px 1fr 1fr` : '82px 1fr 1fr';
+            // Re-render (shows all sectors when maximized)
+            win.dataset.maxMode = isMax ? '1' : '';
+            initPortfolioAnalytics();
+        }, 50);
+    }
+
     // LW Charts uses autoSize — no manual resize needed for win-main-chart
     const nameMatch = winId.match(/win-detail-(.+)/);
     if (nameMatch && activeStockWindows[nameMatch[1]]) {
-        activeStockWindows[nameMatch[1]].chart.resize();
+        setTimeout(() => activeStockWindows[nameMatch[1]].chart.resize(), 50);
     }
 }
 

@@ -775,6 +775,29 @@ td {
 }
 .card.maximized .window-header { border-radius: 0; cursor: default; }
 
+/* ── Maximized card content improvements ── */
+.card.maximized .card-body { padding: 24px 36px !important; }
+
+#win-portfolio.maximized table            { font-size: 1rem; }
+#win-portfolio.maximized .stock-row td   { padding: 10px 8px; }
+#win-portfolio.maximized .portfolio-footer{ font-size: 1.05rem; padding: 12px 0; }
+
+#win-simulator.maximized .card-body      { align-items: center; justify-content: center; }
+
+#win-stocks.maximized table              { font-size: 0.95rem; }
+#win-stocks.maximized td                 { padding: 9px 8px; }
+
+/* Analytics maximized */
+#win-portfolio-analytics.maximized .card-body > div:first-child {
+    font-size: 15px !important; padding: 10px 18px !important; gap: 24px !important;
+}
+#win-portfolio-analytics.maximized #donut-legend  { font-size: 14px !important; gap: 8px !important; }
+#win-portfolio-analytics.maximized #donut-legend div { padding: 2px 0; }
+#win-portfolio-analytics.maximized #risk-label    { font-size: 15px !important; }
+#win-portfolio-analytics.maximized #analytics-meta{ font-size: 13px !important; margin-top: 6px !important; }
+#win-portfolio-analytics.maximized #insights-btn  { font-size: 14px !important; padding: 12px !important; }
+#win-portfolio-analytics.maximized #insights-output { max-height: none !important; font-size: 13px !important; }
+
 /* ── Modal ── */
 .modal {
     display: none;
