@@ -1378,6 +1378,7 @@ function _initFloatDrag(modal) {
 }
 
 function updatePortfolioList() {
+    _analysisLoaded = false;  // reset so analysis tab reloads fresh data
     const list = document.getElementById('portfolio-list');
     const totalDisplay = document.getElementById('total-portfolio-value');
     if (!list || !totalDisplay) return;
@@ -1505,6 +1506,120 @@ function sellStock(symbol) {
     updateTransactionHistory();
 }
 
+// ── Portfolio Analysis ─────────────────────────────────────────────────────
+let _analysisLoaded = false;
+async function loadPortfolioAnalysis() {
+    const cards  = document.getElementById('analysis-cards');
+    const sumBar = document.getElementById('analysis-summary');
+    if (!cards) return;
+    if (_analysisLoaded) return;
+    cards.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:13px;padding:20px">טוען נתונים...</div>';
+
+    const SERVER = (() => {
+        try { return localStorage.getItem('bursa_server') || window.location.origin; } catch { return window.location.origin; }
+    })();
+
+    try {
+        const [pRes, bRes] = await Promise.all([
+            fetch(`${SERVER}/api/portfolio`, { signal: AbortSignal.timeout(8000) }),
+            fetch(`${SERVER}/api/stock/batch?symbols=all`, { signal: AbortSignal.timeout(15000) }).catch(() => null),
+        ]);
+        if (!pRes.ok) throw new Error('portfolio fetch failed');
+        const pd = await pRes.json();
+        const portfolio = pd.portfolio ?? {};
+        const txHistory = pd.transactionHistory ?? [];
+        const names = Object.keys(portfolio);
+        if (!names.length) { cards.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px">אין מניות בתיק</div>'; return; }
+
+        // First buy date per stock name
+        const firstBuy = {};
+        [...txHistory].reverse().forEach(tx => {
+            const key = tx.name ?? tx.symbol ?? '';
+            if ((tx.action === 'Buy' || tx.type === 'buy') && key && !firstBuy[key])
+                firstBuy[key] = tx.date ?? tx.time ?? '';
+        });
+
+        // Fetch live prices
+        const syms = names.map(n => STOCK_SYMBOLS[n]).filter(Boolean);
+        let qMap = {};
+        if (bRes?.ok) {
+            const bd = await bRes.json();
+            qMap = Object.fromEntries((bd.quotes ?? []).map(q => [q.symbol, q]));
+        }
+        if (!Object.keys(qMap).length && syms.length) {
+            const r2 = await fetch(`${SERVER}/api/stock/batch?symbols=${syms.join(',')}`, { signal: AbortSignal.timeout(15000) }).catch(()=>null);
+            if (r2?.ok) { const bd2 = await r2.json(); qMap = Object.fromEntries((bd2.quotes??[]).map(q=>[q.symbol,q])); }
+        }
+
+        const fmt  = n => Math.abs(Math.round(n)).toLocaleString('he-IL');
+        const fmtP = n => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+
+        let totalVal = 0, totalCost = 0, totalDay = 0;
+        const rows = [];
+        names.forEach(name => {
+            const h   = portfolio[name];
+            const sym = STOCK_SYMBOLS[name];
+            const q   = sym && qMap[sym];
+            if (!q?.regularMarketPrice) return;
+            const cur     = q.regularMarketPrice;
+            const prev    = q.regularMarketPreviousClose ?? cur;
+            const qty     = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
+            const avg     = h.buyPrice ?? h.avgPrice ?? 0;
+            const cost    = h.totalCost ?? qty * avg;
+            const dayPct  = prev > 0 ? (cur - prev) / prev * 100 : 0;
+            const dayGain = (cur - prev) * qty;
+            const totPct  = avg > 0 ? (cur - avg) / avg * 100 : 0;
+            const totGain = (cur - avg) * qty;
+            const buyDate = firstBuy[name] ?? '';
+            totalVal  += cur * qty;
+            totalCost += cost;
+            totalDay  += dayGain;
+            rows.push({ name, cur, prev, qty, avg, cost, dayPct, dayGain, totPct, totGain, sym, buyDate });
+        });
+
+        rows.sort((a, b) => b.totPct - a.totPct);
+
+        // Summary bar
+        const plPct = totalCost > 0 ? (totalVal - totalCost) / totalCost * 100 : 0;
+        const plIls = totalVal - totalCost;
+        if (sumBar) sumBar.innerHTML = [
+            `<span style="font-size:12px;color:var(--text3)">שווי תיק</span>`,
+            `<span style="font-size:15px;font-weight:700">₪${fmt(totalVal)}</span>`,
+            `<span style="font-size:12px;color:${totalDay>=0?'var(--profit)':'var(--loss)'}">${totalDay>=0?'+':'-'}₪${fmt(totalDay)} היום</span>`,
+            `<span style="font-size:12px;color:${plIls>=0?'var(--profit)':'var(--loss)'}">${plIls>=0?'+':'-'}₪${fmt(plIls)} (${fmtP(plPct)}) סה״כ</span>`,
+        ].join('');
+
+        // Detail cards
+        if (!rows.length) { cards.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px">אין נתוני מחיר זמינים</div>'; return; }
+        cards.innerHTML = rows.map(r => {
+            const plCls = r.totPct >= 0 ? 'var(--profit)' : 'var(--loss)';
+            const dCls  = r.dayPct >= 0 ? 'var(--profit)' : 'var(--loss)';
+            const dateStr = r.buyDate
+                ? (r.buyDate.length > 10 ? new Date(r.buyDate).toLocaleDateString('he-IL') : r.buyDate)
+                : '—';
+            return `<div style="background:var(--bg2,#f9fafb);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:14px;font-weight:700">${r.name}</span>
+                <span style="font-size:13px;font-weight:700;color:${plCls}">${fmtP(r.totPct)}</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 12px;font-size:12px">
+                <div><span style="color:var(--text3)">כמות: </span><b>${r.qty} יח׳</b></div>
+                <div><span style="color:var(--text3)">שער קנייה: </span><b>₪${r.avg.toLocaleString('he-IL',{maximumFractionDigits:2})}</b></div>
+                <div><span style="color:var(--text3)">שער נוכחי: </span><b>₪${r.cur.toLocaleString('he-IL',{maximumFractionDigits:2})}</b></div>
+                <div><span style="color:var(--text3)">שינוי יומי: </span><b style="color:${dCls}">${fmtP(r.dayPct)}</b></div>
+                <div><span style="color:var(--text3)">עלות: </span><b>₪${fmt(r.cost)}</b></div>
+                <div><span style="color:var(--text3)">שווי: </span><b>₪${fmt(r.cur * r.qty)}</b></div>
+                <div><span style="color:var(--text3)">רווח/הפסד: </span><b style="color:${plCls}">${r.totGain>=0?'+':'-'}₪${fmt(r.totGain)}</b></div>
+                <div><span style="color:var(--text3)">קנייה ראשונה: </span><b>${dateStr}</b></div>
+              </div>
+            </div>`;
+        }).join('');
+        _analysisLoaded = true;
+    } catch(e) {
+        cards.innerHTML = `<div style="text-align:center;color:var(--loss);padding:20px">שגיאה: ${e.message}</div>`;
+    }
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 
 let highestZIndex = 100;
@@ -1513,7 +1628,7 @@ let highestZIndex = 100;
 const MOB_TABS = {
     market:    ['win-indices-tase', 'win-stocks', 'win-realestate', 'win-main-chart'],
     portfolio: ['win-portfolio', 'win-simulator'],
-    ai:        ['win-ai-chat'],
+    analysis:  ['win-analysis'],
 };
 const MOB_ALL = Object.values(MOB_TABS).flat();
 
@@ -1528,11 +1643,11 @@ const PANEL_DEFS = {
         { id: 'win-portfolio',  label: 'תיק השקעות' },
         { id: 'win-simulator',  label: 'קנה / מכור' },
     ],
-    ai:        [
-        { id: 'win-ai-chat', label: 'יועץ AI' },
+    analysis:  [
+        { id: 'win-analysis', label: 'ניתוח תיק' },
     ],
 };
-const PANEL_TAB_LABELS = { market: 'שוק', portfolio: 'תיק', ai: 'יועץ' };
+const PANEL_TAB_LABELS = { market: 'שוק', portfolio: 'תיק', analysis: 'ניתוח' };
 
 let _panelPrefs = {};
 try { _panelPrefs = JSON.parse(localStorage.getItem('mob_panels') || '{}'); } catch(e) {}
@@ -1547,7 +1662,7 @@ function switchMobileTab(tab) {
         const inTab = MOB_TABS[tab].includes(id);
         el.classList.toggle('mob-hidden', !inTab || !_isPanelOn(id));
     });
-    if (tab === 'ai') markAlertsRead();
+    if (tab === 'analysis') loadPortfolioAnalysis();
 }
 
 // ── Panel Picker ─────────────────────────────────────────────────────────────
@@ -2419,8 +2534,8 @@ function openScanDetail(jsonStr) {
             div.innerHTML = tagStockMentions(msg);
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
-            // Switch to AI tab on mobile
-            if (window.switchMobileTab) switchMobileTab('ai');
+            // Open chat FAB on mobile when AI responds
+            if (window._chatOpen === false && window.toggleAIChat) toggleAIChat();
         }
     } catch {}
 }

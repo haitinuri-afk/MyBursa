@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" href="style.css?v=37">
+    <link rel="stylesheet" href="style.css?v=38">
 </head>
 <body>
     <div class="main-wrapper">
@@ -66,11 +66,11 @@
                 </span>
                 <span class="mob-tab-label">תיק</span>
             </button>
-            <button class="mob-tab" data-tab="ai" onclick="switchMobileTab('ai')">
+            <button class="mob-tab" data-tab="analysis" onclick="switchMobileTab('analysis')">
                 <span class="mob-tab-inner">
-                    <svg class="mob-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    <svg class="mob-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                 </span>
-                <span class="mob-tab-label">יועץ</span>
+                <span class="mob-tab-label">ניתוח</span>
             </button>
             <button class="mob-tab" onclick="openPanelPicker()">
                 <span class="mob-tab-inner">
@@ -268,8 +268,27 @@
             </div>
 
 
+            <!-- Portfolio Analysis Window -->
+            <div id="win-analysis" class="card mob-hidden" style="display:flex;flex-direction:column">
+                <div class="window-header">
+                    <h3>ניתוח תיק</h3>
+                    <div class="window-controls">
+                        <button class="win-btn win-max" onclick="toggleMaximize('win-analysis')"></button>
+                        <button class="win-btn win-close" onclick="this.closest('.card').style.display='none'"></button>
+                    </div>
+                </div>
+                <div class="card-body" style="padding:8px">
+                    <div id="analysis-summary" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;padding:0 4px"></div>
+                    <div class="scroll-container">
+                        <div id="analysis-cards" style="display:flex;flex-direction:column;gap:8px">
+                            <div style="text-align:center;color:var(--text3);font-size:13px;padding:20px">טוען נתונים...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- AI Chat Window — now a floating side panel -->
-            <div id="win-ai-chat" class="card" style="display:none;flex-direction:column;position:fixed;bottom:80px;left:24px;width:360px;height:520px;z-index:500;box-shadow:0 8px 40px rgba(0,0,0,0.22);border-radius:16px;transition:opacity .25s,transform .25s;transform:translateY(16px);opacity:0">
+            <div id="win-ai-chat" class="card" style="display:none;flex-direction:column;position:fixed;bottom:148px;left:24px;width:360px;height:520px;z-index:500;box-shadow:0 8px 40px rgba(0,0,0,0.22);border-radius:16px;transition:opacity .25s,transform .25s;transform:translateY(16px);opacity:0">
                 <div class="window-header">
                     <h3>יועץ AI</h3>
                     <div class="window-controls">
@@ -305,7 +324,7 @@
     </div>
 
     <!-- Chat FAB -->
-    <button id="chat-fab-btn" onclick="toggleAIChat()" title="יועץ AI" style="position:fixed;bottom:24px;left:24px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#1a73e8,#0d47a1);border:none;color:#fff;font-size:1.4rem;box-shadow:0 4px 18px rgba(26,115,232,.5);cursor:pointer;z-index:501;display:flex;align-items:center;justify-content:center;transition:transform .2s">
+    <button id="chat-fab-btn" onclick="toggleAIChat()" title="יועץ AI" style="position:fixed;bottom:calc(80px + env(safe-area-inset-bottom,0px));left:24px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#1a73e8,#0d47a1);border:none;color:#fff;font-size:1.5rem;line-height:1;box-shadow:0 4px 18px rgba(26,115,232,.5);cursor:pointer;z-index:501;display:flex;align-items:center;justify-content:center;transition:transform .2s;overflow:visible">
       💬
       <span id="chat-fab-badge" style="display:none;position:absolute;top:-3px;right:-3px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 5px;min-width:17px;text-align:center;line-height:17px"></span>
     </button>
@@ -365,7 +384,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=43"></script>
+    <script src="script.js?v=44"></script>
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js');
