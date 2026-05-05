@@ -261,7 +261,8 @@ header.top-bar {
     flex: 1;
     position: relative;
     min-height: 0;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 /* ── Cards ── */

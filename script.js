@@ -1990,11 +1990,11 @@ function resetWindows() {
 
     const LAYOUT = {
         'win-portfolio':           { top:0,        left:0,  width:lw },
-        'win-simulator':           { top:500,       left:0,  width:lw },
+        'win-simulator':           { top:460,      left:0,  width:lw },
         'win-main-chart':          { top:0,        left:cl, width:cw, height:ch },
-        'win-portfolio-analytics': { top:ch+gap,   left:cl, width:Math.min(520, cw) },
         'win-indices-tase':        { top:0,        left:rl, width:lw },
-        'win-stocks':              { top:248,       left:rl, width:lw },
+        'win-stocks':              { top:240,      left:rl, width:lw },
+        'win-portfolio-analytics': { top:ch+gap,   left:cl, width:cw },
     };
 
     Object.entries(LAYOUT).forEach(([id, styles]) => {
