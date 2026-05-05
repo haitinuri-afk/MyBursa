@@ -289,7 +289,7 @@ function scheduleFetch() {
     lastMarketOpen = open;
 
     clearInterval(fetchInterval);
-    fetchInterval = setInterval(refreshRealData, open ? 2000 : 60000);
+    fetchInterval = setInterval(refreshRealData, open ? 15000 : 60000);
     console.log(`[Eco] Market ${open ? 'OPEN → 2s' : 'CLOSED → 60s'}`);
 }
 
@@ -395,7 +395,8 @@ async function fetchBatchPrices(symbols) {
 }
 
 async function refreshRealData() {
-    setDataStatus('fetch', 'Fetching from Yahoo Finance…');
+    // רק בטעינה ראשונה מציגים "..." — לא בכל רענון
+    if (!window._lastQuotes?.length) setDataStatus('fetch', 'Fetching from Yahoo Finance…');
 
     const symbols = Object.values(STOCK_SYMBOLS);
     const quotes  = await fetchBatchPrices(symbols);
