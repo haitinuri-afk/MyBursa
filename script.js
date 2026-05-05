@@ -1700,6 +1700,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.innerWidth <= 768) switchMobileTab('market');
     try { initWindowManager(); } catch(e) { console.error("Window manager failed:", e); }
     requestNotifPermission();
+    setTimeout(loadPortfolioAnalysis, 2000);  // load analysis on all screens
 
     initTicker(); initStockSuggestions(); updateStockList(); updateRealEstateList(); updatePortfolioList(); updateTransactionHistory();
     fetchScanStrip();
