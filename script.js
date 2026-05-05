@@ -1535,7 +1535,7 @@ async function initPortfolioAnalytics() {
                         hoverOffset: 4 }],
                 },
                 options: {
-                    responsive: true, maintainAspectRatio: true, cutout: '68%',
+                    responsive: false, cutout: '68%',
                     plugins: { legend: { display: false }, tooltip: {
                         callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}%` }
                     }},
@@ -1933,7 +1933,7 @@ function resetWindows() {
         'win-portfolio':           { top:0,        left:0,  width:lw },
         'win-simulator':           { top:500,       left:0,  width:lw },
         'win-main-chart':          { top:0,        left:cl, width:cw, height:ch },
-        'win-portfolio-analytics': { top:ch+gap,   left:cl, width:cw },
+        'win-portfolio-analytics': { top:ch+gap,   left:cl, width:Math.min(520, cw) },
         'win-indices-tase':        { top:0,        left:rl, width:lw },
         'win-stocks':              { top:248,       left:rl, width:lw },
     };
