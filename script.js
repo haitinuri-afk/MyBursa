@@ -1556,17 +1556,13 @@ function initPortfolioAnalytics() {
             return;
         }
 
-        // Quote map
-        const qMap = {};
-        (window._lastQuotes || []).forEach(q => { if (q.name) qMap[q.name] = q; });
-
         // Single pass: sector values + totals + beta
         const sectorVal = {};
         let totalVal = 0, totalCost = 0, betaWeighted = 0;
         names.forEach(name => {
             const h        = ptf[name];
-            const q        = qMap[name];
-            const cur      = q?.price ?? h.buyPrice ?? h.avgPrice ?? 0;
+            // stocksData already has live prices mapped to Hebrew names
+            const cur      = stocksData[name]?.price ?? h.buyPrice ?? h.avgPrice ?? 0;
             const qty      = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
             const buyPrice = h.buyPrice ?? h.avgPrice ?? h.avgCost ?? cur;
             const val      = cur * qty;
@@ -1689,11 +1685,9 @@ async function askPortfolioInsights() {
     out.textContent = '';
     try {
         // Build portfolio summary for AI context
-        const qMap = {};
-        (window._lastQuotes || []).forEach(q => { if (q.name) qMap[q.name] = q; });
         const ptf = portfolio ?? {};
         const holdings = Object.entries(ptf).map(([name, h]) => {
-            const cur = qMap[name]?.price ?? h.buyPrice ?? 0;
+            const cur = stocksData[name]?.price ?? h.buyPrice ?? 0;
             const qty = h.qty ?? h.quantity ?? h.shares ?? 0;
             const buy = h.buyPrice ?? h.avgPrice ?? cur;
             const pnl = ((cur - buy) / buy * 100).toFixed(1);
