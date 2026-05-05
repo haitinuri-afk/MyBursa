@@ -319,6 +319,23 @@
             </div>
 
 
+            <!-- AI Insights Floating Panel -->
+            <div id="win-ai-insights" class="card" dir="rtl" style="display:none;flex-direction:column;position:fixed;bottom:96px;left:96px;width:380px;max-height:480px;z-index:600;box-shadow:0 8px 40px rgba(0,0,0,0.22);border-radius:16px;transition:opacity .2s,transform .2s;transform:translateY(12px);opacity:0">
+                <div class="window-header">
+                    <h3>💡 תובנות AI על התיק</h3>
+                    <div class="window-controls">
+                        <button class="win-btn win-close" onclick="closeInsightsPanel()"></button>
+                    </div>
+                </div>
+                <div class="card-body" style="overflow-y:auto;padding:14px 18px">
+                    <div id="insights-panel-body" style="font-size:12.5px;line-height:1.75;color:var(--text);white-space:pre-wrap">
+                        <div id="insights-panel-loader" style="display:flex;align-items:center;gap:8px;color:var(--text3)">
+                            <span style="animation:spin 1s linear infinite;display:inline-block">⏳</span> מחשב תובנות…
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- AI Chat Window — now a floating side panel -->
             <div id="win-ai-chat" class="card" style="display:none;flex-direction:column;position:fixed;bottom:148px;left:24px;width:360px;height:520px;z-index:500;box-shadow:0 8px 40px rgba(0,0,0,0.22);border-radius:16px;transition:opacity .25s,transform .25s;transform:translateY(16px);opacity:0">
                 <div class="window-header">

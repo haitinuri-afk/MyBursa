@@ -1675,46 +1675,56 @@ function initPortfolioAnalytics() {
     }
 }
 
+function closeInsightsPanel() {
+    const panel = document.getElementById('win-ai-insights');
+    if (!panel) return;
+    panel.style.opacity = '0';
+    panel.style.transform = 'translateY(12px)';
+    setTimeout(() => { panel.style.display = 'none'; }, 200);
+}
+
 async function askPortfolioInsights() {
-    const btn = document.getElementById('insights-btn');
-    const out = document.getElementById('insights-output');
-    if (!btn || !out) return;
-    btn.disabled = true;
-    btn.textContent = '⏳ מחשב...';
-    out.style.display = 'block';
-    out.textContent = '';
+    const btn   = document.getElementById('insights-btn');
+    const panel = document.getElementById('win-ai-insights');
+    const body  = document.getElementById('insights-panel-body');
+    const loader = document.getElementById('insights-panel-loader');
+    if (!panel || !body) return;
+
+    // Show floating panel
+    panel.style.display = 'flex';
+    requestAnimationFrame(() => { panel.style.opacity = '1'; panel.style.transform = 'translateY(0)'; });
+    if (loader) loader.style.display = 'flex';
+    // Reset body to loader only
+    body.innerHTML = `<div id="insights-panel-loader" style="display:flex;align-items:center;gap:8px;color:var(--text3)"><span style="animation:spin 1s linear infinite;display:inline-block">⏳</span> מחשב תובנות…</div>`;
+
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ מחשב...'; }
     try {
         // Build portfolio summary for AI context
         const ptf = portfolio ?? {};
         const holdings = Object.entries(ptf).map(([name, h]) => {
             const cur = stocksData[name]?.price ?? h.buyPrice ?? 0;
             const qty = h.qty ?? h.quantity ?? h.shares ?? 0;
-            const buy = h.buyPrice ?? h.avgPrice ?? cur;
-            const pnl = ((cur - buy) / buy * 100).toFixed(1);
-            return `${name}: ${qty} מניות, מחיר ${cur.toFixed(2)}, P&L ${pnl}%`;
+            const buy = h.buyPrice ?? h.avgPrice ?? h.avgCost ?? cur;
+            const pnl = buy > 0 ? ((cur - buy) / buy * 100).toFixed(1) : '0.0';
+            return `${name}: ${qty} מניות, מחיר ₪${cur.toFixed(2)}, P&L ${pnl}%`;
         }).join('\n');
         const prompt = `להלן תיק ההשקעות שלי:\n${holdings}\n\nתן תובנות קצרות ומעשיות: חוזקות, חולשות, והמלצה אחת.`;
 
         const res = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messages: [{ role: 'user', content: prompt }],
-                quotes: window._lastQuotes || [],
-            }),
+            body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], quotes: window._lastQuotes || [] }),
             signal: AbortSignal.timeout(30000),
         });
         const data = await res.json();
-        if (!res.ok) {
-            out.textContent = data.error ?? `שגיאת שרת ${res.status}`;
-            return;
-        }
-        out.textContent = data.reply ?? data.content ?? 'השרת לא החזיר תשובה.';
+        const text = !res.ok
+            ? (data.error ?? `שגיאת שרת ${res.status}`)
+            : (data.reply ?? data.content ?? 'השרת לא החזיר תשובה.');
+        body.textContent = text;
     } catch(e) {
-        out.textContent = e.name === 'TimeoutError' ? 'הבקשה לקחה יותר מדי זמן.' : `שגיאה: ${e.message}`;
+        body.textContent = e.name === 'TimeoutError' ? 'הבקשה לקחה יותר מדי זמן.' : `שגיאה: ${e.message}`;
     } finally {
-        btn.disabled = false;
-        btn.textContent = '💡 תובנות AI על התיק';
+        if (btn) { btn.disabled = false; btn.textContent = '💡 תובנות AI'; }
     }
 }
 
@@ -1899,6 +1909,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.innerWidth <= 768) switchMobileTab('market');
     else resetWindows();   // apply default layout on desktop first load
     try { initWindowManager(); } catch(e) { console.error("Window manager failed:", e); }
+    const insightsPanel = document.getElementById('win-ai-insights');
+    if (insightsPanel) makeDraggable(insightsPanel);
     requestNotifPermission();
 
     initTicker(); initStockSuggestions(); updateStockList(); updateRealEstateList(); updatePortfolioList(); updateTransactionHistory();
