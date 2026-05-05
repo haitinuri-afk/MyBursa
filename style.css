@@ -558,18 +558,34 @@ td {
 
 .stock-row:hover { background: #f9fafb; cursor: pointer; }
 
+/* Mobile-only portfolio elements — hidden on desktop */
+.mob-ptf-header, .mob-ptf-divider, .mob-ptf-cards, .mob-stock-detail { display: none; }
+
+/* ── Mini Indices Bar ── */
+#mini-indices-bar { background: rgba(0,0,0,.02); }
+.mini-idx-cell:hover { background: rgba(0,0,0,.04); }
+
+/* ── Analytics Summary Bar ── */
+.ana-summary-bar {
+    display: flex; flex-wrap: nowrap; gap: 8px;
+    padding: 7px 10px; border-radius: 10px;
+    background: rgba(0,0,0,.03); align-items: center;
+}
+.ana-sep { width: 1px; height: 28px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
+
 /* ── Portfolio Footer ── */
 .portfolio-footer {
     margin-top: 10px;
-    padding: 12px 0 2px;
+    padding: 10px 4px 6px;
     border-top: 1px solid var(--border);
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
+    justify-content: center;
+    align-items: center;
     font-weight: 700;
     color: var(--text);
     font-size: 14px;
-    gap: 8px;
+    gap: 16px;
+    overflow: visible;
 }
 
 /* ── Sell Button ── */
@@ -670,6 +686,37 @@ td {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
 }
+
+/* ── P&L 2-column grid ── */
+.pnl-grid {
+    display: grid;
+    grid-template-columns: 40% 60%;
+    gap: 12px;
+    direction: rtl;
+}
+.pnl-col-right { overflow-y: auto; max-height: 340px; }
+.pnl-col-left  { overflow-y: auto; max-height: 340px; }
+
+@media (max-width: 768px) {
+    .pnl-grid { grid-template-columns: 1fr; }
+    .pnl-col-right, .pnl-col-left { max-height: none; }
+}
+
+/* Insights panel tabs */
+.itab-btn {
+    padding: 4px 10px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text3);
+    cursor: pointer;
+    transition: background .15s, color .15s;
+    white-space: nowrap;
+}
+.itab-btn:hover  { background: var(--surface); color: var(--text); }
+.itab-active     { background: var(--surface) !important; color: var(--text) !important; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
 
 .chat-msg {
     padding: 10px 14px;
@@ -905,6 +952,30 @@ canvas { width: 100% !important; height: 100% !important; }
 /* ══════════════════════════════════════════
    MOBILE  (≤ 768px)
 ══════════════════════════════════════════ */
+/* ── Mobile chart bottom sheet ── */
+#win-main-chart.mob-chart-open {
+    display: flex !important;
+    position: fixed !important;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+    left: 0 !important; right: 0 !important;
+    width: 100vw !important; height: 52vh !important;
+    margin: 0 !important; padding: 0 !important;
+    z-index: 1999 !important;
+    border-radius: 20px 20px 0 0 !important;
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.22) !important;
+    flex-direction: column !important;
+    transform: none !important;
+}
+#win-main-chart.mob-chart-open .card-body {
+    flex: 1 !important; min-height: 0 !important; padding: 6px 8px 8px !important;
+    display: flex !important; flex-direction: column !important;
+}
+#win-main-chart.mob-chart-open .card-body > div {
+    flex: 1 !important; min-height: 0 !important;
+}
+#win-main-chart.mob-chart-open #mob-chart-close { display: flex !important; }
+#win-main-chart.mob-chart-open .chart-date { display: none; }
+
 @media (max-width: 768px) {
 
     body { overflow: auto; height: auto; min-height: 100vh; background: #f0f2f5; }
@@ -955,6 +1026,125 @@ canvas { width: 100% !important; height: 100% !important; }
     .mob-tab-icon { width: 22px; height: 22px; stroke-width: 1.8; }
     .mob-tab-label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
     .mob-hidden { display: none !important; }
+    .mob-hidden-mobile { display: none !important; }
+    [id^="win-detail-"] { display: none !important; }
+
+    /* ── Analytics summary bar — mobile grid ── */
+    .ana-summary-bar {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 12px;
+    }
+    .ana-sep { display: none; }
+
+    /* ── Mobile Portfolio Summary ── */
+    .mob-ptf-header {
+        padding: 20px 20px 16px;
+        background: #fff;
+        text-align: right;
+        border-bottom: 1px solid var(--border);
+    }
+    .mob-ptf-label {
+        font-size: 12px; color: var(--text3); font-weight: 600;
+        margin-bottom: 4px; letter-spacing: 0.2px;
+    }
+    .mob-ptf-total-num {
+        font-size: 38px; font-weight: 700; color: var(--text);
+        letter-spacing: -1px; margin-bottom: 12px; direction: ltr; text-align: right;
+    }
+    .mob-ptf-changes { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .mob-ptf-change-row {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 13px;
+    }
+    .mob-ptf-change-label { color: var(--text3); font-weight: 500; }
+    .mob-ptf-analysis-btn {
+        width: 100%; padding: 10px 16px; border-radius: 24px;
+        border: 1.5px solid var(--border); background: transparent;
+        color: var(--text); font-size: 13px; font-weight: 600;
+        cursor: pointer; text-align: center; direction: rtl;
+    }
+    .mob-ptf-divider {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 10px 16px 8px; font-size: 12px;
+        color: var(--text3); background: #f9fafb;
+        border-bottom: 1px solid var(--border);
+    }
+    .mob-ptf-sort { display: flex; align-items: center; gap: 4px; color: #ef4444; font-weight: 600; }
+    .mob-ptf-cards { display: flex; flex-direction: column; }
+    .mob-stock-card {
+        padding: 14px 16px; border-bottom: 1px solid var(--border);
+        background: #fff; cursor: pointer; direction: rtl;
+    }
+    .mob-stock-card:active { background: #f5f5f5; }
+    .mob-stock-name { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .mob-stock-row1 {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 4px;
+    }
+    .mob-stock-qty { font-size: 12px; color: var(--text3); }
+    .mob-stock-daily-ils { font-size: 13px; font-weight: 700; direction: ltr; }
+    .mob-stock-row2 {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 8px;
+    }
+    .mob-stock-badge {
+        display: inline-block; padding: 2px 9px; border-radius: 12px;
+        font-size: 12px; font-weight: 700; direction: ltr;
+    }
+    .mob-stock-total-pct { font-size: 12px; color: var(--text3); direction: ltr; }
+    .mob-stock-row3 {
+        display: flex; justify-content: space-between;
+        padding-top: 8px; border-top: 1px solid #f0f0f0;
+        font-size: 11px; color: var(--text3);
+    }
+    .mob-stock-row3 b { color: var(--text); font-weight: 600; }
+    .mob-stock-card.selected { background: #f0fdf4; border-right: 3px solid var(--primary); }
+    /* Inline stock detail panel */
+    .mob-stock-detail {
+        background: #fff; border-top: 2px solid var(--primary);
+        padding: 14px 16px; direction: rtl;
+    }
+    .mob-detail-header {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 12px;
+    }
+    .mob-detail-name { font-size: 16px; font-weight: 700; }
+    .mob-detail-close {
+        background: none; border: none; font-size: 18px; color: var(--text3);
+        cursor: pointer; padding: 0 4px; line-height: 1;
+    }
+    .mob-detail-stats {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+        margin-bottom: 14px;
+    }
+    .mob-detail-stat { display: flex; flex-direction: column; gap: 2px; }
+    .mob-detail-stat-label { font-size: 10px; color: var(--text3); font-weight: 500; }
+    .mob-detail-stat-val { font-size: 15px; font-weight: 700; }
+    .mob-detail-sell {
+        width: 100%; padding: 11px; border-radius: 10px;
+        background: #dc2626; border: none; color: #fff;
+        font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+
+    /* Chat FAB — raise above 64px tab bar */
+    #chat-fab-btn { bottom: calc(64px + 16px + env(safe-area-inset-bottom, 0px)) !important; left: 20px !important; transform: none !important; }
+
+    /* Insights modal — bottom sheet on mobile */
+    #win-ai-insights {
+        width: 100vw !important;
+        max-height: 92dvh !important;
+        min-height: 55vh !important;
+        top: auto !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        border-radius: 20px 20px 0 0 !important;
+    }
+    #itab-content-ai,
+    #itab-content-perf,
+    #itab-content-pnl { -webkit-overflow-scrolling: touch; padding: 12px !important; overflow-x: hidden !important; }
+    #pnl-table-wrap { overflow-x: hidden !important; }
+    #pnl-nav-body canvas { max-width: 100% !important; }
 
     /* ── Dashboard ── */
     .dashboard-grid {
@@ -978,11 +1168,15 @@ canvas { width: 100% !important; height: 100% !important; }
     /* hide desktop-only controls */
     .win-btn { display: none !important; }
     .pill-btn { display: none !important; }
+    /* insights close button */
+    .insights-close-btn { display: flex !important; width: 28px !important; height: 28px !important; opacity: 1 !important; background: rgba(0,0,0,0.06) !important; }
+    .win-max.insights-close-btn   { background: #16a34a !important; }
 
     /* ── Card bodies ── */
     .card-body { min-height: 0; padding: 12px 14px; }
-    #win-indices-tase .card-body { min-height: 260px; }
-    #win-main-chart .card-body   { min-height: 300px; }
+    #win-indices-tase .card-body { height: 300px !important; min-height: 300px !important; }
+    #win-indices-tase .idx-chart-body { height: 300px !important; }
+    #win-main-chart .card-body   { height: 340px; }
     #win-ai-chat { display: flex !important; flex-direction: column; min-height: 420px; }
     #win-ai-chat .card-body { flex: 1; }
 
@@ -1004,13 +1198,22 @@ canvas { width: 100% !important; height: 100% !important; }
     input, textarea, select { font-size: 16px !important; }
 
     /* ── Timeframe buttons ── */
-    .timeframe-buttons button { padding: 5px 10px; font-size: 11.5px; }
+    .timeframe-buttons button { padding: 3px 7px; font-size: 11px; }
+    .chart-date { display: none; }
+    #win-main-chart .window-header > div:first-child { min-width: 0; flex-shrink: 1; overflow: hidden; }
 
     /* ── Simulator ── */
     .action-btn-sm { padding: 10px 14px; font-size: 14px; border-radius: 12px; }
     .sim-input-sm  { font-size: 16px !important; padding: 11px 12px; border-radius: 10px; }
     .sim-input     { font-size: 16px !important; padding: 11px 14px; border-radius: 10px; }
     #win-simulator .card-body { min-height: 0; padding-bottom: 14px; }
+
+    /* Reset desktop fixed heights for mobile */
+    #win-portfolio, #win-simulator, #win-portfolio-analytics,
+    #win-stocks, #win-indices-tase, #win-main-chart, #win-realestate {
+        height: auto !important; width: 100% !important;
+        position: static !important; top: auto !important; left: auto !important;
+    }
 
     /* ── Portfolio ── */
     #win-portfolio .scroll-container { min-height: 200px; }

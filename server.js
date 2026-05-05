@@ -10,6 +10,7 @@ const multer       = require('multer');
 const pdfParse     = require('pdf-parse');
 const cron         = require('node-cron');
 const { runScan, getLatestScans } = require('./maya-scraper');
+const { startAutomation }         = require('./automationService');
 const webpush = require('web-push');
 
 // ── Web Push / VAPID setup ────────────────────────────────────────────────────
@@ -32,12 +33,12 @@ const PORT = process.env.PORT || 3000;
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
 
+const _isLocalOrigin = o => !o || o.includes('localhost') || o.endsWith('.onrender.com')
+    || /^https?:\/\/(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(o)
+    || ALLOWED_ORIGINS.includes(o);
+
 app.use(cors({
-    origin: (origin, cb) => {
-        if (!origin) return cb(null, true);
-        if (origin.includes('localhost') || origin.endsWith('.onrender.com') || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-        cb(new Error(`CORS blocked: ${origin}`));
-    },
+    origin: (origin, cb) => _isLocalOrigin(origin) ? cb(null, true) : cb(new Error(`CORS blocked: ${origin}`)),
     credentials: true,
 }));
 
@@ -84,20 +85,9 @@ app.use(express.static(path.join(__dirname)));
 
 // ── Yahoo Finance helpers ─────────────────────────────────────────────────
 
-const SYMBOL_FALLBACKS = { '^TA35':'TA35.TA', '^TA125':'TA125.TA', '^TA90':'TA90.TA' };
+const SYMBOL_FALLBACKS = { '^TA35':'TA35.TA', '^TA100':'TA100.TA', '^TA90':'TA90.TA' };
 
-const STOCK_SYMBOLS_HE = {
-    "מדד תא-35":"^TA35","מדד תא-90":"^TA90",
-    "לאומי":"LUMI.TA","פועלים":"POLI.TA","דיסקונט":"DSCT.TA","מזרחי טפחות":"MZTF.TA","הבינלאומי":"FIBI.TA","בנק ירושלים":"JBNK.TA",
-    "אי.בי.אי":"IBI.TA",
-    "אלביט":"ESLT.TA","נייס":"NICE.TA","טאוור":"TSEM.TA","אאורה":"AURA.TA",
-    "טבע":"TEVA.TA","כיל":"ICL.TA",
-    "הפניקס":"PHOE.TA","הראל":"HARL.TA","כלל ביטוח":"CLIS.TA",
-    "עזריאלי":"AZRG.TA","מליסרון":"MLSR.TA","אמות":"AMOT.TA","ביג":"BIG.TA","גב ים":"GVYM.TA","שיכון ובינוי":"SKBN.TA","ריט1":"RIT1.TA",
-    "אנרג'יקס":"ENRG.TA","אנלייט":"ENLT.TA","אורמת":"ORA.TA","קבוצת דלק":"DLEKG.TA",
-    "בזק":"BEZQ.TA","סלקום":"CEL.TA","פרטנר":"PTNR.TA",
-    "שטראוס":"STRS.TA","שופרסל":"SAE.TA","פוקס":"FOX.TA","רמי לוי":"RMLI.TA",
-};
+const { STOCK_SYMBOLS_HE } = require('./dataConstants');
 
 let _usdIlsRate = 3.00; let _usdIlsPrev = 3.00;
 let _eurIlsRate = 3.50; let _eurIlsPrev = 3.50;
@@ -162,7 +152,7 @@ async function refreshFxRates() {
     } catch(e) { console.warn('[rate] er-api failed:', e.message); }
 }
 
-const INDEX_ALIASES = new Set(['TA90.TA', 'TA125.TA', 'TA35.TA']);
+const INDEX_ALIASES = new Set(['TA90.TA', 'TA100.TA', 'TA125.TA', 'TA35.TA']);
 
 function applyDivisor(sym, value, currency) {
     if (value == null) return null;
@@ -182,7 +172,10 @@ async function fetchChartMeta(symbol, range, interval = '1d') {
             { sym: symbol,   range, interval,  host: 'query2' },
             { sym: symbol,   range: '1d', interval: '5m', host: 'query1' },
             { sym: symbol,   range: '1d', interval: '5m', host: 'query2' },
+            { sym: symbol,   range: '1mo', interval: '1d', host: 'query1' },
+            { sym: symbol,   range: '1mo', interval: '1d', host: 'query2' },
             ...(fallback ? [{ sym: fallback, range, interval, host: 'query2' }] : []),
+            ...(fallback ? [{ sym: fallback, range: '1mo', interval: '1d', host: 'query1' }] : []),
           ]
         : [
             { sym: symbol,   range, interval, host: 'query2' },
@@ -442,11 +435,37 @@ async function fetchQuotesBatch(symList) {
         return result;
     }));
     const results = [];
+    const failedIndices = [];
     settled.forEach((r, i) => {
         if (r.status === 'fulfilled') results.push(r.value);
         else if (_lastKnownPrices[symList[i]]) results.push(_lastKnownPrices[symList[i]]);
-        else console.warn(`[batch] ${symList[i]}: ${r.reason?.message}`);
+        else {
+            console.warn(`[batch] ${symList[i]}: ${r.reason?.message}`);
+            if (symList[i].startsWith('^')) failedIndices.push(symList[i]);
+        }
     });
+
+    // Fallback: index symbols that failed v8 chart → try v7 quote API
+    if (failedIndices.length) {
+        try {
+            const v7 = await fetchV7Quotes(failedIndices);
+            v7.forEach(q => {
+                if (!q.regularMarketPrice) return;
+                const result = {
+                    symbol:                     q.symbol,
+                    regularMarketPrice:         parseFloat(q.regularMarketPrice.toFixed(2)),
+                    regularMarketPreviousClose: q.regularMarketPreviousClose
+                                                    ? parseFloat(q.regularMarketPreviousClose.toFixed(2))
+                                                    : parseFloat(q.regularMarketPrice.toFixed(2)),
+                    marketState: q.marketState ?? 'CLOSED',
+                };
+                _lastKnownPrices[q.symbol] = result;
+                results.push(result);
+                console.log(`[batch] v7 fallback: ${q.symbol} → ₪${result.regularMarketPrice}`);
+            });
+        } catch(e) { console.warn('[batch] v7 fallback failed:', e.message); }
+    }
+
     return results;
 }
 
@@ -503,13 +522,35 @@ app.get('/api/stock/history', async (req, res) => {
         }
         const prevCloseRaw = meta.regularMarketPreviousClose ?? tsPrevClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
 
+        // For index symbols: if fallback ETF was used, the raw meta price is wrong.
+        // Trust _lastKnownPrices (from batch v8/v7) which has the correct scale.
+        // If cache is empty (server just started), fetch the real price now.
+        if (!_lastKnownPrices[canonicalSymbol] && canonicalSymbol in SYMBOL_FALLBACKS) {
+            try { await fetchQuotesBatch([canonicalSymbol]); } catch(_) {}
+        }
+        const cached = _lastKnownPrices[canonicalSymbol];
+        const price     = (cached?.regularMarketPrice)     ?? applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency);
+        const prevClose = (cached?.regularMarketPreviousClose) ?? applyDivisor(canonicalSymbol, prevCloseRaw, currency);
+
+        // Scale OHLC/closes if fallback ETF was used (detect via price mismatch > 50%)
+        const rawMetaPrice = applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency);
+        const scaleFactor  = (cached && rawMetaPrice > 0 && Math.abs(rawMetaPrice - price) / price > 0.5)
+            ? price / rawMetaPrice : 1;
+        const scaleOHLC  = scaleFactor !== 1;
+
         res.json({
             symbol: canonicalSymbol,
-            price:     applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency),
-            prevClose: applyDivisor(canonicalSymbol, prevCloseRaw, currency),
-            closes,
+            price,
+            prevClose,
+            closes:     scaleOHLC ? closes.map(v => parseFloat((v * scaleFactor).toFixed(2))) : closes,
             timestamps: closeTimes,
-            ohlc
+            ohlc:       scaleOHLC ? ohlc.map(d => ({
+                            ...d,
+                            open:  parseFloat((d.open  * scaleFactor).toFixed(2)),
+                            high:  parseFloat((d.high  * scaleFactor).toFixed(2)),
+                            low:   parseFloat((d.low   * scaleFactor).toFixed(2)),
+                            close: parseFloat((d.close * scaleFactor).toFixed(2)),
+                        })) : ohlc,
         });
     } catch(e) {
         console.error('[/api/stock/history]', e.message);
@@ -530,6 +571,7 @@ let _portfolioCol = null;   // User portfolio symbols collection
 let _alertsCol    = null;   // Portfolio alerts collection
 let _subsCol      = null;   // Web Push subscriptions collection
 let _mongoReady   = null;   // Promise that resolves when initMongoDB completes
+let _automation   = null;   // { runNow } handle returned by startAutomation
 
 async function initMongoDB() {
     if (!MONGODB_URI) return;
@@ -996,12 +1038,28 @@ ${_overSection}` : '';
         .join('\n');
 
     const _portfolioNames = Object.keys(portfolioData.portfolio ?? {});
+
+    // Pull latest automation daily report (always injected — most current risk data)
+    let automationChunk = '';
+    if (_ragCol) {
+        try {
+            const autoDoc = await _ragCol.findOne(
+                { source: 'automation' },
+                { sort: { createdAt: -1 }, projection: { text: 1, _id: 0 } }
+            );
+            if (autoDoc?.text) automationChunk = autoDoc.text;
+        } catch { /* silent */ }
+    }
+
     const [retrieved, companyProfiles] = await Promise.all([
         retrieveRelevantChunks(query, 2),
         retrieveCompanyProfiles(query, _portfolioNames),
     ]);
-    const knowledgeSection = retrieved.length
-        ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}` : '';
+
+    const knowledgeSection = [
+        automationChunk ? `## דוח סיכונים אחרון (אוטומציה):\n${automationChunk}` : '',
+        retrieved.length ? `## ידע רלוונטי:\n${retrieved.join('\n\n---\n\n')}` : '',
+    ].filter(Boolean).join('\n\n');
 
     const newsSection = _cachedNews.length
         ? `## חדשות פיננסיות אחרונות:\n${_cachedNews.slice(0,12).map(n => `- [${n.source}] ${n.title}`).join('\n')}`
@@ -1567,6 +1625,118 @@ app.get('/api/portfolio', async (req, res) => {
     catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Portfolio History ──────────────────────────────────────────────────────────
+let _historyCache = null, _historyCacheAt = 0;
+const HISTORY_TTL = 20 * 60 * 1000; // 20 min
+
+app.get('/api/portfolio/history', async (req, res) => {
+    try {
+        if (_historyCache && Date.now() - _historyCacheAt < HISTORY_TTL) {
+            return res.json(_historyCache);
+        }
+        if (_mongoReady) await _mongoReady;
+        const pd   = await loadPortfolio();
+        const port = pd.portfolio ?? {};
+        const names = Object.keys(port);
+        if (!names.length) return res.json({ stocks: {}, dailyPnL: [], holdings: [] });
+
+        // First buy date per stock from transaction history
+        const _firstBuy = {};
+        (pd.transactionHistory ?? []).filter(t => t.type === 'buy').forEach(t => {
+            if (t.name && !_firstBuy[t.name]) _firstBuy[t.name] = t.date;
+        });
+
+        // Sector map (inline copy for history endpoint scope)
+        const _SEC = {
+            'בנקים':    ['לאומי','פועלים','דיסקונט','מזרחי טפחות','הבינלאומי','בנק ירושלים'],
+            'ביטוח':    ['הפניקס','הראל','כלל ביטוח'],
+            'טכנולוגיה':['נייס','טאוור','אאורה'],
+            'נדל"ן':    ['עזריאלי','אמות','מליסרון','גב-ים','ביג'],
+            'אנרגיה':   ['דלק קידוחים','נפטא'],
+            'מדדים':    ['מדד תא-35','מדד תא-90'],
+        };
+
+        const results = await Promise.allSettled(names.map(async name => {
+            const sym = STOCK_SYMBOLS_HE[name];
+            if (!sym) return null;
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=3mo`;
+            const r   = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }, signal: AbortSignal.timeout(9000) });
+            const json = await r.json();
+            const res2 = json.chart?.result?.[0];
+            if (!res2) return null;
+            const ts  = res2.timestamp || [];
+            const cls = res2.indicators?.quote?.[0]?.close || [];
+            const history = ts.map((t, i) => ({ date: new Date(t * 1000).toISOString().split('T')[0], close: cls[i] })).filter(d => d.close != null);
+            if (!history.length) return null;
+            const last  = history[history.length - 1].close;
+            const at    = n => history[Math.max(0, history.length - 1 - n)]?.close ?? last;
+            const pct   = (now, prev) => prev > 0 ? ((now - prev) / prev * 100).toFixed(2) : '0.00';
+            return { name, data: { history: history.slice(-63), change_1d: pct(last, at(1)), change_1w: pct(last, at(5)), change_1m: pct(last, at(21)), change_3m: pct(last, at(63)), currentPrice: last } };
+        }));
+
+        const stocks = {}, allDaily = {};
+        results.forEach(r => {
+            if (r.status !== 'fulfilled' || !r.value) return;
+            const { name, data } = r.value;
+            stocks[name] = data;
+            const h   = port[name];
+            const qty = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? 0;
+            const cost = h.totalCost ?? ((h.buyPrice ?? h.avgCost ?? 0) * qty);
+            data.history.forEach(({ date, close }) => {
+                if (!allDaily[date]) allDaily[date] = { value: 0, cost: 0 };
+                allDaily[date].value += close * qty;
+                allDaily[date].cost  += cost;
+            });
+        });
+
+        const dailyPnL = Object.entries(allDaily)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, { value, cost }]) => ({
+                date,
+                value:   Math.round(value),
+                pnl:     Math.round(value - cost),
+                pnlPct:  cost > 0 ? ((value - cost) / cost * 100).toFixed(2) : '0.00',
+            }));
+
+        // ── Per-stock inception P&L (server-side) ────────────────────────
+        const holdings = Object.entries(port).map(([name, h]) => {
+            const s = stocks[name];
+            if (!s) return null;
+            const qty      = h.qty ?? h.quantity ?? h.shares ?? 0;
+            const buyPrice = parseFloat(h.buyPrice ?? h.avgCost ?? 0);
+            const curPrice = s.currentPrice;
+            const mktValue = curPrice * qty;
+            const costBasis = h.totalCost ?? (buyPrice * qty);
+            const inceptionPnlIls = mktValue - costBasis;
+            const inceptionPnlPct = buyPrice > 0 ? ((curPrice - buyPrice) / buyPrice * 100) : 0;
+            const dayChangePct    = parseFloat(s.change_1d);
+            const prevPrice       = Math.abs(dayChangePct) > 0 ? curPrice / (1 + dayChangePct / 100) : curPrice;
+            const dayChangeIls    = (curPrice - prevPrice) * qty;
+            // Attach to stocks entry so ביצועים tab can use it
+            s.buyPrice = buyPrice;
+            s.qty      = qty;
+            const sector = Object.entries(_SEC).find(([,ns]) => ns.includes(name))?.[0] ?? 'אחר';
+            return {
+                name, qty, buyPrice, curPrice, mktValue: Math.round(mktValue),
+                costBasis: Math.round(costBasis),
+                inceptionPnlIls: Math.round(inceptionPnlIls),
+                inceptionPnlPct: inceptionPnlPct.toFixed(2),
+                dayChangePct: s.change_1d,
+                dayChangeIls: Math.round(dayChangeIls),
+                sector,
+                purchaseDate: _firstBuy[name] ?? null
+            };
+        }).filter(Boolean).sort((a, b) => b.inceptionPnlIls - a.inceptionPnlIls);
+
+        _historyCache   = { stocks, dailyPnL, holdings };
+        _historyCacheAt = Date.now();
+        res.json(_historyCache);
+    } catch(e) {
+        console.error('[/api/portfolio/history]', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ── Portfolio Analytics ──────────────────────────────────────────────────────
 const _SECTORS = {
     'בנקים':       ['לאומי','פועלים','דיסקונט','מזרחי טפחות','הבינלאומי','בנק ירושלים'],
@@ -1868,6 +2038,27 @@ app.post('/api/trigger-scan', apiLimiter, async (req, res) => {
         .catch(e => console.error('[maya] manual scan error:', e.message));
 });
 
+// ── /api/automation/run — manual trigger for daily risk check ─────────────────
+app.post('/api/automation/run', apiLimiter, async (req, res) => {
+    if (!_automation) return res.status(503).json({ error: 'Automation service not ready' });
+    res.json({ message: 'בדיקת סיכונים התחילה ברקע' });
+    _automation.runNow().catch(e => console.error('[automation] manual run error:', e.message));
+});
+
+// ── /api/automation/latest — get last automation RAG chunk ────────────────────
+app.get('/api/automation/latest', async (req, res) => {
+    if (!_ragCol) return res.json({ text: null });
+    try {
+        const doc = await _ragCol.findOne(
+            { source: 'automation' },
+            { sort: { createdAt: -1 }, projection: { text: 1, createdAt: 1, _id: 0 } }
+        );
+        res.json({ text: doc?.text ?? null, createdAt: doc?.createdAt ?? null });
+    } catch(e) {
+        res.json({ text: null });
+    }
+});
+
 // ── Global JSON error handler (prevents HTML error pages) ────────────────────
 app.use((err, req, res, next) => {
     console.error('[express error]', err.message);
@@ -1882,6 +2073,9 @@ app.listen(PORT, async () => {
     await _mongoReady;
     refreshFxRates();
     setInterval(refreshFxRates, 3600_000);
+
+    // ── Automation service (risk controller) ─────────────────────────────────
+    _automation = startAutomation({ loadPortfolio, ragCol: _ragCol, alertsCol: _alertsCol });
 
     // ── Maya cron: every hour Sun–Thu 10:00–18:00 Israel time ─────────────────
     cron.schedule('0 10-18 * * 1-5', async () => {

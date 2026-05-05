@@ -45,6 +45,7 @@ const STOCK_SYMBOLS = {
     // מדדים
     "מדד תא-35":    "^TA35",
     "מדד תא-90":    "^TA90",
+    "מדד תא-125":   "^TA100",
     // בנקים
     "לאומי":        "LUMI.TA",
     "פועלים":       "POLI.TA",
@@ -92,7 +93,7 @@ const STOCK_SYMBOLS = {
     "רמי לוי":      "RMLI.TA",
 };
 
-const TASE_MAP = { "^TA35": "מדד תא-35", "^TA125": "מדד תא-125", "^TA90": "מדד תא-90" };
+const TASE_MAP = { "^TA35": "מדד תא-35", "^TA100": "מדד תא-125", "^TA90": "מדד תא-90" };
 
 // Reverse lookup: Yahoo symbol → Hebrew name
 const SYM_TO_NAME = Object.fromEntries(
@@ -194,12 +195,19 @@ const _defaultIndicesData = () => ({
     "מדד תא-125": { price: null, initial: null, baseWeek: null, baseMonth: null, base3Month: null, history: [] },
     "מדד תא-90":  { price: null, initial: null, baseWeek: null, baseMonth: null, base3Month: null, history: [] }
 });
-const indicesData = savedState?.indicesData ?? _defaultIndicesData();
+const _rawIndicesData = savedState?.indicesData ?? {};
+const _defIdx = _defaultIndicesData();
+// Merge: ensure all three keys exist even if savedState is from an older version
+const indicesData = {
+    ..._defIdx,
+    ..._rawIndicesData,
+    // Guarantee מדד תא-125 exists (was added later, may be missing in old saves)
+    "מדד תא-125": _rawIndicesData["מדד תא-125"] ?? _defIdx["מדד תא-125"],
+};
 
-// Pre-populate stocksData for TA-35 from last saved indicesData so the chart
-// shows last-known values immediately, before the live fetch completes.
-if (indicesData["מדד תא-35"]?.price) {
-    Object.assign(stocksData["מדד תא-35"], indicesData["מדד תא-35"]);
+// Pre-populate stocksData from last saved indicesData for instant display before live fetch
+for (const idxName of ["מדד תא-35", "מדד תא-90", "מדד תא-125"]) {
+    if (indicesData[idxName]?.price) Object.assign(stocksData[idxName], indicesData[idxName]);
 }
 
 
@@ -448,12 +456,14 @@ async function refreshRealData() {
     });
 
     // Sync indicesData from live stocksData so it can be persisted
-    const ta35 = stocksData["מדד תא-35"];
-    if (ta35?.price) Object.assign(indicesData["מדד תא-35"], {
-        price: ta35.price, initial: ta35.initial,
-        baseWeek: ta35.baseWeek, baseMonth: ta35.baseMonth, base3Month: ta35.base3Month,
-        history: [...ta35.history]
-    });
+    for (const idxName of ["מדד תא-35", "מדד תא-90", "מדד תא-125"]) {
+        const idx = stocksData[idxName];
+        if (idx?.price) Object.assign(indicesData[idxName], {
+            price: idx.price, initial: idx.initial,
+            baseWeek: idx.baseWeek, baseMonth: idx.baseMonth, base3Month: idx.base3Month,
+            history: [...idx.history]
+        });
+    }
 
     console.log(`[YF] Live: ${liveCount}/${symbols.length}`);
     setDataStatus(liveCount > 0 ? 'live' : (isMarketOpen() ? 'error' : 'sim'), `${liveCount} symbols live`);
@@ -463,6 +473,8 @@ async function refreshRealData() {
         const now = new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const el = document.getElementById('last-update');
         if (el) el.textContent = `עודכן ${now}`;
+        // Reset ticker on first successful fetch so all live symbols are included
+        if (!window._tickerBuiltLive) { window._tickerBuiltLive = true; _tickerReady = false; }
     }
 
     initTicker(); initStockSuggestions(); updateStockList(); updateRealEstateList(); updatePortfolioList(); updateTransactionHistory();
@@ -688,7 +700,32 @@ function initTicker() {
 
 let activeStockWindows = {};
 
+function openMobChart() {
+    const card = document.getElementById('win-main-chart');
+    const bd   = document.getElementById('mob-chart-backdrop');
+    if (!card) return;
+    card.classList.add('mob-chart-open');
+    if (bd) bd.style.display = 'block';
+    // Resize chart after sheet is painted
+    setTimeout(() => {
+        const body = card.querySelector('.card-body');
+        const w = window.innerWidth;
+        const h = body ? body.clientHeight : 280;
+        if (_lwChart && w && h) _lwChart.resize(w, h);
+    }, 80);
+}
+
+function closeMobChart() {
+    const card = document.getElementById('win-main-chart');
+    const bd   = document.getElementById('mob-chart-backdrop');
+    if (card) card.classList.remove('mob-chart-open');
+    if (bd)   bd.style.display = 'none';
+}
+
 function openStockWindow(name) {
+    // On mobile: show bottom-sheet chart
+    if (window.innerWidth <= 768) { openMobChart(); return; }
+
     if (activeStockWindows[name]) {
         const win = document.getElementById(`win-detail-${name}`);
         if (win) { win.style.zIndex = ++highestZIndex; return; }
@@ -736,7 +773,7 @@ function openStockWindow(name) {
                         <button id="tf-${name}-${tf}" class="${tf==='day'?'active':''}" onclick="updateStockWindowTf('${name}','${tf}')">${tfLabels[tf]}</button>
                     `).join('')}
                 </div>
-                <button class="win-btn win-close" onclick="closeStockWindow('${name}')"></button>
+                <button onclick="closeStockWindow('${name}')" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text3);line-height:1;padding:2px 4px">✕</button>
             </div>
         </div>
         <div class="card-body" style="padding:8px 12px">
@@ -818,6 +855,8 @@ function openStockWindow(name) {
                 el.style.background = pos ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)';
             }
             if (activeStockWindows[name]?.tf === '3months') drawStockWindowChart(name);
+            // Refresh perf tab if open
+            if (document.getElementById('itab-content-perf')?.style.display !== 'none') renderPerformanceTabClient();
         }).catch(() => {});
     }
 }
@@ -993,13 +1032,19 @@ async function drawChart() {
     const _fmtTick = isIntraday
         ? function(t) { var d = new Date(t * 1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
         : undefined;
+    const isMob = window.innerWidth <= 768;
+    const scaleMarginBottom = isMob ? 0.04 : 0.26;
+    const mobBg  = '#ffffff';
+    const mobTx  = '#374151';
+    const mobGV  = 'rgba(0,0,0,0.03)';
+    const mobGH  = 'rgba(0,0,0,0.05)';
     _lwChart = LightweightCharts.createChart(container, {
         width: w, height: h,
-        layout:   { background: { color: chartBg }, textColor: chartTx },
-        grid:     { vertLines: { color: gridV }, horzLines: { color: gridH } },
+        layout:   { background: { color: isMob ? mobBg : chartBg }, textColor: isMob ? mobTx : chartTx },
+        grid:     { vertLines: { color: isMob ? mobGV : gridV }, horzLines: { color: isMob ? mobGH : gridH } },
         localization: { timeFormatter: _fmtTick },
-        timeScale:      { borderColor: 'rgba(0,0,0,0.1)', timeVisible: isIntraday, secondsVisible: false, fixRightEdge: true, tickMarkFormatter: _fmtTick },
-        rightPriceScale:{ borderColor: 'rgba(0,0,0,0.1)', scaleMargins: { top: 0.06, bottom: 0.26 } },
+        timeScale:      { borderColor: 'rgba(0,0,0,0.06)', timeVisible: isIntraday, secondsVisible: false, fixRightEdge: true, tickMarkFormatter: _fmtTick },
+        rightPriceScale:{ borderColor: 'rgba(0,0,0,0.06)', scaleMargins: { top: 0.08, bottom: scaleMarginBottom } },
         crosshair: { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
     });
     // Singleton ResizeObserver — disconnect old one before creating a new one
@@ -1010,24 +1055,39 @@ async function drawChart() {
     });
     _lwResizeOb.observe(container);
 
-    _lwSeries = _lwChart.addCandlestickSeries({
-        upColor:       '#0ecb81', downColor:       '#f6465d',
-        borderUpColor: '#0ecb81', borderDownColor: '#f6465d',
-        wickUpColor:   '#0ecb81', wickDownColor:   '#f6465d',
-    });
-    _lwSeries.setData(ohlc);
+    if (isMob) {
+        // Mobile: area chart — clean, modern
+        const isUp = (ohlc[ohlc.length-1]?.close ?? 0) >= (prevClose ?? 0);
+        const lineColor  = isUp ? '#1a73e8' : '#e53935';
+        const topColor   = isUp ? 'rgba(26,115,232,0.18)' : 'rgba(229,57,53,0.15)';
+        _lwSeries = _lwChart.addAreaSeries({
+            lineColor, topColor, bottomColor: 'rgba(0,0,0,0)',
+            lineWidth: 2, priceLineVisible: true,
+            priceLineColor: lineColor, priceLineWidth: 1,
+            crosshairMarkerRadius: 5, crosshairMarkerBorderColor: '#fff',
+            crosshairMarkerBackgroundColor: lineColor,
+        });
+        _lwSeries.setData(ohlc.map(d => ({ time: d.time, value: d.close })));
+    } else {
+        _lwSeries = _lwChart.addCandlestickSeries({
+            upColor:       '#0ecb81', downColor:       '#f6465d',
+            borderUpColor: '#0ecb81', borderDownColor: '#f6465d',
+            wickUpColor:   '#0ecb81', wickDownColor:   '#f6465d',
+        });
+        _lwSeries.setData(ohlc);
 
-    // Volume histogram — sits at the bottom 22% of the chart
-    _lwVolume = _lwChart.addHistogramSeries({
-        priceFormat:  { type: 'volume' },
-        priceScaleId: 'vol',
-    });
-    _lwChart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.78, bottom: 0 }, drawTicks: false });
-    _lwVolume.setData(ohlc.map(d => ({
-        time:  d.time,
-        value: d.volume,
-        color: d.close >= d.open ? 'rgba(14,203,129,0.3)' : 'rgba(246,70,93,0.3)',
-    })));
+        // Volume histogram — sits at the bottom 22% of the chart
+        _lwVolume = _lwChart.addHistogramSeries({
+            priceFormat:  { type: 'volume' },
+            priceScaleId: 'vol',
+        });
+        _lwChart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.78, bottom: 0 }, drawTicks: false });
+        _lwVolume.setData(ohlc.map(d => ({
+            time:  d.time,
+            value: d.volume,
+            color: d.close >= d.open ? 'rgba(14,203,129,0.3)' : 'rgba(246,70,93,0.3)',
+        })));
+    }
 
     _lwChart.timeScale().fitContent();
 
@@ -1204,6 +1264,26 @@ let _pinnedStock = null;
 let _stockShowAll = false;
 const STOCK_LIST_LIMIT = 10;
 
+function updateMiniIndicesBar() {
+    const map = {
+        'מדד תא-35':  { price: 'mini-ta35-price',  pct: 'mini-ta35-pct'  },
+        'מדד תא-90':  { price: 'mini-ta90-price',  pct: 'mini-ta90-pct'  },
+        'מדד תא-125': { price: 'mini-ta125-price', pct: 'mini-ta125-pct' },
+    };
+    Object.entries(map).forEach(([name, ids]) => {
+        const s = stocksData[name];
+        const prEl = document.getElementById(ids.price);
+        const pcEl = document.getElementById(ids.pct);
+        if (!prEl || !pcEl) return;
+        if (!s?.price) { prEl.textContent = '—'; pcEl.textContent = '—'; pcEl.style.color = ''; return; }
+        const pct = calculatePctChange(s.price, s.initial);
+        const up  = parseFloat(pct) >= 0;
+        prEl.textContent = `₪${s.price.toLocaleString('he-IL', {maximumFractionDigits:2})}`;
+        pcEl.textContent = `${up ? '+' : ''}${pct}%`;
+        pcEl.style.color = pctColor(pct).text;
+    });
+}
+
 function updateStockList() {
     const list    = document.getElementById('stock-list');
     const showBtn = document.getElementById('stock-show-more-btn');
@@ -1249,6 +1329,7 @@ function updateStockList() {
             ? `▲ הצג פחות`
             : `▼ הצג עוד (${names.length - STOCK_LIST_LIMIT})`;
     }
+    updateMiniIndicesBar();
 }
 
 
@@ -1384,7 +1465,9 @@ function updatePortfolioList() {
     const totalDisplay = document.getElementById('total-portfolio-value');
     if (!list || !totalDisplay) return;
     list.innerHTML = "";
-    let totalValue = 0, totalCost = 0, openValue = 0, openCount = 0;
+    let totalValue = 0, totalCost = 0, openValue = 0, openCount = 0, totalDailyPL = 0;
+    const mobCards = document.getElementById('mob-ptf-cards');
+    if (mobCards) mobCards.innerHTML = '';
 
     Object.keys(portfolio).forEach(symbol => {
         const p = portfolio[symbol], stock = stocksData[symbol];
@@ -1395,15 +1478,21 @@ function updatePortfolioList() {
         const positionValue = p.qty * currentPrice;
         totalValue += positionValue;
         totalCost  += costBasis;
-        if (stock.initial > 0) { openValue += p.qty * stock.initial; openCount++; }
+        if (stock.initial > 0) {
+            openValue   += p.qty * stock.initial;
+            totalDailyPL += p.qty * (currentPrice - stock.initial);
+            openCount++;
+        }
         const totalPct = calculatePctChange(currentPrice, p.buyPrice);
         const dayPct   = calculatePctChange(currentPrice, stock.initial);
         const plShekels = positionValue - costBasis;
+        const dayPLils  = stock.initial > 0 ? p.qty * (currentPrice - stock.initial) : 0;
         const plUp  = plShekels >= 0;
         const dayUp = parseFloat(dayPct) >= 0;
         const plColor  = pctColor(totalPct);
         const dayColor = pctColor(dayPct);
         const plStr = (plShekels >= 0 ? '+' : '') + plShekels.toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        // ── Desktop table row ──
         const tr = document.createElement('tr');
         tr.className = 'stock-row';
         tr.onclick = (e) => {
@@ -1422,6 +1511,29 @@ function updatePortfolioList() {
             <td class="text-right" dir="ltr" style="font-size:0.75rem;color:#3c4043;font-variant-numeric:tabular-nums;white-space:nowrap">₪${positionValue.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:0})}</td>
             <td><button class="sell-btn" onclick="sellStock('${symbol}')">מכור</button></td>`;
         list.appendChild(tr);
+        // ── Mobile card ──
+        if (mobCards) {
+            const portfolioPct = totalValue > 0 ? ((positionValue / totalValue) * 100).toFixed(1) : '0.0';
+            const dayILSStr = (dayPLils >= 0 ? '+' : '') + '₪' + Math.abs(dayPLils).toLocaleString('he-IL',{maximumFractionDigits:1});
+            const card = document.createElement('div');
+            card.className = 'mob-stock-card';
+            card.onclick = () => openMobStockDetail(symbol);
+            card.innerHTML = `
+                <div class="mob-stock-name">${symbol}</div>
+                <div class="mob-stock-row1">
+                    <span class="mob-stock-qty">${p.qty} יח׳</span>
+                    <span class="mob-stock-daily-ils" style="color:${dayColor.text}">${dayILSStr}</span>
+                </div>
+                <div class="mob-stock-row2">
+                    <span class="mob-stock-badge" style="background:${dayColor.bg};color:${dayColor.text}">${dayUp?'+':''}${dayPct}%</span>
+                    <span class="mob-stock-total-pct">שינוי מעלות <b style="color:${plColor.text}">${parseFloat(totalPct)>=0?'+':''}${totalPct}%</b></span>
+                </div>
+                <div class="mob-stock-row3">
+                    <span>שווי אחזקה&nbsp;<b>₪${positionValue.toLocaleString('he-IL',{maximumFractionDigits:0})}</b></span>
+                    <span>נתח מהתיק&nbsp;<b>${portfolioPct}%</b></span>
+                </div>`;
+            mobCards.appendChild(card);
+        }
     });
 
     if (openCount > 0) window._portfolioOpenVal = openValue;
@@ -1429,16 +1541,101 @@ function updatePortfolioList() {
     const totalPL    = totalCost > 0 ? calculatePctChange(totalValue, totalCost) : "0.00";
     const totalPLils = totalValue - totalCost;
     const c          = pctColor(totalPL);
-    const plSign     = totalPLils >= 0 ? '+' : '';
+    const plSign     = totalPLils >= 0 ? '+' : '-';
+    // ── Desktop footer ──
     totalDisplay.innerHTML = `
-        <span dir="ltr" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <span dir="ltr" style="display:flex;flex-direction:column;align-items:center;gap:4px">
             <span style="font-size:1rem;font-weight:700;color:#202124;font-variant-numeric:tabular-nums;letter-spacing:-0.3px">
                 ₪${totalValue.toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:0})}
             </span>
-            <span style="font-size:0.78rem;font-weight:700;color:${c.text};background:${c.bg};padding:3px 9px;border-radius:6px;font-variant-numeric:tabular-nums">
-                ${plSign}₪${Math.abs(totalPLils).toLocaleString('he-IL',{minimumFractionDigits:0,maximumFractionDigits:0})} (${parseFloat(totalPL)>=0?'+':''}${totalPL}%)
+            <span style="font-size:0.78rem;font-weight:700;color:${c.text};background:${c.bg};padding:3px 10px;border-radius:6px;font-variant-numeric:tabular-nums;white-space:nowrap">
+                ${plSign}₪${Math.abs(Math.round(totalPLils)).toLocaleString('he-IL')} (${parseFloat(totalPL)>=0?'+':''}${totalPL}%)
             </span>
         </span>`;
+    // ── Mobile summary ──
+    const mobTotal    = document.getElementById('mob-ptf-total');
+    const mobDaily    = document.getElementById('mob-ptf-daily');
+    const mobTotalPNL = document.getElementById('mob-ptf-total-pnl');
+    const mobCount    = document.getElementById('mob-ptf-count');
+    if (mobTotal) mobTotal.textContent = '₪' + totalValue.toLocaleString('he-IL',{maximumFractionDigits:0});
+    if (mobCount) { const n = Object.keys(portfolio).length; mobCount.textContent = `פירוט ניירות - ${n} ניירות`; }
+    if (mobDaily) {
+        const cDay = pctColor(totalDailyPL >= 0 ? 1 : -1);
+        const openVal = openValue || totalValue;
+        const dailyPct = openVal > 0 ? ((totalDailyPL / openVal) * 100).toFixed(2) : '0.00';
+        const daySign = totalDailyPL >= 0 ? '+' : '-';
+        mobDaily.innerHTML = `<span style="color:${cDay.text};font-weight:700">${daySign}₪${Math.abs(Math.round(totalDailyPL)).toLocaleString('he-IL')}&nbsp;<span style="font-size:12px">(${daySign}${Math.abs(parseFloat(dailyPct)).toFixed(2)}%)</span></span>`;
+    }
+    if (mobTotalPNL) {
+        const cTotal = pctColor(totalPL);
+        const totalSign = totalPLils >= 0 ? '+' : '-';
+        mobTotalPNL.innerHTML = `<span style="color:${cTotal.text};font-weight:700">${totalSign}₪${Math.abs(Math.round(totalPLils)).toLocaleString('he-IL')}&nbsp;<span style="font-size:12px">(${parseFloat(totalPL)>=0?'+':''}${totalPL}%)</span></span>`;
+    }
+}
+
+let _mobDetailStock = null;
+function openMobStockDetail(symbol) {
+    const detail = document.getElementById('mob-stock-detail');
+    if (!detail) return;
+    // Toggle off if same stock tapped again
+    if (_mobDetailStock === symbol && detail.style.display !== 'none') {
+        detail.style.display = 'none';
+        _mobDetailStock = null;
+        document.querySelectorAll('.mob-stock-card').forEach(c => c.classList.remove('selected'));
+        return;
+    }
+    _mobDetailStock = symbol;
+    document.querySelectorAll('.mob-stock-card').forEach(c => c.classList.remove('selected'));
+    const p = portfolio[symbol], stock = stocksData[symbol];
+    if (!p || !stock) return;
+    const currentPrice = parseFloat(stock.price) || 0;
+    const costBasis    = p.totalCost ?? (p.qty * (p.buyPrice ?? p.avgCost ?? 0));
+    const posVal       = p.qty * currentPrice;
+    const totalPct     = calculatePctChange(currentPrice, p.buyPrice);
+    const dayPct       = calculatePctChange(currentPrice, stock.initial);
+    const plILS        = posVal - costBasis;
+    const plColor      = pctColor(totalPct);
+    const dayColor     = pctColor(dayPct);
+    const plSign       = plILS >= 0 ? '+' : '';
+    const daySign      = parseFloat(dayPct) >= 0 ? '+' : '';
+    // Mark selected card
+    document.querySelectorAll('.mob-stock-card').forEach(c => {
+        if (c.querySelector('.mob-stock-name')?.textContent === symbol) c.classList.add('selected');
+    });
+    detail.style.display = 'block';
+    detail.innerHTML = `
+        <div class="mob-detail-header">
+            <span class="mob-detail-name">${symbol}</span>
+            <button class="mob-detail-close" onclick="openMobStockDetail('${symbol}')">✕</button>
+        </div>
+        <div class="mob-detail-stats">
+            <div class="mob-detail-stat">
+                <span class="mob-detail-stat-label">מחיר נוכחי</span>
+                <span class="mob-detail-stat-val" dir="ltr">₪${currentPrice.toLocaleString('he-IL',{maximumFractionDigits:2})}</span>
+            </div>
+            <div class="mob-detail-stat">
+                <span class="mob-detail-stat-label">כמות</span>
+                <span class="mob-detail-stat-val">${p.qty} יח׳</span>
+            </div>
+            <div class="mob-detail-stat">
+                <span class="mob-detail-stat-label">שינוי יומי</span>
+                <span class="mob-detail-stat-val" style="color:${dayColor.text}" dir="ltr">${daySign}${dayPct}%</span>
+            </div>
+            <div class="mob-detail-stat">
+                <span class="mob-detail-stat-label">רווח/הפסד</span>
+                <span class="mob-detail-stat-val" style="color:${plColor.text}" dir="ltr">${plSign}₪${Math.abs(plILS).toLocaleString('he-IL',{maximumFractionDigits:0})}</span>
+            </div>
+            <div class="mob-detail-stat">
+                <span class="mob-detail-stat-label">שווי אחזקה</span>
+                <span class="mob-detail-stat-val" dir="ltr">₪${posVal.toLocaleString('he-IL',{maximumFractionDigits:0})}</span>
+            </div>
+            <div class="mob-detail-stat">
+                <span class="mob-detail-stat-label">שינוי מעלות</span>
+                <span class="mob-detail-stat-val" style="color:${plColor.text}" dir="ltr">${parseFloat(totalPct)>=0?'+':''}${totalPct}%</span>
+            </div>
+        </div>
+        <button class="mob-detail-sell" onclick="sellStock('${symbol}');document.getElementById('mob-stock-detail').style.display='none'">מכור ${symbol}</button>`;
+    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function searchSymbol() {
@@ -1527,7 +1724,7 @@ const _SECTORS_CLIENT = {
     'תקשורת':      ['בזק','סלקום','פרטנר'],
     'מסחר':        ['שטראוס','שופרסל','פוקס','רמי לוי'],
     'שוק הון':     ['אי.בי.אי'],
-    'מדדים':       ['מדד תא-35','מדד תא-90'],
+    'מדדים':       ['מדד תא-35','מדד תא-90','מדד תא-125'],
 };
 
 const _BETAS = {
@@ -1541,7 +1738,7 @@ const _BETAS = {
     'בזק':0.60,'סלקום':0.65,'פרטנר':0.65,
     'שטראוס':0.70,'שופרסל':0.65,'פוקס':0.90,'רמי לוי':0.72,
     'אי.בי.אי':0.88,
-    'מדד תא-35':1.00,'מדד תא-90':1.10,
+    'מדד תא-35':1.00,'מדד תא-90':1.10,'מדד תא-125':1.05,
 };
 
 function initPortfolioAnalytics() {
@@ -1558,11 +1755,12 @@ function initPortfolioAnalytics() {
 
         // Single pass: sector values + totals + beta
         const sectorVal = {};
-        let totalVal = 0, totalCost = 0, betaWeighted = 0;
+        let totalVal = 0, totalCost = 0, betaWeighted = 0, totalDailyPL = 0, openVal = 0;
         names.forEach(name => {
             const h        = ptf[name];
             // stocksData already has live prices mapped to Hebrew names
             const cur      = stocksData[name]?.price ?? h.buyPrice ?? h.avgPrice ?? 0;
+            const initial  = stocksData[name]?.initial ?? 0;
             const qty      = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
             const buyPrice = h.buyPrice ?? h.avgPrice ?? h.avgCost ?? cur;
             const val      = cur * qty;
@@ -1570,6 +1768,7 @@ function initPortfolioAnalytics() {
             totalVal      += val;
             totalCost     += cost;
             betaWeighted  += val * (_BETAS[name] ?? 1.0);
+            if (initial > 0) { openVal += qty * initial; totalDailyPL += qty * (cur - initial); }
             const sector   = Object.entries(_SECTORS_CLIENT).find(([, s]) => s.includes(name))?.[0] ?? 'אחר';
             sectorVal[sector] = (sectorVal[sector] ?? 0) + val;
         });
@@ -1615,8 +1814,14 @@ function initPortfolioAnalytics() {
         if (pnlEl) { pnlEl.textContent = `${pnlSign}${fmtILS(totalPnL)}`; pnlEl.style.color = pnlColor; }
         const pctEl = ge('ana-total-pct');
         if (pctEl) { pctEl.textContent = `(${pnlSign}${Math.abs(totalPnLPct).toFixed(1)}%)`; pctEl.style.color = pnlColor; }
-        const betaEl = ge('ana-beta');
-        if (betaEl) betaEl.textContent = portfolioBeta.toFixed(2);
+        // Daily P&L
+        const dailyColor = totalDailyPL >= 0 ? '#16a34a' : '#dc2626';
+        const dailySign  = totalDailyPL >= 0 ? '+' : '−';
+        const dailyPct   = openVal > 0 ? (totalDailyPL / openVal * 100) : 0;
+        const dailyEl = ge('ana-daily-pnl');
+        if (dailyEl) { dailyEl.textContent = `${dailySign}${fmtILS(totalDailyPL)}`; dailyEl.style.color = dailyColor; }
+        const dailyPctEl = ge('ana-daily-pct');
+        if (dailyPctEl) { dailyPctEl.textContent = `(${dailySign}${Math.abs(dailyPct).toFixed(2)}%)`; dailyPctEl.style.color = dailyColor; }
         const divEl = ge('ana-div-score');
         if (divEl) divEl.textContent = `${divScore}/100`;
 
@@ -1676,56 +1881,573 @@ function initPortfolioAnalytics() {
     }
 }
 
+// ── Insights Panel ────────────────────────────────────────────────────────────
+let _insightsHistoryData = null;  // cached server response
+let _pnlData = [], _pnlIdx = -1; // daily P&L navigation state
+let _pnlCharts = {};              // active Chart.js instances
+
 function closeInsightsPanel() {
-    const panel = document.getElementById('win-ai-insights');
+    const panel    = document.getElementById('win-ai-insights');
+    const backdrop = document.getElementById('insights-backdrop');
     if (!panel) return;
-    panel.style.opacity = '0';
-    panel.style.transform = 'translateY(12px)';
-    setTimeout(() => { panel.style.display = 'none'; }, 200);
+    const isMob = window.innerWidth <= 768;
+    panel.style.opacity   = isMob ? '1' : '0';
+    panel.style.transform = isMob ? 'translateY(100%)' : 'translate(-50%,-48%) scale(0.96)';
+    if (backdrop) { backdrop.style.opacity = '0'; backdrop.style.pointerEvents = 'none'; }
+    setTimeout(() => {
+        panel.style.display = 'none';
+        if (backdrop) { backdrop.style.display = 'none'; backdrop.style.pointerEvents = ''; }
+    }, 260);
 }
 
-async function askPortfolioInsights() {
-    const btn   = document.getElementById('insights-btn');
-    const panel = document.getElementById('win-ai-insights');
-    const body  = document.getElementById('insights-panel-body');
-    const loader = document.getElementById('insights-panel-loader');
-    if (!panel || !body) return;
+function openInsightsPanel() {
+    const panel    = document.getElementById('win-ai-insights');
+    const backdrop = document.getElementById('insights-backdrop');
+    if (!panel) return;
+    // Already visible — don't restart animation
+    if (panel.style.display === 'flex' && panel.style.opacity === '1') {
+        if (!_insightsHistoryData) loadInsightsHistory();
+        return;
+    }
+    // Show backdrop blur
+    if (backdrop) {
+        backdrop.style.opacity = '0';
+        backdrop.style.display = 'block';
+    }
+    // Mobile: slide up from bottom. Desktop: scale from center.
+    const isMob = window.innerWidth <= 768;
+    panel.style.display   = 'flex';
+    panel.style.opacity   = isMob ? '1' : '0';
+    panel.style.transform = isMob ? 'translateY(30px)' : 'translate(-50%,-48%) scale(0.96)';
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        panel.style.opacity   = '1';
+        panel.style.transform = isMob ? 'translateY(0)' : 'translate(-50%,-50%) scale(1)';
+        if (backdrop) backdrop.style.opacity = '1';
+    }));
+    switchInsightsTab('ai');
+    if (!_insightsHistoryData) loadInsightsHistory();
+}
 
-    // Show floating panel
-    panel.style.display = 'flex';
-    requestAnimationFrame(() => { panel.style.opacity = '1'; panel.style.transform = 'translateY(0)'; });
-    if (loader) loader.style.display = 'flex';
-    // Reset body to loader only
-    body.innerHTML = `<div id="insights-panel-loader" style="display:flex;align-items:center;gap:8px;color:var(--text3)"><span style="animation:spin 1s linear infinite;display:inline-block">⏳</span> מחשב תובנות…</div>`;
+function switchInsightsTab(tab) {
+    ['ai','perf','pnl'].forEach(t => {
+        document.getElementById(`itab-content-${t}`)?.style.setProperty('display', t === tab ? 'flex' : 'none');
+        const btn = document.getElementById(`itab-${t}`);
+        if (btn) { btn.classList.toggle('itab-active', t === tab); }
+    });
+    if (tab === 'pnl') renderPnLClient(_insightsHistoryData?.holdings);
+    if (tab === 'perf') {
+        renderPerformanceTabClient();
+        // Re-render after historical fetches complete (baseWeek/Month/3m loaded async)
+        setTimeout(() => { if (document.getElementById('itab-content-perf')?.style.display !== 'none') renderPerformanceTabClient(); }, 4000);
+        setTimeout(() => { if (document.getElementById('itab-content-perf')?.style.display !== 'none') renderPerformanceTabClient(); }, 10000);
+    }
+}
 
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ מחשב...'; }
+let _insightsLoading = false;
+async function loadInsightsHistory(force = false) {
+    if (_insightsLoading) return;
+    if (_insightsHistoryData && !force) return;
+    _insightsLoading = true;
     try {
-        // Build portfolio summary for AI context
-        const ptf = portfolio ?? {};
-        const holdings = Object.entries(ptf).map(([name, h]) => {
-            const cur = stocksData[name]?.price ?? h.buyPrice ?? 0;
-            const qty = h.qty ?? h.quantity ?? h.shares ?? 0;
-            const buy = h.buyPrice ?? h.avgPrice ?? h.avgCost ?? cur;
-            const pnl = buy > 0 ? ((cur - buy) / buy * 100).toFixed(1) : '0.0';
-            return `${name}: ${qty} מניות, מחיר ₪${cur.toFixed(2)}, P&L ${pnl}%`;
-        }).join('\n');
-        const prompt = `להלן תיק ההשקעות שלי:\n${holdings}\n\nתן תובנות קצרות ומעשיות: חוזקות, חולשות, והמלצה אחת.`;
+        const res = await fetch('/api/portfolio/history', { signal: AbortSignal.timeout(30000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        _insightsHistoryData = await res.json();
+        // Upgrade whichever tab is visible with richer server data
+        if (document.getElementById('itab-content-perf')?.style.display !== 'none') renderPerformanceTab(_insightsHistoryData.stocks);
+        if (document.getElementById('itab-content-pnl')?.style.display  !== 'none') renderPnLClient(_insightsHistoryData?.holdings);
+    } catch(e) {
+        console.warn('[insights history]', e.message);
+        ['perf-loading','pnl-loading'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = `<span style="color:#dc2626">שגיאה: ${e.message} — <button onclick="loadInsightsHistory(true)" style="color:var(--primary);background:none;border:none;cursor:pointer;font-weight:600">נסה שוב</button></span>`;
+        });
+    } finally {
+        _insightsLoading = false;
+    }
+}
 
-        const res = await fetch('/api/chat', {
+function _sparkline(prices, color) {
+    if (!prices || prices.length < 2) return '';
+    const w = 64, h = 22;
+    const min = Math.min(...prices), max = Math.max(...prices);
+    const rng = max - min || 1;
+    const pts = prices.map((p, i) =>
+        `${((i / (prices.length - 1)) * w).toFixed(1)},${(h - ((p - min) / rng) * (h - 2) - 1).toFixed(1)}`
+    ).join(' ');
+    return `<svg width="${w}" height="${h}" style="vertical-align:middle;flex-shrink:0"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+// ── Client-side performance tab ───────────────────────────────────────────────
+let _perfFetchPending = false;
+
+function _renderPerfTable(names, body) {
+    const pct = (cur, base) => (base && base > 0) ? ((cur - base) / base * 100).toFixed(2) : null;
+    const cell = v => {
+        if (v === null) return `<td style="text-align:center;padding:5px 4px;color:var(--text3);font-size:11px">—</td>`;
+        const n = parseFloat(v), c = n >= 0 ? '#16a34a' : '#dc2626';
+        return `<td style="text-align:center;padding:5px 4px;font-variant-numeric:tabular-nums"><span style="color:${c};font-weight:600">${n >= 0 ? '+' : ''}${n}%</span></td>`;
+    };
+    const rows = names.map(name => {
+        const sd  = stocksData[name] ?? {};
+        const cur = sd.price || 0;
+        const spark = _sparkline(sd.history?.slice(-20) ?? [], (sd.price >= sd.initial) ? '#16a34a' : '#dc2626');
+        return `<tr><td style="padding:5px 4px;font-size:11.5px;font-weight:600;white-space:nowrap">${name}</td>${cell(pct(cur,sd.initial))}${cell(pct(cur,sd.baseWeek))}${cell(pct(cur,sd.baseMonth))}${cell(pct(cur,sd.base3Month))}<td style="padding:5px 4px">${spark}</td></tr>`;
+    }).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead><tr style="color:var(--text3);font-size:10px">
+            <th style="text-align:right;padding:4px">מניה</th>
+            <th style="text-align:center;padding:4px">יום</th>
+            <th style="text-align:center;padding:4px">שבוע</th>
+            <th style="text-align:center;padding:4px">חודש</th>
+            <th style="text-align:center;padding:4px">3ח</th>
+            <th style="padding:4px"></th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderPerformanceTabClient() {
+    const body    = document.getElementById('perf-table-body');
+    const loading = document.getElementById('perf-loading');
+    if (!body) return;
+    const ptf = portfolio ?? {};
+    const names = Object.keys(ptf);
+    if (!names.length) { if (loading) loading.textContent = 'אין מניות בתיק'; return; }
+
+    _renderPerfTable(names, body);
+    if (loading) loading.style.display = 'none';
+
+    // Fetch missing historical baselines (once only)
+    const missing = names.filter(n => !stocksData[n]?.baseMonth);
+    if (missing.length && !_perfFetchPending) {
+        _perfFetchPending = true;
+        Promise.all(missing.map(name => {
+            const sym = STOCK_SYMBOLS[name];
+            if (!sym) return Promise.resolve();
+            return Promise.all([
+                fetchHistoricalWithTs(sym, '1mo').then(({ closes }) => {
+                    if (!closes.length) return;
+                    stocksData[name].baseWeek  = closes[Math.max(0, closes.length - 6)];
+                    stocksData[name].baseMonth = closes[0];
+                }).catch(() => {}),
+                fetchHistoricalWithTs(sym, '3mo').then(({ closes }) => {
+                    if (!closes.length) return;
+                    stocksData[name].base3Month = closes[0];
+                }).catch(() => {})
+            ]);
+        })).then(() => {
+            _perfFetchPending = false;
+            if (document.getElementById('itab-content-perf')?.style.display !== 'none') {
+                // Re-render once with fresh data, no further fetching
+                const b = document.getElementById('perf-table-body');
+                if (b) _renderPerfTable(Object.keys(portfolio ?? {}), b);
+            }
+        });
+    }
+}
+
+// ── Portfolio P&L tab ────────────────────────────────────────────────────────
+function renderPnLClient(holdingsData) {
+    const body = document.getElementById('pnl-nav-body');
+    if (!body) return;
+
+    // Destroy old Chart.js instances
+    Object.values(_pnlCharts).forEach(c => { try { c?.destroy(); } catch(e){} });
+    _pnlCharts = {};
+
+
+    // ── Build data ─────────────────────────────────────────────────────────
+    // Always use client-side stocksData for prices (Yahoo Finance, in shekels).
+    // Server holdingsData enriches with purchaseDate + sector only.
+    let rows = [], totalVal = 0, totalCost = 0, dailyPnl = 0;
+
+    const serverMap = {};
+    (holdingsData ?? []).forEach(h => { serverMap[h.name] = h; });
+
+    const ptf = portfolio ?? {};
+    Object.entries(ptf).forEach(([name, h]) => {
+        const sd  = stocksData[name] ?? {};
+        const cur = sd.price ?? 0;
+        const prev = sd.initial ?? cur;
+        const qty = h.qty ?? h.quantity ?? h.shares ?? 0;
+        const buyPrice = parseFloat(h.buyPrice ?? h.avgCost ?? 0);
+        const cost = h.totalCost ?? (buyPrice * qty);
+        const mktValue = cur * qty;
+        totalVal += mktValue; totalCost += cost;
+        const dayIls = (cur - prev) * qty;
+        dailyPnl += dayIls;
+        if (qty && buyPrice && cur > 0) {
+            const srv = serverMap[name] ?? {};
+            rows.push({
+                name, qty, buyPrice, curPrice: cur,
+                mktValue: Math.round(mktValue), costBasis: Math.round(cost),
+                inceptionPnlIls: Math.round(mktValue - cost),
+                inceptionPnlPct: buyPrice > 0 ? ((cur - buyPrice) / buyPrice * 100).toFixed(2) : '0',
+                dayChangePct: prev > 0 ? ((cur - prev) / prev * 100).toFixed(2) : '0',
+                dayChangeIls: Math.round(dayIls),
+                purchaseDate: srv.purchaseDate ?? null,
+                sector: srv.sector ?? 'אחר'
+            });
+        }
+    });
+    rows.sort((a, b) => b.inceptionPnlIls - a.inceptionPnlIls);
+
+    const cumPnl  = totalVal - totalCost;
+    const cumPct  = totalCost > 0 ? (cumPnl / totalCost * 100) : 0;
+    const dayBase = totalVal - dailyPnl;
+    const dayPct  = dayBase > 0 ? (dailyPnl / dayBase * 100) : 0;
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    const pill = (val, pct) => {
+        const pos = val >= 0, c = pos ? '#15803d' : '#b91c1c', bg = pos ? '#f0fdf4' : '#fef2f2';
+        return `<span style="display:inline-flex;padding:2px 7px;border-radius:20px;background:${bg};color:${c};font-size:11px;font-weight:700;white-space:nowrap">${pos?'+':'−'}${Math.abs(parseFloat(pct)).toFixed(1)}%</span>`;
+    };
+    const money = (val, size = 13) => {
+        const pos = val >= 0, c = pos ? '#15803d' : '#b91c1c';
+        return `<span style="color:${c};font-weight:700;font-size:${size}px">${pos?'+':'−'}₪${Math.abs(Math.round(val)).toLocaleString('he-IL')}</span>`;
+    };
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
+    const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16'];
+
+    // ── Sector data ────────────────────────────────────────────────────────
+    const sectorMap = {};
+    rows.forEach(h => { const s = h.sector ?? 'אחר'; sectorMap[s] = (sectorMap[s] ?? 0) + h.mktValue; });
+    const sectorEntries = Object.entries(sectorMap).sort(([,a],[,b]) => b - a);
+
+    // ── Diversification score ──────────────────────────────────────────────
+    const numSec = sectorEntries.length;
+    const maxPct = totalVal > 0 ? (Math.max(...sectorEntries.map(([,v]) => v)) / totalVal * 100) : 100;
+    const divScore = Math.round(Math.min(100, Math.max(10, numSec * 17 - Math.max(0, maxPct - 28) * 0.9)));
+    const gaugeColor = divScore >= 65 ? '#10b981' : divScore >= 40 ? '#f59e0b' : '#ef4444';
+    const dashLen = (divScore / 100 * Math.PI * 38).toFixed(1);
+    const gaugeLabel = divScore >= 65 ? 'גיוון טוב' : divScore >= 40 ? 'בינוני' : 'ריכוז גבוה';
+    const gaugeSvg = `
+    <div style="text-align:center">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:4px">מדד גיוון</div>
+        <svg width="100" height="60" viewBox="0 0 100 60">
+            <path d="M 11 50 A 38 38 0 0 1 89 50" fill="none" stroke="#e5e7eb" stroke-width="9" stroke-linecap="round"/>
+            <path d="M 11 50 A 38 38 0 0 1 89 50" fill="none" stroke="${gaugeColor}" stroke-width="9"
+                  stroke-linecap="round" stroke-dasharray="${dashLen} 999"/>
+            <text x="50" y="44" text-anchor="middle" font-family="system-ui,sans-serif" font-size="16" font-weight="800" fill="${gaugeColor}">${divScore}</text>
+            <text x="50" y="57" text-anchor="middle" font-family="system-ui,sans-serif" font-size="7" fill="#6b7280">${gaugeLabel}</text>
+        </svg>
+    </div>`;
+
+    // ── All contributors sorted best → worst ──────────────────────────────
+    const contrib = [...rows].sort((a,b) => b.inceptionPnlIls - a.inceptionPnlIls);
+
+    // ── P&L table rows ─────────────────────────────────────────────────────
+    const isMob = window.innerWidth <= 600;
+    const tdP   = isMob ? '5px 4px' : '7px 6px';
+    let tRows = '';
+    rows.forEach(h => {
+        const pnlPos = h.inceptionPnlIls >= 0;
+        const rowBg  = pnlPos ? 'rgba(16,185,129,0.04)' : 'rgba(239,68,68,0.04)';
+        tRows += `<tr class="pnl-tr" data-bg="${rowBg}" style="border-bottom:1px solid var(--border);background:${rowBg};transition:background 0.12s"
+            onmouseenter="this.style.background='rgba(0,0,0,0.05)'"
+            onmouseleave="this.style.background=this.dataset.bg">
+            <td style="padding:${isMob?'5px 6px':tdP}">
+                <div style="font-weight:700;font-size:${isMob?'11':'12'}px;color:var(--text)">${h.name}</div>
+                <div style="font-size:9px;color:var(--text3);margin-top:1px">₪${parseFloat(h.buyPrice).toLocaleString('he-IL')} · ${fmtDate(h.purchaseDate)}</div>
+            </td>
+            ${isMob ? '' : `<td style="padding:${tdP};text-align:center;font-size:11px;color:var(--text3);font-weight:500">${h.qty}</td>`}
+            <td style="padding:${tdP};text-align:right;direction:ltr;font-size:${isMob?'10':'11'}px;font-weight:600;color:var(--text)">₪${h.mktValue.toLocaleString('he-IL')}</td>
+            <td style="padding:${tdP};text-align:right">${pill(h.dayChangeIls,h.dayChangePct)}<div style="font-size:9px;margin-top:1px;direction:ltr">${money(h.dayChangeIls,10)}</div></td>
+            <td style="padding:${tdP};text-align:right">${pill(h.inceptionPnlIls,h.inceptionPnlPct)}<div style="font-size:9px;margin-top:1px;direction:ltr">${money(h.inceptionPnlIls,10)}</div></td>
+        </tr>`;
+    });
+
+    // ── Render HTML ────────────────────────────────────────────────────────
+    body.innerHTML = `
+    <div style="display:flex;gap:12px;align-items:stretch;margin-bottom:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px;background:linear-gradient(135deg,#f0f9ff,#ecfdf5);border-radius:14px;padding:16px">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:2px;text-align:center">שווי תיק</div>
+            <div style="font-size:28px;font-weight:800;color:var(--text);text-align:center;direction:ltr;margin-bottom:12px">₪${Math.round(totalVal).toLocaleString('he-IL')}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+                <div style="text-align:center;padding:6px 8px;border-right:1px solid rgba(0,0,0,0.08)">
+                    <div style="font-size:10px;color:var(--text3);margin-bottom:3px">שינוי יומי</div>
+                    ${money(dailyPnl,14)}<br><span style="display:inline-block;margin-top:3px">${pill(dailyPnl,dayPct)}</span>
+                </div>
+                <div style="text-align:center;padding:6px 8px">
+                    <div style="font-size:10px;color:var(--text3);margin-bottom:3px">רווח מצטבר</div>
+                    ${money(cumPnl,14)}<br><span style="display:inline-block;margin-top:3px">${pill(cumPnl,cumPct)}</span>
+                </div>
+            </div>
+        </div>
+        <div style="display:${window.innerWidth <= 600 ? 'none' : 'flex'};flex-direction:column;gap:8px;align-items:center;justify-content:center">
+            <div style="width:130px;height:130px;position:relative">
+                <canvas id="pnl-donut" width="130" height="130"></canvas>
+                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none">
+                    <div style="font-size:20px;font-weight:800;color:var(--text);line-height:1">${rows.length}</div>
+                    <div style="font-size:9px;color:var(--text3);margin-top:2px">ניירות</div>
+                </div>
+            </div>
+        </div>
+        <div style="display:${window.innerWidth <= 600 ? 'none' : 'block'}">${gaugeSvg}</div>
+    </div>
+
+    <div id="pnl-table-wrap" style="border-radius:8px;border:1px solid var(--border);margin-bottom:14px;overflow-y:auto;max-height:${Math.min(rows.length * 58 + 36, 340)}px">
+    <table style="width:100%;border-collapse:collapse;font-size:11px;direction:rtl">
+        <thead><tr style="color:var(--text3);border-bottom:2px solid var(--border);font-size:10px;background:#f9fafb;position:sticky;top:0;z-index:2">
+            <th style="text-align:right;padding:${isMob?'5px 6px':'7px 8px'};font-weight:600">מניה</th>
+            ${isMob ? '' : `<th style="text-align:center;padding:7px 6px;font-weight:600">כמות</th>`}
+            <th style="text-align:right;padding:${isMob?'5px 4px':'7px 8px'};font-weight:600">שווי</th>
+            <th style="text-align:right;padding:${isMob?'5px 4px':'7px 8px'};font-weight:600">יומי</th>
+            <th style="text-align:right;padding:${isMob?'5px 4px':'7px 8px'};font-weight:600">P&amp;L</th>
+        </tr></thead>
+        <tbody>${tRows}</tbody>
+    </table>
+    </div>
+
+    <div style="border-top:1px solid var(--border);padding-top:12px">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:8px;text-align:right">תרומה לרווח/הפסד המצטבר (₪)</div>
+        <canvas id="pnl-contrib" height="${Math.max(80, contrib.length * 38)}" style="width:100%;display:block"></canvas>
+    </div>`;
+
+    // Reset inner table scroll
+    const _tw = document.getElementById('pnl-table-wrap');
+    if (_tw) _tw.scrollTop = 0;
+    // Reset outer container scroll so summary is visible
+    const _pc = document.getElementById('itab-content-pnl');
+    if (_pc) _pc.scrollTop = 0;
+
+    // ── Chart.js init (after DOM update) ──────────────────────────────────
+    if (window._pnlChartTimer) clearTimeout(window._pnlChartTimer);
+    window._pnlChartTimer = setTimeout(() => {
+        // Bail if this render is stale (user switched tab)
+        if (!document.getElementById('pnl-donut')) return;
+        // Donut
+        const dCtx = document.getElementById('pnl-donut')?.getContext('2d');
+        if (dCtx && typeof Chart !== 'undefined') {
+            _pnlCharts.donut = new Chart(dCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: sectorEntries.map(([l]) => l),
+                    datasets: [{ data: sectorEntries.map(([,v]) => v), backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }]
+                },
+                options: {
+                    responsive: false, cutout: '68%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: ctx => `${ctx.label}: ${(ctx.raw/totalVal*100).toFixed(1)}%` } }
+                    }
+                }
+            });
+        }
+
+        // Contribution horizontal bar
+        const cCanvas = document.getElementById('pnl-contrib');
+        if (cCanvas) cCanvas.width = cCanvas.parentElement?.clientWidth || (window.innerWidth - 48);
+        const cCtx = cCanvas?.getContext('2d');
+        if (cCtx && contrib.length && typeof Chart !== 'undefined') {
+            _pnlCharts.contrib = new Chart(cCtx, {
+                type: 'bar',
+                data: {
+                    labels: contrib.map(h => h.name),
+                    datasets: [{
+                        data: contrib.map(h => h.inceptionPnlIls),
+                        backgroundColor: contrib.map(h => h.inceptionPnlIls >= 0 ? 'rgba(16,185,129,0.75)' : 'rgba(239,68,68,0.75)'),
+                        borderRadius: 4, borderSkipped: false
+                    }]
+                },
+                options: {
+                    indexAxis: 'y', responsive: false,
+                    plugins: { legend: { display: false }, tooltip: {
+                        callbacks: { label: ctx => `${ctx.raw >= 0 ? '+' : ''}₪${Math.round(ctx.raw).toLocaleString('he-IL')}` }
+                    }},
+                    scales: {
+                        x: { grid: { display: false }, title: { display: true, text: 'רווח / הפסד (₪)', font:{size:9}, color:'#9ca3af' }, ticks: { font:{size:9}, callback: v => { const a=Math.abs(v); const s=a>=1000000?'₪'+(a/1000000).toFixed(1)+'M':a>=1000?'₪'+Math.round(a/1000)+'K':'₪'+Math.round(a); return (v>=0?'+':'-')+s; } } },
+                        y: { grid: { display: false }, ticks: { font:{size:10,weight:'600'} } }
+                    }
+                }
+            });
+        }
+        window._pnlChartTimer = null;
+    }, 60);
+}
+
+function renderPerformanceTab(stocks) {
+    const body = document.getElementById('perf-table-body');
+    const loading = document.getElementById('perf-loading');
+    if (!body || !stocks) return;
+    const pill = (v) => {
+        const n = parseFloat(v), pos = n >= 0;
+        const c = pos ? '#15803d' : '#b91c1c', bg = pos ? '#f0fdf4' : '#fef2f2';
+        return `<span style="display:inline-block;padding:1px 6px;border-radius:12px;background:${bg};color:${c};font-weight:700;white-space:nowrap">${pos?'+':''}${n.toFixed(1)}%</span>`;
+    };
+    let html = `<table style="width:100%;border-collapse:collapse;font-size:11px;direction:rtl">
+        <thead><tr style="color:var(--text3);border-bottom:2px solid var(--border);font-size:10px">
+            <th style="text-align:right;padding:6px 8px;font-weight:600">מניה</th>
+            <th style="text-align:center;padding:6px 3px">יום</th>
+            <th style="text-align:center;padding:6px 3px">שבוע</th>
+            <th style="text-align:center;padding:6px 3px">חודש</th>
+            <th style="text-align:center;padding:6px 3px">P&amp;L</th>
+            <th style="text-align:center;padding:6px 3px">מגמה</th>
+        </tr></thead><tbody>`;
+    Object.entries(stocks).sort(([a],[b]) => parseFloat(stocks[b].change_1d) - parseFloat(stocks[a].change_1d)).forEach(([name, d]) => {
+        const closes = d.history.map(h => h.close);
+        const trendColor = parseFloat(d.change_1m) >= 0 ? '#15803d' : '#b91c1c';
+        const inceptionPct = d.buyPrice > 0 ? ((d.currentPrice - d.buyPrice) / d.buyPrice * 100).toFixed(2) : null;
+        html += `<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:7px 8px;font-weight:700;white-space:nowrap;color:var(--text)">${name}</td>
+            <td style="text-align:center;padding:5px 3px">${pill(d.change_1d)}</td>
+            <td style="text-align:center;padding:5px 3px">${pill(d.change_1w)}</td>
+            <td style="text-align:center;padding:5px 3px">${pill(d.change_1m)}</td>
+            <td style="text-align:center;padding:5px 3px">${inceptionPct != null ? pill(inceptionPct) : '<span style="color:var(--text3)">—</span>'}</td>
+            <td style="text-align:center;padding:4px">${_sparkline(closes, trendColor)}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    body.innerHTML = html;
+    if (loading) loading.style.display = 'none';
+}
+
+function renderPnLTab(dailyPnL) {
+    _pnlData = dailyPnL || [];
+    _pnlIdx  = _pnlData.length - 1;
+    _renderPnLDay();
+}
+
+function _pnlNav(dir) {
+    _pnlIdx = Math.max(0, Math.min(_pnlData.length - 1, _pnlIdx + dir));
+    _renderPnLDay();
+}
+
+function _renderPnLDay() {
+    const body    = document.getElementById('pnl-nav-body');
+    const loading = document.getElementById('pnl-loading');
+    if (!body || !_pnlData.length) return;
+    const d        = _pnlData[_pnlIdx];
+    const pnlColor = d.pnl >= 0 ? '#16a34a' : '#dc2626';
+    const sign     = d.pnl >= 0 ? '+' : '−';
+    const dateHe   = new Date(d.date + 'T12:00:00').toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    // Bar chart: last 30 days up to _pnlIdx
+    const slice   = _pnlData.slice(Math.max(0, _pnlIdx - 29), _pnlIdx + 1);
+    const maxAbs  = Math.max(...slice.map(x => Math.abs(x.pnl)), 1);
+    const barW    = 100 / slice.length;
+    const bars    = slice.map((day, i) => {
+        const h  = (Math.abs(day.pnl) / maxAbs * 36).toFixed(1);
+        const c  = day.pnl >= 0 ? '#86efac' : '#fca5a5';
+        const hi = i === slice.length - 1 ? `stroke="${day.pnl >= 0 ? '#16a34a' : '#dc2626'}" stroke-width="1"` : '';
+        return `<rect x="${(i * barW + 0.2).toFixed(2)}%" y="${(40 - h).toFixed(1)}" width="${(barW - 0.5).toFixed(2)}%" height="${h}" fill="${c}" rx="1.5" ${hi}/>`;
+    }).join('');
+
+    body.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <button onclick="_pnlNav(-1)" style="padding:5px 12px;border-radius:7px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:15px;line-height:1" ${_pnlIdx <= 0 ? 'disabled style="opacity:.4"' : ''}>→</button>
+            <span style="font-size:13px;font-weight:700;color:var(--text)">${dateHe}</span>
+            <button onclick="_pnlNav(1)"  style="padding:5px 12px;border-radius:7px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:15px;line-height:1" ${_pnlIdx >= _pnlData.length - 1 ? 'disabled style="opacity:.4"' : ''}>←</button>
+        </div>
+        <div style="text-align:center;margin-bottom:14px;direction:ltr">
+            <div style="font-size:24px;font-weight:700;color:var(--text)">₪${Math.abs(d.value).toLocaleString('he-IL')}</div>
+            <div style="font-size:15px;font-weight:700;color:${pnlColor}">${sign}₪${Math.abs(d.pnl).toLocaleString('he-IL')} (${sign}${Math.abs(d.pnlPct)}%)</div>
+        </div>
+        <svg viewBox="0 0 100 40" width="100%" height="56" preserveAspectRatio="none" style="display:block;border-radius:6px;overflow:hidden">${bars}</svg>
+        <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:5px">30 ימים אחרונים — לחץ על חצים לדפדוף</div>`;
+    if (loading) loading.style.display = 'none';
+}
+
+function _escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function formatInsightsHTML(text) {
+    if (!text) return '';
+    const sections = [
+        { keys: ['חוזקות', 'חוזק'],   icon: '✅', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+        { keys: ['חולשות', 'חולשה'],  icon: '⚠️', color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
+        { keys: ['המלצות', 'המלצה'],  icon: '💡', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+        { keys: ['סיכום', 'מסקנה'],   icon: '📊', color: '#6d28d9', bg: '#f5f3ff', border: '#ddd6fe' },
+        { keys: ['סיכונים', 'סיכון'], icon: '🔴', color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
+    ];
+
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    let html = '';
+    let currentSection = null;
+    let currentItems = [];
+
+    function flushSection() {
+        if (!currentSection && !currentItems.length) return;
+        if (currentSection) {
+            const s = currentSection;
+            const bulletHTML = currentItems.map(item => {
+                const clean = _escHtml(item.replace(/^[-•*#]+\s*/, '').replace(/\*\*/g, ''));
+                return `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px"><span style="color:${s.color};flex-shrink:0">▸</span><span style="color:var(--text);font-size:13px;line-height:1.6">${clean}</span></div>`;
+            }).join('');
+            html += `<div style="background:${s.bg};border:1px solid ${s.border};border-radius:12px;padding:14px 16px;margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:700;font-size:13px;color:${s.color}"><span>${s.icon}</span>${s.keys[0]}</div>${bulletHTML}</div>`;
+        } else if (currentItems.length) {
+            html += `<div style="font-size:13px;line-height:1.8;color:var(--text);margin-bottom:10px">${currentItems.map(_escHtml).join('<br>')}</div>`;
+        }
+        currentSection = null;
+        currentItems = [];
+    }
+
+    lines.forEach(line => {
+        const cleanLine = line.replace(/\*\*/g, '').replace(/#+\s*/, '').replace(/:$/, '').trim();
+        const matched = sections.find(s => s.keys.some(k => cleanLine.includes(k)));
+        // A section header: matches keyword AND is a short label line (not a bullet)
+        if (matched && !line.trimStart().match(/^[-•*]/) && cleanLine.length < 40) {
+            flushSection();
+            currentSection = matched;
+        } else {
+            currentItems.push(line.replace(/\*\*/g, ''));
+        }
+    });
+    flushSection();
+    return html || `<div style="font-size:13px;line-height:1.8;color:var(--text);white-space:pre-wrap">${_escHtml(text)}</div>`;
+}
+
+async function askPortfolioInsights(silent = false) {
+    const btn  = document.getElementById('insights-btn');
+    const body = document.getElementById('insights-panel-body');
+    if (!body) return;
+    if (btn?.disabled) return; // already running
+    if (!silent) { openInsightsPanel(); switchInsightsTab('ai'); }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span style="animation:spin 1s linear infinite;display:inline-block">⏳</span> מחשב...'; }
+    body.innerHTML = '<div style="text-align:center;padding:30px 20px;color:var(--text3)"><div style="font-size:28px;margin-bottom:10px;animation:spin 1.2s linear infinite;display:inline-block">⏳</div><div style="font-size:13px">מנתח את התיק שלך...</div></div>';
+    try {
+        // Build enriched context: holdings + historical trends
+        const ptf = portfolio ?? {};
+        const histStocks = _insightsHistoryData?.stocks ?? {};
+        const holdingsArr = Object.entries(ptf).map(([name, h]) => {
+            const cur  = stocksData[name]?.price ?? 0;
+            const qty  = h.qty ?? h.quantity ?? h.shares ?? 0;
+            const buy  = parseFloat(h.buyPrice ?? h.avgPrice ?? h.avgCost ?? 0);
+            const pnlPct  = buy > 0 ? ((cur - buy) / buy * 100).toFixed(1) : '0.0';
+            const pnlIls  = Math.round((cur - buy) * qty);
+            const hs   = histStocks[name];
+            const trend = hs ? `, יום:${hs.change_1d}% שבוע:${hs.change_1w}% חודש:${hs.change_1m}% 3ח:${hs.change_3m}%` : '';
+            return { name, qty, cur, buy, pnlPct, pnlIls, trend };
+        }).filter(h => h.qty > 0 && h.cur > 0);
+
+        const holdings = holdingsArr.map(h =>
+            `${h.name}: ${h.qty} מניות, מחיר ₪${h.cur.toFixed(2)}, P&L ${h.pnlPct}%${h.trend}`
+        ).join('\n');
+
+        // Worst cumulative contributor
+        const worst = [...holdingsArr].sort((a,b) => a.pnlIls - b.pnlIls)[0];
+        const worstLine = worst
+            ? `\n\nתשומת לב: המניה שתרמה הכי פחות לרווח המצטבר היא "${worst.name}" עם P&L של ₪${worst.pnlIls.toLocaleString('he-IL')} (${worst.pnlPct}%). ספק תובנה ממוקדת וספציפית עליה בסעיף "המלצות".`
+            : '';
+
+        const prompt = `להלן תיק ההשקעות שלי עם נתוני מגמה היסטוריים:\n${holdings}${worstLine}\n\nנתח את התיק וספק תובנות מעשיות בפורמט הבא בדיוק:\n\nחוזקות:\n- [נקודת חוזק 1]\n- [נקודת חוזק 2]\n\nחולשות:\n- [נקודת חולשה 1]\n- [נקודת חולשה 2]\n\nהמלצות:\n- [המלצה ממוקדת על ${worst?.name ?? 'המניה החלשה'}]\n- [המלצה מעשית נוספת]\n\nהיה קצר, מעשי ומבוסס על הנתונים. כתוב בעברית בלבד.`;
+
+        const res  = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], quotes: window._lastQuotes || [] }),
             signal: AbortSignal.timeout(30000),
         });
         const data = await res.json();
-        const text = !res.ok
-            ? (data.error ?? `שגיאת שרת ${res.status}`)
-            : (data.reply ?? data.content ?? 'השרת לא החזיר תשובה.');
-        body.textContent = text;
+        if (!res.ok) {
+            body.innerHTML = `<div style="color:#dc2626;font-size:13px;padding:10px">${data.error ?? `שגיאת שרת ${res.status}`}</div>`;
+        } else {
+            const reply = data.reply ?? data.content ?? '';
+            body.innerHTML = reply ? formatInsightsHTML(reply) : '<div style="color:var(--text3);font-size:13px">השרת לא החזיר תשובה.</div>';
+        }
     } catch(e) {
-        body.textContent = e.name === 'TimeoutError' ? 'הבקשה לקחה יותר מדי זמן.' : `שגיאה: ${e.message}`;
+        body.innerHTML = `<div style="color:#dc2626;font-size:13px;padding:10px">${e.name === 'TimeoutError' ? 'הבקשה לקחה יותר מדי זמן.' : `שגיאה: ${e.message}`}</div>`;
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '💡 תובנות AI'; }
+        if (btn) { btn.disabled = false; btn.innerHTML = '<span style="font-size:15px">🔄</span> עדכן תובנות AI'; }
     }
 }
 
@@ -1835,9 +2557,9 @@ let highestZIndex = 100;
 
 // ── Mobile Tabs ─────────────────────────────────────────────────────────────
 const MOB_TABS = {
-    market:    ['win-indices-tase', 'win-stocks', 'win-realestate', 'win-main-chart'],
-    portfolio: ['win-portfolio', 'win-portfolio-analytics', 'win-simulator'],
-    analysis:  ['win-portfolio-analytics'],
+    market:    ['win-indices-tase', 'win-stocks', 'win-realestate'],
+    portfolio: ['win-portfolio', 'win-simulator', 'win-portfolio-analytics'],
+    analysis:  ['win-ai-insights'],
 };
 const MOB_ALL = Object.values(MOB_TABS).flat();
 
@@ -1853,26 +2575,61 @@ const PANEL_DEFS = {
         { id: 'win-portfolio-analytics', label: 'ניתוח תיק' },
         { id: 'win-simulator',           label: 'קנה / מכור' },
     ],
-    analysis:  [
-        { id: 'win-portfolio-analytics', label: 'ניתוח תיק' },
-    ],
+    analysis:  [],
 };
 const PANEL_TAB_LABELS = { market: 'שוק', portfolio: 'תיק', analysis: 'ניתוח' };
 
+// Always start with all panels visible — don't persist hidden-panel prefs across sessions
+localStorage.removeItem('mob_panels');
 let _panelPrefs = {};
-try { _panelPrefs = JSON.parse(localStorage.getItem('mob_panels') || '{}'); } catch(e) {}
+const _PICKER_IDS = new Set(Object.values(PANEL_DEFS).flat().map(p => p.id));
 function _isPanelOn(id) { return _panelPrefs[id] !== false; }
 
 function switchMobileTab(tab) {
     if (window.innerWidth > 768) return;
     document.querySelectorAll('.mob-tab[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    MOB_ALL.forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        const inTab = MOB_TABS[tab].includes(id);
-        el.classList.toggle('mob-hidden', !inTab || !_isPanelOn(id));
+    // Hide insights panel when not on analysis tab (it's outside #dashboard now)
+    if (tab !== 'analysis') {
+        const insEl = document.getElementById('win-ai-insights');
+        if (insEl) insEl.style.display = 'none';
+        const bd = document.getElementById('insights-backdrop');
+        if (bd) bd.style.display = 'none';
+    }
+    // Hide ALL dashboard cards not in this tab (includes stock detail windows)
+    const skipHide = new Set(['win-ai-chat', 'win-portfolio-chart']); // managed separately
+    document.querySelectorAll('#dashboard .card').forEach(card => {
+        if (!card.id || skipHide.has(card.id)) return;
+        const inTab = MOB_TABS[tab].includes(card.id);
+        const isKnown = MOB_ALL.includes(card.id);
+        if (!inTab) {
+            card.classList.add('mob-hidden');
+        } else {
+            card.classList.remove('mob-hidden');
+            card.style.display  = (card.id === 'win-ai-insights') ? 'flex' : '';
+            card.style.opacity  = '1';
+            card.style.transform = 'none';
+            card.style.position = 'static';
+            card.style.top = ''; card.style.left = '';
+            card.style.width  = '100%';
+            card.style.height = '';
+        }
+        // Apply panel picker preference for known panels
+        if (isKnown && inTab && !_isPanelOn(card.id)) card.classList.add('mob-hidden');
     });
-    if (tab === 'analysis') loadPortfolioAnalysis();
+    if (tab === 'analysis') {
+        openInsightsPanel();
+        switchInsightsTab('ai');
+        if (!document.getElementById('insights-btn')?.disabled) {
+            askPortfolioInsights(true);
+        }
+    }
+    if (tab === 'market') {
+        setTimeout(() => {
+            if (indexChart) indexChart.resize();
+            else drawIndexChart();
+            Object.keys(activeStockWindows).forEach(n => activeStockWindows[n].chart?.resize());
+        }, 80);
+    }
 }
 
 // ── Panel Picker ─────────────────────────────────────────────────────────────
@@ -1890,10 +2647,19 @@ function togglePanel(id) {
     switchMobileTab(activeTab);
     _renderPanelPicker();
 }
+function resetAllPanels() {
+    _panelPrefs = {};
+    localStorage.removeItem('mob_panels');
+    const activeTab = document.querySelector('.mob-tab.active')?.dataset.tab || 'market';
+    switchMobileTab(activeTab);
+    _renderPanelPicker();
+}
 function _renderPanelPicker() {
     const body = document.getElementById('panel-picker-body');
     if (!body) return;
-    body.innerHTML = Object.entries(PANEL_DEFS).map(([tab, panels]) => `
+    body.innerHTML = `<div style="padding:0 16px 8px;text-align:left">
+        <button onclick="resetAllPanels()" style="font-size:11px;color:var(--primary);background:none;border:none;cursor:pointer;padding:0">↺ הצג הכל</button>
+    </div>` + Object.entries(PANEL_DEFS).map(([tab, panels]) => `
         <div class="picker-group">
             <div class="picker-group-label">${PANEL_TAB_LABELS[tab]}</div>
             <div class="picker-chips">
@@ -2052,7 +2818,7 @@ function toggleDarkMode() {
     if (saved === '1') applyTheme(true);
 })();
 
-const POPUP_WINDOWS = ['win-portfolio-chart'];
+const POPUP_WINDOWS = ['win-portfolio-chart', 'win-ai-insights'];
 
 function resetWindows() {
     // Clear all card styles
@@ -2066,6 +2832,14 @@ function resetWindows() {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
     });
+
+    // Restore insights modal as hidden centered modal
+    const insightsWin = document.getElementById('win-ai-insights');
+    if (insightsWin) {
+        insightsWin.style.cssText = 'display:none;flex-direction:column;position:fixed;top:50%;left:50%;transform:translate(-50%,-48%) scale(0.96);width:min(760px,90vw);max-height:82vh;z-index:10001;box-shadow:0 24px 80px rgba(0,0,0,0.28);border-radius:20px;transition:opacity .22s,transform .22s;opacity:0';
+    }
+    const overlay = document.getElementById('ai-insights-overlay');
+    if (overlay) { overlay.style.display = 'none'; overlay.style.opacity = '0'; }
 
     // Restore chat as fixed hidden panel (not part of grid)
     const chat = document.getElementById('win-ai-chat');
@@ -2087,7 +2861,7 @@ function resetWindows() {
     const rl  = cl + cw + gap;
 
     const indH = 228;                                   // indices card (fixed)
-    const anaH = 196;                                   // analytics card (fixed)
+    const anaH = 226;                                   // analytics card (fixed, +15%)
     const ch   = Math.max(180, dh - gap - anaH);       // chart: fills remaining center height
     const ph   = Math.round(dh * 0.68);                // portfolio: 68 % of height
     const simH = Math.max(100, dh - ph - gap);         // simulator: fills rest of left column
@@ -2118,48 +2892,88 @@ function resetWindows() {
 
 function makeDraggable(el) {
     const header = el.querySelector('.window-header');
-    if (!header) return;
-    header.style.cursor = 'grab';
+    if (!header || header._dragInit) return;
+    header._dragInit = true;
 
-    header.addEventListener('mousedown', function(e) {
-        if (window.innerWidth <= 768) return; // dragging disabled on mobile
-        if (e.target.closest('button') || e.target.closest('input')) return;
-        e.preventDefault();
+    const isFixed = () => getComputedStyle(el).position === 'fixed';
 
-        const dashboard = document.getElementById('dashboard');
-        if (!dashboard) return;
-
+    function startDrag(clientX, clientY) {
         el.style.zIndex = ++highestZIndex;
         el.classList.add('dragging');
-        document.body.style.cursor = 'grabbing';
+        const elRect = el.getBoundingClientRect();
 
-        const dashRect = dashboard.getBoundingClientRect();
-        const elRect   = el.getBoundingClientRect();
-        const shiftX   = e.clientX - elRect.left;
-        const shiftY   = e.clientY - elRect.top;
-
-        function onMouseMove(moveEvent) {
-            let x = moveEvent.clientX - dashRect.left - shiftX;
-            let y = moveEvent.clientY - dashRect.top  - shiftY;
-            if (x < 0) x = 0;
-            if (y < 0) y = 0;
-            if (x + el.offsetWidth  > dashRect.width)  x = dashRect.width  - el.offsetWidth;
-            if (y + el.offsetHeight > dashRect.height) y = dashRect.height - el.offsetHeight;
-            el.style.left  = x + 'px';
-            el.style.top   = y + 'px';
-            el.style.right = 'auto';
+        if (isFixed()) {
+            // top:50% left:50% are CSS-forced (!important) — move via transform only
+            const startCX = elRect.left + elRect.width  / 2;
+            const startCY = elRect.top  + elRect.height / 2;
+            return function onMove(cx, cy) {
+                const newCX = startCX + (cx - clientX);
+                const newCY = startCY + (cy - clientY);
+                const tx = newCX - window.innerWidth  / 2;
+                const ty = newCY - window.innerHeight / 2;
+                const maxTX = (window.innerWidth  - el.offsetWidth)  / 2;
+                const maxTY = (window.innerHeight - el.offsetHeight) / 2;
+                const clampedTX = Math.max(-window.innerWidth  / 2, Math.min(maxTX, tx));
+                const clampedTY = Math.max(-window.innerHeight / 2, Math.min(maxTY, ty));
+                el.style.transform = `translate(calc(-50% + ${clampedTX}px), calc(-50% + ${clampedTY}px))`;
+            };
+        } else {
+            const dashboard = document.getElementById('dashboard');
+            if (!dashboard) return null;
+            const dashRect = dashboard.getBoundingClientRect();
+            const shiftX = clientX - elRect.left;
+            const shiftY = clientY - elRect.top;
+            return function onMove(cx, cy) {
+                let x = cx - dashRect.left - shiftX;
+                let y = cy - dashRect.top  - shiftY;
+                if (x < 0) x = 0;
+                if (y < 0) y = 0;
+                if (x + el.offsetWidth  > dashRect.width)  x = dashRect.width  - el.offsetWidth;
+                if (y + el.offsetHeight > dashRect.height) y = dashRect.height - el.offsetHeight;
+                el.style.left  = x + 'px';
+                el.style.top   = y + 'px';
+                el.style.right = 'auto';
+            };
         }
+    }
 
+    // Mouse drag (desktop)
+    header.addEventListener('mousedown', function(e) {
+        if (e.target.closest('button') || e.target.closest('input')) return;
+        e.preventDefault();
+        document.body.style.cursor = 'grabbing';
+        const onMove = startDrag(e.clientX, e.clientY);
+        if (!onMove) return;
+        function onMouseMove(ev) { onMove(ev.clientX, ev.clientY); }
         function onMouseUp() {
             el.classList.remove('dragging');
             document.body.style.cursor = '';
             window.removeEventListener('mousemove', onMouseMove);
-            window.removeEventListener('mouseup',   onMouseUp);
+            window.removeEventListener('mouseup', onMouseUp);
         }
-
         window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup',   onMouseUp);
+        window.addEventListener('mouseup', onMouseUp);
     });
+
+    // Touch drag (mobile)
+    header.addEventListener('touchstart', function(e) {
+        if (e.target.closest('button') || e.target.closest('input')) return;
+        const t = e.touches[0];
+        const onMove = startDrag(t.clientX, t.clientY);
+        if (!onMove) return;
+        function onTouchMove(ev) {
+            ev.preventDefault();
+            const touch = ev.touches[0];
+            onMove(touch.clientX, touch.clientY);
+        }
+        function onTouchEnd() {
+            el.classList.remove('dragging');
+            window.removeEventListener('touchmove', onTouchMove);
+            window.removeEventListener('touchend', onTouchEnd);
+        }
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        window.addEventListener('touchend', onTouchEnd);
+    }, { passive: true });
 
     header.addEventListener('dragstart', (e) => e.preventDefault());
 }
