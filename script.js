@@ -1547,6 +1547,8 @@ async function initPortfolioAnalytics() {
         // Center label
         const center = document.getElementById('donut-center');
         if (center) center.innerHTML = `${numHoldings}<br>החזקות`;
+        const topSectorEl = document.getElementById('analytics-top-sector');
+        if (topSectorEl) topSectorEl.textContent = topSector ? `סקטור מוביל: ${topSector}` : '';
 
         // Legend
         const legend = document.getElementById('donut-legend');
@@ -1704,8 +1706,8 @@ let highestZIndex = 100;
 // ── Mobile Tabs ─────────────────────────────────────────────────────────────
 const MOB_TABS = {
     market:    ['win-indices-tase', 'win-stocks', 'win-realestate', 'win-main-chart'],
-    portfolio: ['win-portfolio', 'win-portfolio-analytics', 'win-simulator'],
-    analysis:  ['win-portfolio-analytics'],
+    portfolio: ['win-portfolio', 'win-simulator'],
+    analysis:  ['win-portfolio'],
 };
 const MOB_ALL = Object.values(MOB_TABS).flat();
 
@@ -1717,12 +1719,11 @@ const PANEL_DEFS = {
         { id: 'win-main-chart',   label: 'גרף מניה' },
     ],
     portfolio: [
-        { id: 'win-portfolio',            label: 'תיק השקעות' },
-        { id: 'win-portfolio-analytics',  label: 'ניתוח תיק' },
-        { id: 'win-simulator',            label: 'קנה / מכור' },
+        { id: 'win-portfolio',  label: 'תיק השקעות' },
+        { id: 'win-simulator',  label: 'קנה / מכור' },
     ],
     analysis:  [
-        { id: 'win-portfolio-analytics', label: 'ניתוח תיק' },
+        { id: 'win-portfolio',  label: 'תיק השקעות' },
     ],
 };
 const PANEL_TAB_LABELS = { market: 'שוק', portfolio: 'תיק', analysis: 'ניתוח' };
