@@ -1409,8 +1409,13 @@ function updatePortfolioList() {
         tr.onclick = (e) => {
             if (e.target.tagName !== 'BUTTON') { currentStock = symbol; _lwStock = null; drawChart(); openStockWindow(symbol); }
         };
+        const pDate = p.purchaseDate ?? p.date ?? p.buyDate ?? null;
+        const dateStr = pDate ? new Date(pDate).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '';
         tr.innerHTML = `
-            <td style="font-weight:600;font-size:0.8rem">${symbol}</td>
+            <td style="font-weight:600;font-size:0.8rem">
+                <div>${symbol}</div>
+                ${dateStr ? `<div style="font-size:8.5px;color:var(--text3);font-weight:400;margin-top:1px">${dateStr}</div>` : ''}
+            </td>
             <td class="pct-col"><span dir="ltr" style="display:inline-block;background:${plColor.bg};color:${plColor.text};padding:1px 6px;border-radius:4px;font-weight:700;font-size:0.75rem">${parseFloat(totalPct)>=0?'+':''}${totalPct}%</span></td>
             <td class="text-right" dir="ltr" style="font-size:0.75rem;font-weight:700;color:${plColor.text};font-variant-numeric:tabular-nums;white-space:nowrap">₪${plStr}</td>
             <td class="pct-col"><span dir="ltr" style="display:inline-block;background:${dayColor.bg};color:${dayColor.text};padding:1px 6px;border-radius:4px;font-weight:700;font-size:0.75rem">${dayUp?'+':''}${dayPct}%</span></td>
@@ -1525,6 +1530,20 @@ const _SECTORS_CLIENT = {
     'מדדים':       ['מדד תא-35','מדד תא-90'],
 };
 
+const _BETAS = {
+    'לאומי':1.05,'פועלים':1.08,'דיסקונט':1.00,'מזרחי טפחות':0.95,'הבינלאומי':0.85,'בנק ירושלים':0.80,
+    'הפניקס':0.90,'הראל':0.85,'כלל ביטוח':0.88,
+    'נייס':1.35,'טאוור':1.40,'אאורה':1.20,
+    'אלביט':0.82,
+    'טבע':1.05,'כיל':0.95,
+    'עזריאלי':0.80,'מליסרון':0.75,'אמות':0.72,'ביג':0.78,'גב ים':0.70,'שיכון ובינוי':0.85,'ריט1':0.65,
+    "אנרג'יקס":0.90,'אנלייט':0.88,'אורמת':0.85,'קבוצת דלק':0.92,
+    'בזק':0.60,'סלקום':0.65,'פרטנר':0.65,
+    'שטראוס':0.70,'שופרסל':0.65,'פוקס':0.90,'רמי לוי':0.72,
+    'אי.בי.אי':0.88,
+    'מדד תא-35':1.00,'מדד תא-90':1.10,
+};
+
 function initPortfolioAnalytics() {
     const widget = document.getElementById('win-portfolio-analytics');
     if (!widget) return;
@@ -1537,21 +1556,25 @@ function initPortfolioAnalytics() {
             return;
         }
 
-        // Build quote map from window._lastQuotes
+        // Quote map
         const qMap = {};
         (window._lastQuotes || []).forEach(q => { if (q.name) qMap[q.name] = q; });
 
-        // Group by sector, weighted by value
+        // Single pass: sector values + totals + beta
         const sectorVal = {};
-        let totalVal = 0;
+        let totalVal = 0, totalCost = 0, betaWeighted = 0;
         names.forEach(name => {
-            const h   = ptf[name];
-            const q   = qMap[name];
-            const cur = q?.price ?? h.buyPrice ?? h.avgPrice ?? 0;
-            const qty = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
-            const val = cur * qty;
-            totalVal += val;
-            const sector = Object.entries(_SECTORS_CLIENT).find(([, s]) => s.includes(name))?.[0] ?? 'אחר';
+            const h        = ptf[name];
+            const q        = qMap[name];
+            const cur      = q?.price ?? h.buyPrice ?? h.avgPrice ?? 0;
+            const qty      = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
+            const buyPrice = h.buyPrice ?? h.avgPrice ?? cur;
+            const val      = cur * qty;
+            const cost     = buyPrice * qty;
+            totalVal      += val;
+            totalCost     += cost;
+            betaWeighted  += val * (_BETAS[name] ?? 1.0);
+            const sector   = Object.entries(_SECTORS_CLIENT).find(([, s]) => s.includes(name))?.[0] ?? 'אחר';
             sectorVal[sector] = (sectorVal[sector] ?? 0) + val;
         });
 
@@ -1576,8 +1599,33 @@ function initPortfolioAnalytics() {
         const topSector  = sectors[0]?.name ?? '—';
         const diversification = Object.keys(sectorVal).length >= 4 ? 'טובה' : 'מוגבלת';
 
+        // Derived metrics
+        const totalPnL     = totalVal - totalCost;
+        const totalPnLPct  = totalCost > 0 ? (totalPnL / totalCost * 100) : 0;
+        const portfolioBeta = totalVal > 0 ? (betaWeighted / totalVal) : 1.0;
+        const hhi          = sectors.reduce((s, sec) => s + (sec.value / 100) ** 2, 0);
+        const divScore     = Math.round((1 - hhi) * 100);
+
+        // Helper
+        const ge = id => document.getElementById(id);
+        const fmtILS = v => `₪${Math.abs(Math.round(v)).toLocaleString('he-IL')}`;
+        const pnlColor = totalPnL >= 0 ? '#16a34a' : '#dc2626';
+        const pnlSign  = totalPnL >= 0 ? '+' : '−';
+
+        // Summary bar
+        const tvEl = ge('ana-total-val');
+        if (tvEl) tvEl.textContent = fmtILS(totalVal);
+        const pnlEl = ge('ana-total-pnl');
+        if (pnlEl) { pnlEl.textContent = `${pnlSign}${fmtILS(totalPnL)}`; pnlEl.style.color = pnlColor; }
+        const pctEl = ge('ana-total-pct');
+        if (pctEl) { pctEl.textContent = `(${pnlSign}${Math.abs(totalPnLPct).toFixed(1)}%)`; pctEl.style.color = pnlColor; }
+        const betaEl = ge('ana-beta');
+        if (betaEl) betaEl.textContent = portfolioBeta.toFixed(2);
+        const divEl = ge('ana-div-score');
+        if (divEl) divEl.textContent = `${divScore}/100`;
+
         // Donut chart
-        const canvas = document.getElementById('portfolio-donut');
+        const canvas = ge('portfolio-donut');
         if (canvas && sectors.length) {
             if (_donutChart) { _donutChart.destroy(); _donutChart = null; }
             _donutChart = new Chart(canvas.getContext('2d'), {
@@ -1600,13 +1648,13 @@ function initPortfolioAnalytics() {
         }
 
         // Center label
-        const center = document.getElementById('donut-center');
+        const center = ge('donut-center');
         if (center) center.innerHTML = `${numHoldings}<br>החזקות`;
-        const topSectorEl = document.getElementById('analytics-top-sector');
-        if (topSectorEl) topSectorEl.textContent = topSector ? `סקטור מוביל: ${topSector}` : '';
+        const topSectorEl = ge('analytics-top-sector');
+        if (topSectorEl) topSectorEl.textContent = topSector ? topSector : '';
 
-        // Legend
-        const legend = document.getElementById('donut-legend');
+        // Legend (top 4 sectors)
+        const legend = ge('donut-legend');
         if (legend) legend.innerHTML = sectors.slice(0, 4).map((s, i) =>
             `<div style="display:flex;align-items:center;gap:4px;min-width:0">
                <span style="flex-shrink:0;width:8px;height:8px;border-radius:2px;background:${_DONUT_COLORS[i % _DONUT_COLORS.length]}"></span>
@@ -1616,12 +1664,12 @@ function initPortfolioAnalytics() {
         ).join('');
 
         // Risk bar
-        const riskBar = document.getElementById('risk-bar');
+        const riskBar = ge('risk-bar');
         if (riskBar) { riskBar.style.width = `${riskScore * 20}%`; riskBar.style.background = riskColor; }
-        const riskLbl = document.getElementById('risk-label');
+        const riskLbl = ge('risk-label');
         if (riskLbl) { riskLbl.textContent = riskLabel; riskLbl.style.color = riskColor; }
-        const meta = document.getElementById('analytics-meta');
-        if (meta) meta.textContent = `סקטור מוביל: ${topSector} | פיזור: ${diversification} | ${numHoldings} מניות`;
+        const meta = ge('analytics-meta');
+        if (meta) meta.textContent = `${diversification} | בטא ${portfolioBeta.toFixed(2)} | ${numHoldings} מניות`;
 
     } catch(e) {
         console.error('[analytics]', e);
@@ -1990,7 +2038,7 @@ function resetWindows() {
     const rl  = cl + cw + gap;
 
     const indH = 228;                                   // indices card (fixed)
-    const anaH = 162;                                   // analytics card (fixed)
+    const anaH = 196;                                   // analytics card (fixed)
     const ch   = Math.max(180, dh - gap - anaH);       // chart: fills remaining center height
     const ph   = Math.round(dh * 0.68);                // portfolio: 68 % of height
     const simH = Math.max(100, dh - ph - gap);         // simulator: fills rest of left column
