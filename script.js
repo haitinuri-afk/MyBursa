@@ -1607,7 +1607,7 @@ function initPortfolioAnalytics() {
 
         // Legend
         const legend = document.getElementById('donut-legend');
-        if (legend) legend.innerHTML = sectors.slice(0, 6).map((s, i) =>
+        if (legend) legend.innerHTML = sectors.slice(0, 4).map((s, i) =>
             `<div style="display:flex;align-items:center;gap:4px;min-width:0">
                <span style="flex-shrink:0;width:8px;height:8px;border-radius:2px;background:${_DONUT_COLORS[i % _DONUT_COLORS.length]}"></span>
                <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">${s.name}</span>
@@ -1979,22 +1979,30 @@ function resetWindows() {
         if (fab) fab.style.transform = '';
     }
 
-    // Apply default layout based on dashboard width
-    const dw = document.getElementById('dashboard')?.clientWidth || window.innerWidth;
-    const lw  = 362;                               // left column width
-    const gap = 8;
-    const cl  = lw + gap;                          // center starts here
-    const cw  = Math.max(380, dw - lw * 2 - gap * 3); // center width
-    const rl  = cl + cw + gap;                     // right column start
-    const ch  = 390;                               // chart height
+    // Apply fully dynamic layout that fills the dashboard exactly — no scroll, no gaps
+    const dashboard = document.getElementById('dashboard');
+    const dw = dashboard?.clientWidth  || window.innerWidth;
+    const dh = dashboard?.clientHeight || 600;
+
+    const lw  = 362, gap = 8;
+    const cl  = lw + gap;
+    const cw  = Math.max(380, dw - lw * 2 - gap * 3);
+    const rl  = cl + cw + gap;
+
+    const indH = 228;                                   // indices card (fixed)
+    const anaH = 162;                                   // analytics card (fixed)
+    const ch   = Math.max(180, dh - gap - anaH);       // chart: fills remaining center height
+    const ph   = Math.round(dh * 0.68);                // portfolio: 68 % of height
+    const simH = Math.max(100, dh - ph - gap);         // simulator: fills rest of left column
+    const stH  = Math.max(100, dh - indH - gap);       // stocks: fills rest of right column
 
     const LAYOUT = {
-        'win-portfolio':           { top:0,        left:0,  width:lw },
-        'win-simulator':           { top:460,      left:0,  width:lw },
-        'win-main-chart':          { top:0,        left:cl, width:cw, height:ch },
-        'win-indices-tase':        { top:0,        left:rl, width:lw },
-        'win-stocks':              { top:240,      left:rl, width:lw },
-        'win-portfolio-analytics': { top:ch+gap,   left:cl, width:cw },
+        'win-portfolio':           { top:0,         left:0,  width:lw, height:ph   },
+        'win-simulator':           { top:ph+gap,    left:0,  width:lw, height:simH },
+        'win-main-chart':          { top:0,         left:cl, width:cw, height:ch   },
+        'win-portfolio-analytics': { top:ch+gap,    left:cl, width:cw, height:anaH },
+        'win-indices-tase':        { top:0,         left:rl, width:lw, height:indH },
+        'win-stocks':              { top:indH+gap,  left:rl, width:lw, height:stH  },
     };
 
     Object.entries(LAYOUT).forEach(([id, styles]) => {
