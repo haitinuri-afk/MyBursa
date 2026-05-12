@@ -470,6 +470,8 @@ async function fetchQuotesBatch(symList) {
 }
 
 // GET /api/stock/batch?symbols=LUMI.TA,POLI.TA,^TA35,...
+app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
+
 app.get('/api/stock/batch', async (req, res) => {
     const { symbols } = req.query;
     if (!symbols) return res.status(400).json({ error: 'symbols required' });
@@ -2066,6 +2068,19 @@ app.use((err, req, res, next) => {
     res.status(err.status || 500).json({ error: err.message || 'שגיאת שרת' });
 });
 
+// ── Keep-alive ping (prevents Render free tier from sleeping) ─────────────────
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || null;
+function startKeepAlive() {
+    if (!SELF_URL) return; // only on Render
+    const interval = 9 * 60 * 1000; // every 9 minutes (Render sleeps after 15 min)
+    setInterval(() => {
+        https.get(`${SELF_URL}/api/health`, res => {
+            console.log(`[keep-alive] ping → ${res.statusCode}`);
+        }).on('error', e => console.warn('[keep-alive] ping failed:', e.message));
+    }, interval);
+    console.log(`[keep-alive] started — pinging ${SELF_URL} every 9 min`);
+}
+
 // ── Startup ───────────────────────────────────────────────────────────────────
 app.listen(PORT, async () => {
     console.log(`Trading Station server running at http://localhost:${PORT}`);
@@ -2073,6 +2088,7 @@ app.listen(PORT, async () => {
     await _mongoReady;
     refreshFxRates();
     setInterval(refreshFxRates, 3600_000);
+    startKeepAlive();
 
     // ── Automation service (risk controller) ─────────────────────────────────
     _automation = startAutomation({ loadPortfolio, ragCol: _ragCol, alertsCol: _alertsCol });
