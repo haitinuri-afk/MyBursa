@@ -15,40 +15,7 @@
 const https          = require('https');
 const cron           = require('node-cron');
 const { createHash } = require('crypto');
-
-// ── Hebrew name → Yahoo Finance ticker ────────────────────────────────────
-// Mirror of server.js STOCK_SYMBOLS_HE — keep in sync
-const SYMBOLS = {
-    // מדדים
-    'מדד תא-35':'^TA35','מדד תא-90':'^TA90','מדד תא-125':'^TA125',
-    // בנקים
-    'לאומי':'LUMI.TA','פועלים':'POLI.TA','דיסקונט':'DSCT.TA',
-    'מזרחי טפחות':'MZTF.TA','הבינלאומי':'FIBI.TA','בנק ירושלים':'JBNK.TA',
-    'בנק יהב':'YAHV.TA','אוצר החייל':'BNKI.TA','אי.בי.אי':'IBI.TA',
-    // טכנולוגיה
-    'אלביט':'ESLT.TA','נייס':'NICE.TA','טאוור':'TSEM.TA','אאורה':'AURA.TA',
-    'נובה':'NVMI.TA','קמהדע':'KMDA.TA','סייבר-ארק':'CYBR.TA',
-    // פארמה / כימיה
-    'טבע':'TEVA.TA','כיל':'ICL.TA',
-    // ביטוח
-    'הפניקס':'PHOE.TA','הראל':'HARL.TA','כלל ביטוח':'CLIS.TA',
-    'מנורה מבטחים':'MNRT.TA','מגדל ביטוח':'MGDL.TA','הכשרה ביטוח':'HKSH.TA',
-    // נדל"ן
-    'עזריאלי':'AZRG.TA','מליסרון':'MLSR.TA','אמות':'AMOT.TA',
-    'ביג':'BIG.TA','גב ים':'GVYM.TA','שיכון ובינוי':'SKBN.TA','ריט1':'RIT1.TA',
-    'אפי נכסים':'AFPM.TA','נכסים ובנין':'NBLD.TA','אלרוב נדל"ן':'ALRB.TA',
-    'גזית גלוב':'GZT.TA','מניב':'MNIV.TA',
-    // אנרגיה
-    "אנרג'יקס":'ENRG.TA','אנלייט':'ENLT.TA','אורמת':'ORA.TA',
-    'קבוצת דלק':'DLEKG.TA','פז נפט':'PZOL.TA','דלק רכב':'DCRB.TA',
-    // תקשורת
-    'בזק':'BEZQ.TA','סלקום':'CEL.TA','פרטנר':'PTNR.TA',
-    // קמעונאות / מזון
-    'שטראוס':'STRS.TA','שופרסל':'SAE.TA','פוקס':'FOX.TA',
-    'רמי לוי':'RMLI.TA','אלקטרה מוצרים':'ELCO.TA',
-    // תעשייה / שונות
-    'אלקטרה':'ELTR.TA','ישקר':'ISCR.TA','דיסקאונט השקעות':'DISI.TA',
-};
+const { STOCK_SYMBOLS_HE: SYMBOLS, BENCHMARK_SYMBOL, BENCHMARK_NAME } = require('./dataConstants');
 
 const MARKET_BENCHMARK = '^TA90';   // used for portfolio-beta context
 const STOP_LOSS_PCT    = -10;       // % below avgPurchasePrice
@@ -138,6 +105,7 @@ async function runDailyCheck({ loadPortfolio, ragCol, alertsCol }) {
         const tickerToName = {};
         const tickers = [...new Set([
             MARKET_BENCHMARK,
+            BENCHMARK_SYMBOL,   // TA-125 for alpha
             ...names.map(n => { const t = SYMBOLS[n]; tickerToName[t] = n; return t; }),
         ])];
 
@@ -146,6 +114,10 @@ async function runDailyCheck({ loadPortfolio, ragCol, alertsCol }) {
 
         const benchQuote  = qMap[MARKET_BENCHMARK];
         const benchDayPct = benchQuote?.regularMarketChangePercent ?? 0;
+
+        // TA-125 for alpha calculation
+        const ta125Quote  = qMap[BENCHMARK_SYMBOL];
+        const ta125DayPct = ta125Quote?.regularMarketChangePercent ?? null;
 
         // ── 3. Per-stock stats ────────────────────────────────────────────
         let totalMktVal  = 0;
@@ -183,11 +155,31 @@ async function runDailyCheck({ loadPortfolio, ragCol, alertsCol }) {
             }
         }
 
+        // ── 4b. Alpha vs TA-125 ───────────────────────────────────────────
+        // Portfolio daily return = totalDayPnl / (totalMktVal - totalDayPnl)
+        const portfolioDayPct = totalMktVal > 0
+            ? (totalDayPnl / (totalMktVal - totalDayPnl)) * 100
+            : null;
+        const alphaPct = (portfolioDayPct !== null && ta125DayPct !== null)
+            ? portfolioDayPct - ta125DayPct
+            : null;
+
         const dateStr  = startedAt.toISOString().slice(0, 10);
         const totalStr = `₪${Math.round(totalDayPnl).toLocaleString('he-IL')}`;
 
         lines.push(`[דוח סיכום יומי אוטומטי — ${dateStr}]`);
         lines.push(`שינוי יומי: ${totalStr} | בטא תיק: ${portfolioBeta.toFixed(2)} | שוק (ת"א 90): ${benchDayPct >= 0 ? '+' : ''}${benchDayPct.toFixed(2)}%`);
+
+        // ── Alpha line ────────────────────────────────────────────────────
+        if (alphaPct !== null) {
+            const portPctStr = `${portfolioDayPct >= 0 ? '+' : ''}${portfolioDayPct.toFixed(2)}%`;
+            const ta125Str   = `${ta125DayPct   >= 0 ? '+' : ''}${ta125DayPct.toFixed(2)}%`;
+            const alphaStr   = `${alphaPct       >= 0 ? '+' : ''}${alphaPct.toFixed(2)}%`;
+            const beatStr    = alphaPct >= 0
+                ? `✅ התיק הכה את ${BENCHMARK_NAME} היום`
+                : `❌ התיק לא הכה את ${BENCHMARK_NAME} היום`;
+            lines.push(`${beatStr} | תיק: ${portPctStr} | ${BENCHMARK_NAME}: ${ta125Str} | אלפא: ${alphaStr}`);
+        }
         lines.push('');
 
         // ── 5a. Beta check ────────────────────────────────────────────────
@@ -240,7 +232,9 @@ async function runDailyCheck({ loadPortfolio, ragCol, alertsCol }) {
 
         // ── 6. Persist to MongoDB ─────────────────────────────────────────
         const chunkText = lines.join('\n');
-        const chunkId   = await _saveRagChunk(ragCol, chunkText, ['risk', 'daily', 'automation', dateStr]);
+        const alphaTag  = alphaPct !== null ? (alphaPct >= 0 ? 'alpha-positive' : 'alpha-negative') : null;
+        const ragTags   = ['risk', 'daily', 'automation', dateStr, ...(alphaTag ? [alphaTag] : [])];
+        const chunkId   = await _saveRagChunk(ragCol, chunkText, ragTags);
         await _saveAlerts(alertsCol, findings);
 
         console.log(`[automation] ✓ Done in ${Date.now() - startedAt}ms | ` +
