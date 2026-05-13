@@ -1,5 +1,5 @@
 // Cache name injected dynamically by server.js → always changes on deploy
-const CACHE = 'bursa-v7';
+const CACHE = 'bursa-v8';
 
 // We only cache the shell HTML for offline fallback.
 // JS / CSS / API are always fetched fresh from the network.

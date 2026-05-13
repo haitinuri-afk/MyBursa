@@ -1699,14 +1699,30 @@ function sellStockSim() {
 
 function sellStock(symbol) {
     if (!portfolio[symbol]) return;
-    const qty   = portfolio[symbol].qty;
-    const price = parseFloat(stocksData[symbol].price);
+    const holding   = portfolio[symbol];
+    const qty       = holding.qty;
+    const sellPrice = parseFloat(stocksData[symbol]?.price ?? 0);
+    const buyPrice  = parseFloat(holding.buyPrice ?? holding.avgCost ?? 0);
+    const buyDate   = holding.buyDate ?? null;
     delete portfolio[symbol];
-    transactionHistory.unshift({ time: new Date().toLocaleTimeString(), action: 'Sell', symbol, qty, price: price.toFixed(2) });
+    transactionHistory.unshift({ time: new Date().toLocaleTimeString(), action: 'Sell', symbol, qty, price: sellPrice.toFixed(2) });
     if (transactionHistory.length > 50) transactionHistory.pop();
     savePortfolio();
     updatePortfolioList();
     updateTransactionHistory();
+    // Persist to SalesHistory (async, non-blocking)
+    if (sellPrice > 0) {
+        fetch('/api/sales', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol, name: symbol,
+                buyDate, sellDate: new Date().toISOString().split('T')[0],
+                buyPrice, sellPrice, quantity: qty,
+                entryType: 'current',
+            })
+        }).catch(() => {});
+    }
 }
 
 // ── Portfolio Analytics Widget ─────────────────────────────────────────────
@@ -3720,6 +3736,151 @@ async function markAlertsRead() {
     await fetch('/api/alerts/mark-read', { method: 'POST' }).catch(() => {});
     const badge = document.getElementById('alerts-badge');
     if (badge) badge.style.display = 'none';
+}
+
+// ── Sales History ─────────────────────────────────────────────────────────────
+let _salesData    = [];
+let _salesPeriod  = 'all';
+let _salesSummary = null;
+
+async function openSalesModal() {
+    document.getElementById('sales-modal').style.display = 'flex';
+    // Ensure 500k floor (idempotent — safe to call every open)
+    await fetch('/api/sales/ensure-initial?target=500000', { method: 'POST' }).catch(() => {});
+    await refreshSalesData();
+}
+
+function closeSalesModal() {
+    document.getElementById('sales-modal').style.display = 'none';
+}
+
+async function refreshSalesData() {
+    try {
+        const [salesRes, summaryRes] = await Promise.all([
+            fetch(`/api/sales?period=${_salesPeriod}`),
+            fetch('/api/sales/summary'),
+        ]);
+        _salesData    = await salesRes.json();
+        _salesSummary = await summaryRes.json();
+        renderSalesLog();
+        renderSalesSummary();
+    } catch(e) { console.warn('refreshSalesData:', e); }
+}
+
+function setSalesPeriod(p) {
+    _salesPeriod = p;
+    document.querySelectorAll('.sales-period-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.period === p);
+    });
+    refreshSalesData();
+}
+
+function renderSalesSummary() {
+    const s = _salesSummary;
+    if (!s) return;
+    const data = _salesPeriod === 'ytd' ? s.ytd : _salesPeriod === '12m' ? s.last12m : s.all;
+    const cashEl = document.getElementById('sales-total-cash');
+    const pnlEl  = document.getElementById('sales-total-pnl');
+    const roiEl  = document.getElementById('sales-avg-roi');
+    const cntEl  = document.getElementById('sales-count');
+    if (cashEl) cashEl.textContent = `₪${(s.totalCashBalance ?? 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (pnlEl) {
+        const pnl = data?.totalProfitLoss ?? 0;
+        pnlEl.textContent = `${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL', { minimumFractionDigits: 2 })}`;
+        pnlEl.style.color = pnl >= 0 ? '#16a34a' : '#dc2626';
+    }
+    if (roiEl) {
+        const roi = data?.avgROI ?? 0;
+        roiEl.textContent = `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%`;
+        roiEl.style.color = roi >= 0 ? '#16a34a' : '#dc2626';
+    }
+    if (cntEl) cntEl.textContent = (data?.count ?? 0) + ' עסקאות';
+}
+
+function renderSalesLog() {
+    const tbody = document.getElementById('sales-log-body');
+    if (!tbody) return;
+    if (!_salesData.length) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#9ca3af;font-size:12px">אין עסקאות להצגה</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = _salesData.map(s => {
+        const isSetup = s.entryType === 'initial_setup';
+        if (isSetup) {
+            const cash = (s.proceeds ?? 0).toLocaleString('he-IL', { minimumFractionDigits: 2 });
+            return `<tr style="border-bottom:1px solid #f3f4f6;font-size:12px;background:#fafafa;color:#6b7280">
+                <td style="padding:6px 4px;white-space:nowrap">—</td>
+                <td style="padding:6px 4px;font-weight:600">—</td>
+                <td style="padding:6px 4px" colspan="2">יתרת פתיחה / הזרמה ידנית</td>
+                <td style="padding:6px 4px;text-align:right;font-weight:600;color:#0369a1" dir="ltr">₪${cash}</td>
+                <td style="padding:6px 4px;text-align:right">—</td>
+                <td style="padding:6px 4px"><span style="font-size:9px;background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 5px;font-weight:600">הגדרה ראשונית</span></td>
+            </tr>`;
+        }
+        const pnl    = s.profitLoss ?? 0;
+        const roi    = s.roi ?? 0;
+        const col    = pnl >= 0 ? '#16a34a' : '#dc2626';
+        const tag    = s.entryType === 'current'
+            ? `<span style="font-size:9px;background:#dcfce7;color:#166534;border-radius:4px;padding:1px 5px;font-weight:600">נוכחי</span>`
+            : `<span style="font-size:9px;background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 5px;font-weight:600">היסטורי</span>`;
+        return `<tr style="border-bottom:1px solid #f3f4f6;font-size:12px">
+            <td style="padding:6px 4px;white-space:nowrap">${s.sellDate ?? '—'}</td>
+            <td style="padding:6px 4px;font-weight:600">${s.symbol}</td>
+            <td style="padding:6px 4px;color:#374151">${s.name ?? s.symbol}</td>
+            <td style="padding:6px 4px;text-align:right" dir="ltr">${s.quantity}</td>
+            <td style="padding:6px 4px;text-align:right;font-weight:600;color:${col}" dir="ltr">${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL',{minimumFractionDigits:2})}</td>
+            <td style="padding:6px 4px;text-align:right;color:${col}" dir="ltr">${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%</td>
+            <td style="padding:6px 4px">${tag}</td>
+        </tr>`;
+    }).join('');
+}
+
+async function submitManualSale() {
+    const get = id => document.getElementById(id)?.value?.trim() ?? '';
+    const body = {
+        symbol:    get('ms-symbol').toUpperCase(),
+        name:      get('ms-name') || get('ms-symbol'),
+        buyDate:   get('ms-buy-date') || null,
+        sellDate:  get('ms-sell-date'),
+        buyPrice:  parseFloat(get('ms-buy-price')) || 0,
+        sellPrice: parseFloat(get('ms-sell-price')) || 0,
+        quantity:  parseFloat(get('ms-qty')) || 0,
+        priceUnit: document.getElementById('ms-price-unit')?.value ?? 'NIS',
+        entryType: 'historical',
+    };
+    if (!body.symbol || !body.sellDate || !body.sellPrice || !body.quantity) {
+        return alert('נא למלא: טיקר, תאריך מכירה, מחיר מכירה, כמות');
+    }
+    try {
+        const r = await fetch('/api/sales', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const j = await r.json();
+        if (!j.ok) { alert('שגיאה: ' + j.error); return; }
+        document.getElementById('manual-sale-form').reset();
+        document.getElementById('manual-sale-form').style.display = 'none';
+        await refreshSalesData();
+    } catch(e) { alert('שגיאת רשת: ' + e.message); }
+}
+
+async function submitBulkImport() {
+    const raw = document.getElementById('bulk-import-text')?.value?.trim();
+    if (!raw) return alert('הדבק JSON או CSV');
+    let body;
+    try {
+        const parsed = JSON.parse(raw);
+        body = JSON.stringify(parsed);
+    } catch {
+        // Treat as CSV
+        body = JSON.stringify({ csv: raw });
+    }
+    try {
+        const r = await fetch('/api/sales/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+        const j = await r.json();
+        const msg = `יובאו ${j.imported} עסקאות` + (j.errors?.length ? `\n${j.errors.join('\n')}` : '');
+        alert(msg);
+        document.getElementById('bulk-import-text').value = '';
+        document.getElementById('bulk-import-area').style.display = 'none';
+        await refreshSalesData();
+    } catch(e) { alert('שגיאת רשת: ' + e.message); }
 }
 
 
