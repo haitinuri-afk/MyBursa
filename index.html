@@ -482,31 +482,39 @@
     <div id="sales-modal" style="display:none;position:fixed;inset:0;z-index:10500;align-items:center;justify-content:center;background:rgba(0,0,0,0.45)">
       <div style="background:#fff;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,0.22);width:min(720px,96vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden" dir="rtl">
         <!-- Header -->
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;background:#f9fafb;border-bottom:1px solid #f0f0f0">
+        <div class="sm-hdr" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;background:#f9fafb;border-bottom:1px solid #f0f0f0">
           <span style="font-weight:700;font-size:15px;color:#111">📋 היסטוריית מכירות</span>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button onclick="document.getElementById('manual-sale-form').style.display=document.getElementById('manual-sale-form').style.display==='none'?'block':'none'" style="font-size:11px;font-weight:600;background:#e0f2fe;color:#0369a1;border:none;border-radius:6px;padding:4px 10px;cursor:pointer">+ הוסף ידני</button>
-            <button onclick="document.getElementById('bulk-import-area').style.display=document.getElementById('bulk-import-area').style.display==='none'?'block':'none'" style="font-size:11px;font-weight:600;background:#f0fdf4;color:#166534;border:none;border-radius:6px;padding:4px 10px;cursor:pointer">⬆ ייבוא CSV/JSON</button>
+          <div class="sm-hdr-btns" style="display:flex;gap:8px;align-items:center">
+            <button onclick="document.getElementById('manual-sale-form').style.display=document.getElementById('manual-sale-form').style.display==='none'?'block':'none'" style="font-size:11px;font-weight:600;background:#e0f2fe;color:#0369a1;border:none;border-radius:6px;padding:4px 10px;cursor:pointer">+ הוסף</button>
+            <button onclick="document.getElementById('bulk-import-area').style.display=document.getElementById('bulk-import-area').style.display==='none'?'block':'none'" style="font-size:11px;font-weight:600;background:#f0fdf4;color:#166534;border:none;border-radius:6px;padding:4px 10px;cursor:pointer">⬆ CSV</button>
             <button onclick="closeSalesModal()" style="background:none;border:none;font-size:16px;color:#9ca3af;cursor:pointer;padding:0 2px">✕</button>
           </div>
         </div>
         <!-- Summary metrics -->
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:12px 16px;background:#f9fafb;border-bottom:1px solid #f0f0f0">
-          <div style="text-align:center">
-            <div style="font-size:10px;color:#9ca3af;margin-bottom:2px">סה״כ מזומן ממכירות</div>
-            <div id="sales-total-cash" style="font-size:15px;font-weight:700;color:#111">₪0.00</div>
+        <div style="padding:12px 16px;background:#f9fafb;border-bottom:1px solid #f0f0f0">
+          <!-- Primary: total account value -->
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
+            <div style="font-size:10px;color:#9ca3af;white-space:nowrap">שווי חשבון</div>
+            <div id="sales-total-cash" style="font-size:20px;font-weight:800;color:#111;letter-spacing:-0.5px">₪0.00</div>
           </div>
-          <div style="text-align:center">
-            <div style="font-size:10px;color:#9ca3af;margin-bottom:2px">רווח/הפסד (בפילטר)</div>
-            <div id="sales-total-pnl" style="font-size:15px;font-weight:700">₪0.00</div>
-          </div>
-          <div style="text-align:center">
-            <div style="font-size:10px;color:#9ca3af;margin-bottom:2px">ROI ממוצע</div>
-            <div id="sales-avg-roi" style="font-size:15px;font-weight:700">0.00%</div>
-          </div>
-          <div style="text-align:center">
-            <div style="font-size:10px;color:#9ca3af;margin-bottom:2px">מספר עסקאות</div>
-            <div id="sales-count" style="font-size:15px;font-weight:700;color:#111">0</div>
+          <!-- Breakdown: base + profit -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;text-align:center">
+              <div style="font-size:9px;color:#9ca3af;margin-bottom:2px">קרן בסיס</div>
+              <div id="sales-base-cash" style="font-size:13px;font-weight:700;color:#0369a1">₪500,000</div>
+            </div>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;text-align:center">
+              <div style="font-size:9px;color:#9ca3af;margin-bottom:2px">רווח ממומש</div>
+              <div id="sales-total-pnl" style="font-size:13px;font-weight:700">₪0.00</div>
+            </div>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;text-align:center">
+              <div style="font-size:9px;color:#9ca3af;margin-bottom:2px">עסקאות / ROI</div>
+              <div style="font-size:11px;font-weight:600;color:#374151">
+                <span id="sales-count">0</span>
+                &nbsp;·&nbsp;
+                <span id="sales-avg-roi" style="font-weight:700">0%</span>
+              </div>
+            </div>
           </div>
         </div>
         <!-- Period filter -->
@@ -541,9 +549,9 @@
           <table style="width:100%;border-collapse:collapse;margin-top:10px">
             <thead>
               <tr style="font-size:10px;color:#9ca3af;font-weight:500;border-bottom:1px solid #f0f0f0">
-                <th style="text-align:right;padding:5px 4px">תאריך מכירה</th>
+                <th style="text-align:right;padding:5px 4px">תאריך</th>
                 <th style="text-align:right;padding:5px 4px">טיקר</th>
-                <th style="text-align:right;padding:5px 4px">שם</th>
+                <th class="sales-col-name" style="text-align:right;padding:5px 4px">שם</th>
                 <th style="text-align:right;padding:5px 4px">כמות</th>
                 <th style="text-align:right;padding:5px 4px">רווח/הפסד</th>
                 <th style="text-align:right;padding:5px 4px">ROI</th>
@@ -557,6 +565,45 @@
     </div>
     <style>
       .sales-period-btn.active { background:#0f172a !important; color:#fff !important; border-color:#0f172a !important; }
+
+      /* ── Sales modal mobile ── */
+      @media (max-width: 520px) {
+        #sales-modal > div {
+          width: 100vw !important;
+          max-width: 100vw !important;
+          max-height: 100dvh !important;
+          border-radius: 0 !important;
+          border-top-left-radius: 16px !important;
+          border-top-right-radius: 16px !important;
+          margin-top: auto;
+          align-self: flex-end;
+        }
+        #sales-modal {
+          align-items: flex-end !important;
+        }
+        /* Header: wrap buttons to second row */
+        #sales-modal .sm-hdr {
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        #sales-modal .sm-hdr-btns {
+          gap: 4px;
+        }
+        /* Summary: stack total on top, 3 cards below (smaller text) */
+        #sales-total-cash { font-size: 18px !important; }
+        #sales-base-cash  { font-size: 12px !important; }
+        #sales-total-pnl  { font-size: 12px !important; }
+        /* Table: hide Name column, shrink text */
+        .sales-col-name { display: none; }
+        #sales-log-body tr td:nth-child(3) { display: none; }
+        table thead tr th:nth-child(3) { display: none; }
+        #sales-log-body td, #sales-log-body th { font-size: 11px !important; padding: 5px 2px !important; }
+        /* Period filter: smaller buttons */
+        .sales-period-btn { font-size: 10px !important; padding: 3px 7px !important; }
+        /* Forms: single column on mobile */
+        #manual-sale-form > div { grid-template-columns: 1fr 1fr !important; }
+        #bulk-import-text { font-size: 10px !important; }
+      }
     </style>
 
     <!-- Transaction History Floating Window -->
@@ -581,7 +628,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=77"></script>
+    <script src="script.js?v=82"></script>
     <script>
       if ('serviceWorker' in navigator) {
         // Unregister any broken service workers, then re-register

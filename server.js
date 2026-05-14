@@ -2133,10 +2133,80 @@ function buildSaleDoc(body, entryType = 'historical') {
     };
 }
 
+// ── Internal helper: upsert a fixed 500k base entry (account floor) ───────────
+const CASH_TARGET = 500_000;
+
+async function syncInitialCash() {
+    try {
+        const doc = {
+            symbol:     'INITIAL_CASH',
+            name:       'יתרת פתיחה (500,000 ₪)',
+            buyDate:    null,
+            sellDate:   '2000-01-01',   // always sorts to bottom (oldest date)
+            buyPrice:   0,
+            sellPrice:  CASH_TARGET,
+            quantity:   1,
+            proceeds:   CASH_TARGET,
+            costBasis:  0,
+            profitLoss: 0,
+            roi:        0,
+            entryType:  'initial_setup',
+            createdAt:  new Date().toISOString(),
+        };
+        if (_salesCol) {
+            await _salesCol.deleteMany({ entryType: 'initial_setup' });
+            await _salesCol.insertOne(doc);
+        } else {
+            const all    = await loadSales();
+            const trades = all.filter(s => s.entryType !== 'initial_setup');
+            fs.writeFileSync(SALES_FILE, JSON.stringify([...trades, doc], null, 2));
+        }
+    } catch(e) { console.warn('[sales] syncInitialCash failed:', e.message); }
+}
+
+// ── One-time seed: Tower (TWR.TA) sale — May 13 2026, real numbers ────────────
+// Real trade: bought 70 shares @ 558.50 NIS, sold @ 742.00 NIS → +₪12,845 (+32.86%)
+async function seedTowerTrade() {
+    try {
+        const SEED_SYMBOL   = 'TWR.TA';
+        const SEED_SELLDATE = '2026-05-13';
+        const doc = {
+            symbol:     SEED_SYMBOL,
+            name:       'Tower Semiconductor',
+            buyDate:    '2026-05-13',
+            sellDate:   SEED_SELLDATE,
+            buyPrice:   558.50,
+            sellPrice:  742.00,
+            quantity:   70,
+            proceeds:   51940,
+            costBasis:  39095,
+            profitLoss: 12845,
+            roi:        32.86,
+            entryType:  'current',
+            createdAt:  new Date().toISOString(),
+        };
+        if (_salesCol) {
+            const exists = await _salesCol.findOne({ symbol: SEED_SYMBOL, sellDate: SEED_SELLDATE });
+            if (exists) return;
+            await _salesCol.insertOne(doc);
+            console.log('[sales] TWR.TA seed inserted — ₪12,845 profit (+32.86%)');
+        } else {
+            const all = await loadSales();
+            const exists = all.find(s => s.symbol === SEED_SYMBOL && s.sellDate === SEED_SELLDATE);
+            if (exists) return;
+            all.unshift(doc);
+            fs.writeFileSync(SALES_FILE, JSON.stringify(all, null, 2));
+            console.log('[sales] TWR.TA seed inserted (file) — ₪12,845 profit (+32.86%)');
+        }
+    } catch(e) { console.warn('[sales] seedTowerTrade failed:', e.message); }
+}
+
 // GET /api/sales?period=all|ytd|12m
 app.get('/api/sales', async (req, res) => {
     try {
         if (_mongoReady) await _mongoReady;
+        await seedTowerTrade();             // ← idempotent trade seed
+        await syncInitialCash();            // ← 500k base entry
         let sales = await loadSales();
         const period = req.query.period ?? 'all';
         if (period !== 'all') {
@@ -2154,10 +2224,16 @@ app.get('/api/sales', async (req, res) => {
 app.get('/api/sales/summary', async (req, res) => {
     try {
         if (_mongoReady) await _mongoReady;
+        await seedTowerTrade();             // ← idempotent trade seed
+        await syncInitialCash();            // ← 500k base entry
         const sales  = await loadSales();
-        const trades = sales.filter(s => s.entryType !== 'initial_setup'); // real trades only for P&L
-        // Total cash includes initial_setup (it IS cash in the account)
-        const totalCash = parseFloat(sales.reduce((s, x) => s + (x.proceeds ?? 0), 0).toFixed(2));
+        const trades = sales.filter(s => s.entryType !== 'initial_setup');
+
+        // Core account math
+        const baseCash    = CASH_TARGET;                                                               // always ₪500,000
+        const realizedPNL = parseFloat(trades.reduce((s, x) => s + (x.profitLoss ?? 0), 0).toFixed(2));
+        const totalAccountValue = parseFloat((baseCash + realizedPNL).toFixed(2));
+
         const summarise = arr => {
             const real = arr.filter(s => s.entryType !== 'initial_setup');
             return {
@@ -2173,10 +2249,13 @@ app.get('/api/sales/summary', async (req, res) => {
         const ytdStr = ytdC.toISOString().split('T')[0];
         const m12Str = m12C.toISOString().split('T')[0];
         res.json({
-            all:             summarise(trades),
-            ytd:             summarise(trades.filter(s => (s.sellDate ?? '') >= ytdStr)),
-            last12m:         summarise(trades.filter(s => (s.sellDate ?? '') >= m12Str)),
-            totalCashBalance: totalCash,
+            all:              summarise(trades),
+            ytd:              summarise(trades.filter(s => (s.sellDate ?? '') >= ytdStr)),
+            last12m:          summarise(trades.filter(s => (s.sellDate ?? '') >= m12Str)),
+            baseCash,                           // ₪500,000 — fixed floor
+            realizedPNL,                        // sum of profitLoss from real trades
+            totalAccountValue,                  // baseCash + realizedPNL
+            totalCashBalance: totalAccountValue, // legacy alias
         });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -2222,63 +2301,14 @@ app.post('/api/sales/bulk', express.json({ limit: '2mb' }), async (req, res) => 
     } catch(e) { res.status(400).json({ error: e.message }); }
 });
 
-// POST /api/sales/ensure-initial?target=500000
-// Idempotent: inserts ONE initial_setup adjustment if totalCashBalance < target.
-// Safe to call on every modal open — does nothing once target is reached.
+// POST /api/sales/ensure-initial — kept for backward compat, now just delegates
 app.post('/api/sales/ensure-initial', async (req, res) => {
     try {
         if (_mongoReady) await _mongoReady;
-        const target = parseFloat(req.query.target ?? req.body?.target ?? 500000);
-        const sales  = await loadSales();
-        // Remove any previous initial_setup entries to recalculate
-        const trades  = sales.filter(s => s.entryType !== 'initial_setup');
-        const current = trades.reduce((s, x) => s + (x.proceeds ?? 0), 0);
-        const gap     = parseFloat((target - current).toFixed(2));
-
-        // Check if an initial_setup entry already covers the gap
-        const existing = sales.find(s => s.entryType === 'initial_setup');
-
-        if (gap <= 0) {
-            // Target already met by real trades — remove stale initial_setup if any
-            if (existing && _salesCol) {
-                await _salesCol.deleteMany({ entryType: 'initial_setup' });
-            } else if (existing) {
-                const arr = sales.filter(s => s.entryType !== 'initial_setup');
-                fs.writeFileSync(SALES_FILE, JSON.stringify(arr, null, 2));
-            }
-            return res.json({ ok: true, action: 'none', totalCashBalance: parseFloat(current.toFixed(2)) });
-        }
-
-        // If existing initial_setup has same amount → nothing to do
-        if (existing && Math.abs((existing.proceeds ?? 0) - gap) < 0.01) {
-            return res.json({ ok: true, action: 'exists', totalCashBalance: target });
-        }
-
-        // Remove stale initial_setup, insert fresh one with correct gap
-        if (_salesCol) {
-            await _salesCol.deleteMany({ entryType: 'initial_setup' });
-        } else {
-            const arr = sales.filter(s => s.entryType !== 'initial_setup');
-            fs.writeFileSync(SALES_FILE, JSON.stringify(arr, null, 2));
-        }
-
-        const setupDoc = {
-            symbol:     '—',
-            name:       'יתרת פתיחה',
-            buyDate:    null,
-            sellDate:   '2000-01-01',   // sorts to bottom (oldest)
-            buyPrice:   0,
-            sellPrice:  gap,
-            quantity:   1,
-            proceeds:   gap,
-            costBasis:  0,
-            profitLoss: 0,
-            roi:        0,
-            entryType:  'initial_setup',
-            createdAt:  new Date().toISOString(),
-        };
-        await saveSaleDoc(setupDoc);
-        res.json({ ok: true, action: 'inserted', adjustment: gap, totalCashBalance: target });
+        await syncInitialCash();
+        const sales = await loadSales();
+        const total = parseFloat(sales.reduce((s, x) => s + (x.proceeds ?? 0), 0).toFixed(2));
+        res.json({ ok: true, totalCashBalance: total });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2537,6 +2567,7 @@ app.listen(PORT, async () => {
     console.log(`Trading Station server running at http://localhost:${PORT}`);
     _mongoReady = initMongoDB();
     await _mongoReady;
+    await seedTowerTrade();    // idempotent — inserts TWR.TA seed trade once
     refreshFxRates();
     setInterval(refreshFxRates, 3600_000);
     startKeepAlive();

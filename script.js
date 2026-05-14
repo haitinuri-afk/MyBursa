@@ -3745,9 +3745,7 @@ let _salesSummary = null;
 
 async function openSalesModal() {
     document.getElementById('sales-modal').style.display = 'flex';
-    // Ensure 500k floor (idempotent — safe to call every open)
-    await fetch('/api/sales/ensure-initial?target=500000', { method: 'POST' }).catch(() => {});
-    await refreshSalesData();
+    await refreshSalesData();   // syncInitialCash() runs server-side inside GET /api/sales
 }
 
 function closeSalesModal() {
@@ -3779,22 +3777,35 @@ function renderSalesSummary() {
     const s = _salesSummary;
     if (!s) return;
     const data = _salesPeriod === 'ytd' ? s.ytd : _salesPeriod === '12m' ? s.last12m : s.all;
-    const cashEl = document.getElementById('sales-total-cash');
-    const pnlEl  = document.getElementById('sales-total-pnl');
-    const roiEl  = document.getElementById('sales-avg-roi');
-    const cntEl  = document.getElementById('sales-count');
-    if (cashEl) cashEl.textContent = `₪${(s.totalCashBalance ?? 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    if (pnlEl) {
-        const pnl = data?.totalProfitLoss ?? 0;
-        pnlEl.textContent = `${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL', { minimumFractionDigits: 2 })}`;
-        pnlEl.style.color = pnl >= 0 ? '#16a34a' : '#dc2626';
+
+    // Primary: total account value = baseCash + realizedPNL (all time, not filtered by period)
+    const tav = s.totalAccountValue ?? s.totalCashBalance ?? 0;
+    const el = id => document.getElementById(id);
+
+    // Big number: always all-time total account value
+    if (el('sales-total-cash'))
+        el('sales-total-cash').textContent = `₪${tav.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    // Base cash: always ₪500,000
+    if (el('sales-base-cash'))
+        el('sales-base-cash').textContent = `₪${(s.baseCash ?? 500000).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+    // Realized P&L: period-filtered when in ytd/12m, otherwise all-time
+    const pnl = (_salesPeriod === 'all' ? (s.realizedPNL ?? data?.totalProfitLoss) : data?.totalProfitLoss) ?? 0;
+    if (el('sales-total-pnl')) {
+        el('sales-total-pnl').textContent = `${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL', { minimumFractionDigits: 2 })}`;
+        el('sales-total-pnl').style.color = pnl >= 0 ? '#16a34a' : '#dc2626';
     }
-    if (roiEl) {
-        const roi = data?.avgROI ?? 0;
-        roiEl.textContent = `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%`;
-        roiEl.style.color = roi >= 0 ? '#16a34a' : '#dc2626';
+
+    // Avg ROI (period)
+    const roi = data?.avgROI ?? 0;
+    if (el('sales-avg-roi')) {
+        el('sales-avg-roi').textContent = `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%`;
+        el('sales-avg-roi').style.color = roi >= 0 ? '#16a34a' : '#dc2626';
     }
-    if (cntEl) cntEl.textContent = (data?.count ?? 0) + ' עסקאות';
+
+    // Trade count (period)
+    if (el('sales-count')) el('sales-count').textContent = (data?.count ?? 0);
 }
 
 function renderSalesLog() {
@@ -3807,14 +3818,13 @@ function renderSalesLog() {
     tbody.innerHTML = _salesData.map(s => {
         const isSetup = s.entryType === 'initial_setup';
         if (isSetup) {
-            const cash = (s.proceeds ?? 0).toLocaleString('he-IL', { minimumFractionDigits: 2 });
-            return `<tr style="border-bottom:1px solid #f3f4f6;font-size:12px;background:#fafafa;color:#6b7280">
+            return `<tr style="border-bottom:1px solid #f3f4f6;font-size:12px;background:#f0f9ff;color:#6b7280">
                 <td style="padding:6px 4px;white-space:nowrap">—</td>
                 <td style="padding:6px 4px;font-weight:600">—</td>
-                <td style="padding:6px 4px" colspan="2">יתרת פתיחה / הזרמה ידנית</td>
-                <td style="padding:6px 4px;text-align:right;font-weight:600;color:#0369a1" dir="ltr">₪${cash}</td>
+                <td style="padding:6px 4px" colspan="2">יתרת פתיחה</td>
+                <td style="padding:6px 4px;text-align:right;font-weight:700;color:#0369a1" dir="ltr">₪500,000.00</td>
                 <td style="padding:6px 4px;text-align:right">—</td>
-                <td style="padding:6px 4px"><span style="font-size:9px;background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 5px;font-weight:600">הגדרה ראשונית</span></td>
+                <td style="padding:6px 4px"><span style="font-size:9px;background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 5px;font-weight:600">בסיס</span></td>
             </tr>`;
         }
         const pnl    = s.profitLoss ?? 0;
@@ -3826,7 +3836,7 @@ function renderSalesLog() {
         return `<tr style="border-bottom:1px solid #f3f4f6;font-size:12px">
             <td style="padding:6px 4px;white-space:nowrap">${s.sellDate ?? '—'}</td>
             <td style="padding:6px 4px;font-weight:600">${s.symbol}</td>
-            <td style="padding:6px 4px;color:#374151">${s.name ?? s.symbol}</td>
+            <td class="sales-col-name" style="padding:6px 4px;color:#374151">${s.name ?? s.symbol}</td>
             <td style="padding:6px 4px;text-align:right" dir="ltr">${s.quantity}</td>
             <td style="padding:6px 4px;text-align:right;font-weight:600;color:${col}" dir="ltr">${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL',{minimumFractionDigits:2})}</td>
             <td style="padding:6px 4px;text-align:right;color:${col}" dir="ltr">${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%</td>
