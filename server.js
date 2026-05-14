@@ -1,4 +1,4 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env'), override: true });
+﻿require('dotenv').config({ path: require('path').join(__dirname, '.env'), override: true });
 const express      = require('express');
 const path         = require('path');
 const https        = require('https');
@@ -239,6 +239,27 @@ async function fetchChartMeta(symbol, range, interval = '1d') {
                 }
             }
         } catch(e) { console.warn(`[stooq] ${symbol}:`, e.message); }
+    }
+    // Stooq fallback for regular TASE stocks: LUMI.TA -> lumi.il
+    if (!isIndex && symbol.endsWith('.TA')) {
+        try {
+            const sSym = symbol.slice(0, -3).toLowerCase() + '.il';
+            const sUrl = 'https://stooq.com/q/l/?s=' + sSym + '&f=sd2t2ohlcvr&h&e=csv';
+            const { body: sCsv } = await httpsGet(sUrl, {}, 8000, true);
+            const sLines = sCsv.trim().split('\n');
+            if (sLines.length >= 2) {
+                const sHdrs = sLines[0].split(',').map(h => h.trim().toLowerCase());
+                const sVals = sLines[1].split(',').map(v => v.trim());
+                const sg = k => { const i = sHdrs.indexOf(k); return i >= 0 ? sVals[i] : null; };
+                const sClose = parseFloat(sg('close'));
+                if (sClose > 0) {
+                    const sChg  = parseFloat(sg('change %') ?? sg('r') ?? '0') || 0;
+                    const sPrev = sChg !== -100 ? parseFloat((sClose / (1 + sChg / 100)).toFixed(2)) : sClose;
+                    console.log('[stooq-stock] ' + symbol + ' -> ' + sClose + ' (' + sChg.toFixed(2) + '%)');
+                    return { meta: { regularMarketPrice: sClose, regularMarketPreviousClose: sPrev, currency: 'ILS', marketState: 'REGULAR', symbol }, result: null, canonicalSymbol: symbol };
+                }
+            }
+        } catch(se) { console.warn('[stooq-stock] ' + symbol + ':', se.message); }
     }
     throw new Error(`no data for ${symbol}`);
 }
@@ -494,27 +515,21 @@ async function fetchQuotesBatch(symList) {
 
     // For Israeli indices: fetch % change from ETF via v7 (TA35.TA, TA90.TA work; TA100.TA is inactive).
     const indexSyms = symList.filter(s => s in SYMBOL_FALLBACKS);
-    const etfPctMap = {};  // origSym (^TA100) → regularMarketChangePercent
+    const etfPctMap = {};
     if (indexSyms.length) {
-        // Step 1: try active ETFs (TA35.TA, TA90.TA — skip inactive TA100.TA)
-        const etfSyms = indexSyms
-            .map(s => SYMBOL_FALLBACKS[s])
-            .filter(e => e !== 'TA100.TA');
+        const etfSyms = indexSyms.map(s => SYMBOL_FALLBACKS[s]).filter(e => e !== 'TA100.TA');
         if (etfSyms.length) {
             const v7res = await fetchV7Quotes(etfSyms);
             v7res.forEach(q => {
                 const orig = Object.keys(SYMBOL_FALLBACKS).find(k => SYMBOL_FALLBACKS[k] === q.symbol);
-                if (orig && q.regularMarketChangePercent != null)
-                    etfPctMap[orig] = q.regularMarketChangePercent;
+                if (orig && q.regularMarketChangePercent != null) etfPctMap[orig] = q.regularMarketChangePercent;
             });
         }
-        // Step 2: for ^TA100 (ETF inactive) — fetch % change directly from Yahoo v7
         if (indexSyms.includes('^TA100') && !etfPctMap['^TA100']) {
             try {
                 const v7direct = await fetchV7Quotes(['^TA100']);
                 const q = v7direct.find(r => r.symbol === '^TA100');
-                if (q?.regularMarketChangePercent != null)
-                    etfPctMap['^TA100'] = q.regularMarketChangePercent;
+                if (q?.regularMarketChangePercent != null) etfPctMap['^TA100'] = q.regularMarketChangePercent;
             } catch(e) { console.warn('[batch] v7 direct ^TA100:', e.message); }
         }
         console.log('[batch] pct map:', Object.entries(etfPctMap).map(([s,p])=>`${s}=${p?.toFixed(2)}%`).join(', '));
@@ -539,31 +554,21 @@ async function fetchQuotesBatch(symList) {
                           Math.abs(livePrice - latestClose) / latestClose < 0.0001;
         const chartPrevClose = useSecond ? secondClose : latestClose;
         const prevClose = chartPrevClose ?? meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
-
-        // Price: applyDivisor scales ^TA100 from Yahoo ~1292 → TASE official ~4451
-        // prevClose: derived from ETF % change if available, else scaled chart prevClose
         const finalPrice  = applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency);
         const etfPct      = etfPctMap[sym] ?? null;
         let finalPrevClose;
         if (etfPct != null) {
-            // Derive prevClose from stated % change — avoids chart-scan timezone errors
             const pct = etfPct / 100;
             finalPrevClose = pct !== -1 ? finalPrice / (1 + pct) : finalPrice;
         } else {
-            // Fallback: use Yahoo's explicit regularMarketPreviousClose (more reliable than chart scan)
             const rawPrev = meta.regularMarketPreviousClose ?? prevClose;
             finalPrevClose = applyDivisor(canonicalSymbol, rawPrev, currency);
         }
-
-        const result = {
-            symbol:                     canonicalSymbol,
-            regularMarketPrice:         finalPrice,
-            regularMarketPreviousClose: finalPrevClose,
-            marketState:                meta.marketState ?? 'CLOSED'
-        };
+        const result = { symbol: canonicalSymbol, regularMarketPrice: finalPrice, regularMarketPreviousClose: finalPrevClose, marketState: meta.marketState ?? 'CLOSED' };
         _lastKnownPrices[sym] = result;
         return result;
     }));
+
     const results = [];
     const failedIndices = [];
     settled.forEach((r, i) => {
@@ -575,145 +580,23 @@ async function fetchQuotesBatch(symList) {
         }
     });
 
-    // Fallback: index symbols that failed v8 chart → try v7 quote API
     if (failedIndices.length) {
         try {
             const v7 = await fetchV7Quotes(failedIndices);
             v7.forEach(q => {
                 if (!q.regularMarketPrice) return;
                 const currency = q.currency ?? 'ILS';
-                const price    = applyDivisor(q.symbol, q.regularMarketPrice,         currency);
+                const price    = applyDivisor(q.symbol, q.regularMarketPrice, currency);
                 const prev     = applyDivisor(q.symbol, q.regularMarketPreviousClose ?? q.regularMarketPrice, currency);
-                const result = {
-                    symbol:                     q.symbol,
-                    regularMarketPrice:         price,
-                    regularMarketPreviousClose: prev,
-                    marketState: q.marketState ?? 'CLOSED',
-                };
+                const result   = { symbol: q.symbol, regularMarketPrice: price, regularMarketPreviousClose: prev, marketState: q.marketState ?? 'CLOSED' };
                 _lastKnownPrices[q.symbol] = result;
                 results.push(result);
-                console.log(`[batch] v7 fallback: ${q.symbol} → ₪${result.regularMarketPrice}`);
             });
         } catch(e) { console.warn('[batch] v7 fallback failed:', e.message); }
     }
 
     return results;
 }
-
-// GET /api/stock/batch?symbols=LUMI.TA,POLI.TA,^TA35,...
-app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
-
-// Diagnostic endpoint — tests every data source for ^TA100
-app.get('/api/debug-ta125', async (req, res) => {
-    const out = { scale_factor: TA125_SCALE };
-    // 1. Yahoo chart direct
-    for (const host of ['query1','query2']) {
-        try {
-            const { body } = await httpsGet(`https://${host}.finance.yahoo.com/v8/finance/chart/^TA100?range=1d&interval=5m&includePrePost=false`,{Referer:'https://finance.yahoo.com/'});
-            const raw = body?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
-            out[`yahoo_chart_${host}`] = raw;
-            if (raw) out[`yahoo_chart_${host}_scaled`] = parseFloat((raw * TA125_SCALE).toFixed(2));
-        } catch(e) { out[`yahoo_chart_${host}`] = e.message; }
-    }
-    // 2. Yahoo ETF (TA100.TA)
-    try {
-        const { body } = await httpsGet('https://query1.finance.yahoo.com/v8/finance/chart/TA100.TA?range=1d&interval=5m',{Referer:'https://finance.yahoo.com/'});
-        out['yahoo_etf_TA100.TA'] = body?.chart?.result?.[0]?.meta?.regularMarketPrice ?? 'no price';
-    } catch(e) { out['yahoo_etf_TA100.TA'] = e.message; }
-    // 3. Yahoo ^TA125
-    try {
-        const { body } = await httpsGet('https://query1.finance.yahoo.com/v8/finance/chart/^TA125?range=1d&interval=5m',{Referer:'https://finance.yahoo.com/'});
-        out['yahoo_chart_TA125'] = body?.chart?.result?.[0]?.meta?.regularMarketPrice ?? 'no price';
-    } catch(e) { out['yahoo_chart_TA125'] = e.message; }
-    // 4. Stooq
-    try {
-        const { body: csv } = await httpsGet('https://stooq.com/q/l/?s=^ta100&f=sd2t2ohlcv&h&e=csv',{},8000,true);
-        out['stooq'] = csv.trim().split('\n').slice(0,2).join(' | ');
-    } catch(e) { out['stooq'] = e.message; }
-    // 5. TASE HTML page
-    try {
-        const { body: html } = await httpsGet('https://www.tase.co.il/he/market_data/indices/major_indices',{'Accept':'text/html'},10000,true);
-        const m = html.match(/ת"א-125[\s\S]{0,300}/);
-        out['tase_html'] = m ? m[0].slice(0,200) : 'no match (len='+html.length+')';
-    } catch(e) { out['tase_html'] = e.message; }
-    // 6. Bizportal
-    try {
-        const { body: html } = await httpsGet('https://www.bizportal.co.il/capitalmarket/majors',{'Accept':'text/html'},10000,true);
-        const m = html.match(/4[0-9]{3}\.[0-9]{2}/g);
-        out['bizportal_4xxx_prices'] = m ? [...new Set(m)].slice(0,10).join(', ') : 'no match (len='+html.length+')';
-    } catch(e) { out['bizportal'] = e.message; }
-    // 7. TA100.TA full meta (5d range to get closes)
-    try {
-        const { body } = await httpsGet('https://query1.finance.yahoo.com/v8/finance/chart/TA100.TA?range=5d&interval=1d',{Referer:'https://finance.yahoo.com/'});
-        const meta = body?.chart?.result?.[0]?.meta;
-        const closes = body?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
-        out['TA100.TA_meta'] = { price: meta?.regularMarketPrice, prevClose: meta?.regularMarketPreviousClose, chartPrev: meta?.chartPreviousClose, sym: meta?.symbol, closes: closes?.slice(-3) };
-    } catch(e) { out['TA100.TA_meta'] = e.message; }
-    // 8. Yahoo search for TA-125 related tickers
-    try {
-        const { body } = await httpsGet('https://query1.finance.yahoo.com/v1/finance/search?q=tel+aviv+125&quotesCount=8&newsCount=0',{Referer:'https://finance.yahoo.com/'});
-        out['yahoo_search'] = (body?.quotes??[]).map(q=>`${q.symbol}|${q.shortname}|${q.quoteType}`).join(' / ');
-    } catch(e) { out['yahoo_search'] = e.message; }
-    // 9. TASE OpenAPI (public REST)
-    try {
-        const { body } = await httpsGet('https://openapi.tase.co.il/tase/prod/api/index/majorIndices',{
-            'Origin':'https://www.tase.co.il','Referer':'https://www.tase.co.il/','Accept':'application/json'
-        });
-        const list = Array.isArray(body) ? body : (body?.majorIndices ?? body?.data ?? body?.list ?? []);
-        const ta125 = list.find(x=>(x.indexId||x.id||x.Id||x.indexID)===142 || (x.name||'').includes('125'));
-        out['tase_openapi'] = ta125 ?? { raw_keys: list[0] ? Object.keys(list[0]) : 'empty', count: list.length };
-    } catch(e) { out['tase_openapi'] = e.message; }
-    // 10. Bizportal mobile API
-    try {
-        const { body } = await httpsGet('https://biz2.co.il/api/v1/indices/majors',{'Accept':'application/json'},8000);
-        const ta125 = (Array.isArray(body)?body:(body?.data??[])).find(x=>(x.name||'').includes('125'));
-        out['biz2_api'] = ta125 ?? { raw: JSON.stringify(body).slice(0,300) };
-    } catch(e) { out['biz2_api'] = e.message; }
-    // 11. Investing.com TA-125 scrape
-    try {
-        const { body: html } = await httpsGet('https://il.investing.com/indices/tel-aviv-125',{
-            'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept-Language':'he-IL,he;q=0.9'
-        },10000,true);
-        const m = html.match(/4[0-9]{3}\.[0-9]{1,2}/g);
-        out['investing_il'] = m ? [...new Set(m)].slice(0,5).join(', ') : 'no match (len='+html.length+')';
-    } catch(e) { out['investing_il'] = e.message; }
-    // 12. Known Israeli TA-125 ETF tickers on Yahoo
-    for (const etf of ['TATA.TA','5122673.TA','1159255.TA','1151278.TA','5122681.TA']) {
-        try {
-            const { body } = await httpsGet(`https://query1.finance.yahoo.com/v8/finance/chart/${etf}?range=1d&interval=1d`,{Referer:'https://finance.yahoo.com/'});
-            const m = body?.chart?.result?.[0]?.meta;
-            if (m?.regularMarketPrice)
-                out[`etf_${etf}`] = { price: m.regularMarketPrice, pct: m.regularMarketChangePercent, name: m.longName ?? m.shortName };
-            else
-                out[`etf_${etf}`] = 'no data';
-        } catch(e) { out[`etf_${etf}`] = e.message; }
-    }
-    // 13. Yahoo v7 direct for ^TA100 (stated % change)
-    try {
-        const v7 = await fetchV7Quotes(['^TA100']);
-        const q = v7[0];
-        out['yahoo_v7_ta100'] = q ? { price: q.regularMarketPrice, pct: q.regularMarketChangePercent, prevClose: q.regularMarketPreviousClose } : 'no data';
-    } catch(e) { out['yahoo_v7_ta100'] = e.message; }
-    res.json(out);
-});
-
-app.get('/api/debug-indices', async (req, res) => {
-    try {
-        const results = {};
-        for (const sym of ['^TA100', '^TA35', '^TA90']) {
-            const { meta } = await fetchChartMeta(sym, '5d').catch(e => ({ meta: { error: e.message } }));
-            const tasePct  = await fetchTASEIndexChangePct(sym);
-            results[sym] = {
-                chartPrice: meta?.regularMarketPrice,
-                chartPrevClose: meta?.regularMarketPreviousClose,
-                chartSymbolUsed: meta?.symbol,
-                tasePct,
-            };
-        }
-        res.json(results);
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
 
 app.get('/api/stock/batch', async (req, res) => {
     const { symbols } = req.query;
@@ -726,8 +609,6 @@ app.get('/api/stock/batch', async (req, res) => {
     _cachedQuotes = results;
     res.json({ marketOpen: serverOpen, marketState, quotes: results });
 });
-
-// GET /api/stock/history?symbol=LUMI.TA&range=5d&interval=1d
 app.get('/api/stock/history', async (req, res) => {
     const { symbol, range, interval = '1d' } = req.query;
     if (!symbol || !range) return res.status(400).json({ error: 'symbol and range required' });
@@ -2106,7 +1987,8 @@ async function saveSaleDoc(doc) {
 }
 
 function buildSaleDoc(body, entryType = 'historical') {
-    const { symbol, name, buyDate, sellDate, buyPrice, sellPrice, quantity, priceUnit } = body;
+    const { symbol, name, buyDate, sellDate, buyPrice, sellPrice, quantity, priceUnit,
+            costBasis: costBasisOverride, method } = body;
     if (!symbol || !sellDate || buyPrice == null || sellPrice == null || !quantity)
         throw new Error('חסרים שדות חובה: symbol, sellDate, buyPrice, sellPrice, quantity');
     // Agurot → NIS guardrail: if user marks priceUnit=agorot, divide by 100
@@ -2115,7 +1997,10 @@ function buildSaleDoc(body, entryType = 'historical') {
     const sp  = toNIS(parseFloat(sellPrice));
     const qty = parseFloat(quantity);
     const proceeds   = parseFloat((sp * qty).toFixed(2));
-    const costBasis  = parseFloat((bp * qty).toFixed(2));
+    // Allow client-side FIFO cost basis override (partial sells, lot tracking)
+    const costBasis  = costBasisOverride != null
+        ? parseFloat(parseFloat(costBasisOverride).toFixed(2))
+        : parseFloat((bp * qty).toFixed(2));
     const profitLoss = parseFloat((proceeds - costBasis).toFixed(2));
     const roi        = costBasis > 0 ? parseFloat(((profitLoss / costBasis) * 100).toFixed(2)) : 0;
     return {
@@ -2130,6 +2015,7 @@ function buildSaleDoc(body, entryType = 'historical') {
         costBasis,
         profitLoss,
         roi,
+        method:    method ?? 'weighted_avg',   // 'fifo' | 'weighted_avg'
         entryType,    // 'historical' | 'current'
         createdAt: new Date().toISOString(),
     };
@@ -2228,16 +2114,21 @@ app.get('/api/sales/summary', async (req, res) => {
         if (_mongoReady) await _mongoReady;
         await seedTowerTrade();             // ← idempotent trade seed
         await syncInitialCash();            // ← 500k base entry
-        const sales  = await loadSales();
-        const trades = sales.filter(s => s.entryType !== 'initial_setup');
+        const all      = await loadSales();
+
+        const realSales = all.filter(s => s.entryType === 'current' || s.entryType === 'historical');
+        const purchases = all.filter(s => s.entryType === 'purchase');
 
         // Core account math
-        const baseCash    = CASH_TARGET;                                                               // always ₪500,000
-        const realizedPNL = parseFloat(trades.reduce((s, x) => s + (x.profitLoss ?? 0), 0).toFixed(2));
+        const baseCash        = CASH_TARGET;   // ₪500,000 fixed floor
+        const saleProceeds    = parseFloat(realSales.reduce((s, x) => s + (x.proceeds   ?? 0), 0).toFixed(2));
+        const purchaseCosts   = parseFloat(purchases.reduce((s, x)  => s + (x.cost      ?? 0), 0).toFixed(2));
+        const realizedPNL     = parseFloat(realSales.reduce((s, x)  => s + (x.profitLoss ?? 0), 0).toFixed(2));
+        const cashBalance     = parseFloat((baseCash + saleProceeds - purchaseCosts).toFixed(2));
         const totalAccountValue = parseFloat((baseCash + realizedPNL).toFixed(2));
 
         const summarise = arr => {
-            const real = arr.filter(s => s.entryType !== 'initial_setup');
+            const real = arr.filter(s => s.entryType === 'current' || s.entryType === 'historical');
             return {
                 count:           real.length,
                 totalProceeds:   parseFloat(real.reduce((s, x) => s + (x.proceeds   ?? 0), 0).toFixed(2)),
@@ -2250,16 +2141,56 @@ app.get('/api/sales/summary', async (req, res) => {
         const m12C = new Date(); m12C.setFullYear(m12C.getFullYear() - 1);
         const ytdStr = ytdC.toISOString().split('T')[0];
         const m12Str = m12C.toISOString().split('T')[0];
+        // Monthly average P/L — based on span from first real trade to today
+        const firstSellDate = realSales.reduce((min, s) => {
+            if (!s.sellDate) return min;
+            return !min || s.sellDate < min ? s.sellDate : min;
+        }, null);
+        const monthsActive = firstSellDate
+            ? Math.max(1, Math.round((Date.now() - new Date(firstSellDate)) / (1000 * 60 * 60 * 24 * 30.5)))
+            : 1;
+        const monthlyAvgPNL = parseFloat((realizedPNL / monthsActive).toFixed(2));
+
         res.json({
-            all:              summarise(trades),
-            ytd:              summarise(trades.filter(s => (s.sellDate ?? '') >= ytdStr)),
-            last12m:          summarise(trades.filter(s => (s.sellDate ?? '') >= m12Str)),
-            baseCash,                           // ₪500,000 — fixed floor
-            realizedPNL,                        // sum of profitLoss from real trades
-            totalAccountValue,                  // baseCash + realizedPNL
-            totalCashBalance: totalAccountValue, // legacy alias
+            all:              summarise(realSales),
+            ytd:              summarise(realSales.filter(s => (s.sellDate ?? '') >= ytdStr)),
+            last12m:          summarise(realSales.filter(s => (s.sellDate ?? '') >= m12Str)),
+            baseCash,           // ₪500,000 — fixed floor
+            realizedPNL,        // sum of profitLoss from real trades
+            totalAccountValue,  // baseCash + realizedPNL
+            saleProceeds,       // total cash IN from selling
+            purchaseCosts,      // total cash OUT from buying (tracked)
+            cashBalance,        // baseCash + saleProceeds - purchaseCosts = available cash
+            totalCashBalance: cashBalance,  // legacy alias
+            monthlyAvgPNL,      // realizedPNL / months since first trade
+            monthsActive,
         });
     } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/purchases — log a buy trade (deducts from cash balance)
+app.post('/api/purchases', express.json(), async (req, res) => {
+    try {
+        if (_mongoReady) await _mongoReady;
+        const { symbol, name, buyDate, buyPrice, quantity, priceUnit } = req.body;
+        if (!symbol || buyPrice == null || !quantity) throw new Error('חסרים שדות: symbol, buyPrice, quantity');
+        const toNIS = v => priceUnit === 'agorot' ? v / 100 : v;
+        const bp    = toNIS(parseFloat(buyPrice));
+        const qty   = parseFloat(quantity);
+        const cost  = parseFloat((bp * qty).toFixed(2));
+        const doc   = {
+            symbol:    symbol.trim().toUpperCase(),
+            name:      (name ?? symbol).trim(),
+            buyDate:   buyDate ?? new Date().toISOString().split('T')[0],
+            sellDate:  null,
+            buyPrice:  bp, quantity: qty,
+            cost, proceeds: 0, costBasis: cost, profitLoss: 0, roi: 0,
+            entryType: 'purchase',
+            createdAt: new Date().toISOString(),
+        };
+        await saveSaleDoc(doc);
+        res.json({ ok: true, cost, doc });
+    } catch(e) { res.status(400).json({ error: e.message }); }
 });
 
 // POST /api/sales  — single manual entry
@@ -2305,6 +2236,40 @@ app.post('/api/sales/bulk', express.json({ limit: '2mb' }), async (req, res) => 
 
 // ── TA-125 index endpoints ────────────────────────────────────────────────────
 
+// GET /api/portfolio/summary — totalMarketValue + availableCash + totalEquity
+app.get('/api/portfolio/summary', async (req, res) => {
+    try {
+        if (_mongoReady) await _mongoReady;
+        await syncInitialCash();
+
+        const [pd, allSales] = await Promise.all([loadPortfolio(), loadSales()]);
+        const port = pd.portfolio ?? {};
+
+        // ── Available cash (same math as /api/sales/summary) ──────────────
+        const realSales     = allSales.filter(s => s.entryType === 'current' || s.entryType === 'historical');
+        const purchases     = allSales.filter(s => s.entryType === 'purchase');
+        const saleProceeds  = parseFloat(realSales.reduce((s, x) => s + (x.proceeds  ?? 0), 0).toFixed(2));
+        const purchaseCosts = parseFloat(purchases.reduce((s, x)  => s + (x.cost     ?? 0), 0).toFixed(2));
+        const availableCash = parseFloat((CASH_TARGET + saleProceeds - purchaseCosts).toFixed(2));
+
+        // ── Market value from cached quotes ────────────────────────────────
+        let totalMarketValue = 0;
+        for (const [name, h] of Object.entries(port)) {
+            const qty   = h.qty ?? h.quantity ?? h.shares ?? 0;
+            const sym   = STOCK_SYMBOLS_HE[name] ?? null;
+            const quote = sym && _cachedQuotes.find(q => q.symbol === sym);
+            const price = quote?.regularMarketPrice ?? h.buyPrice ?? h.avgCost ?? 0;
+            totalMarketValue += qty * price;
+        }
+        totalMarketValue = parseFloat(totalMarketValue.toFixed(2));
+        const totalEquity   = parseFloat((totalMarketValue + availableCash).toFixed(2));
+        const investedPct   = totalEquity > 0 ? parseFloat(((totalMarketValue / totalEquity) * 100).toFixed(1)) : 0;
+        const cashPct       = parseFloat((100 - investedPct).toFixed(1));
+
+        res.json({ totalMarketValue, availableCash, totalEquity, investedPct, cashPct, holdingCount: Object.keys(port).length });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/tase125 — full TA-125 component list for autocomplete / search
 app.get('/api/tase125', (req, res) => {
     const { TASE125 } = require('./dataConstants');
@@ -2333,6 +2298,40 @@ app.post('/api/indices/tase125/seed', async (req, res) => {
 });
 
 // POST /api/sales/ensure-initial — kept for backward compat, now just delegates
+// PATCH /api/sales/:id  — correct prices/P&L on an existing record
+app.patch('/api/sales/:id', express.json(), async (req, res) => {
+    try {
+        if (_mongoReady) await _mongoReady;
+        const { ObjectId } = require('mongodb');
+        let oid;
+        try { oid = new ObjectId(req.params.id); } catch { return res.status(400).json({ error: 'bad id' }); }
+        const { sellPrice, buyPrice, quantity } = req.body;
+        const sp  = parseFloat(sellPrice);
+        const bp  = parseFloat(buyPrice);
+        const qty = parseFloat(quantity);
+        if (isNaN(sp) || isNaN(bp) || isNaN(qty) || qty <= 0)
+            return res.status(400).json({ error: 'שדות חסרים או לא תקינים' });
+        const proceeds   = parseFloat((sp * qty).toFixed(2));
+        const costBasis  = parseFloat((bp * qty).toFixed(2));
+        const profitLoss = parseFloat((proceeds - costBasis).toFixed(2));
+        const roi        = costBasis > 0 ? parseFloat(((profitLoss / costBasis) * 100).toFixed(2)) : 0;
+        await _salesCol.updateOne({ _id: oid }, { $set: { sellPrice: sp, buyPrice: bp, quantity: qty, proceeds, costBasis, profitLoss, roi } });
+        res.json({ ok: true, profitLoss, roi });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/sales/:id
+app.delete('/api/sales/:id', async (req, res) => {
+    try {
+        if (_mongoReady) await _mongoReady;
+        const { ObjectId } = require('mongodb');
+        let oid;
+        try { oid = new ObjectId(req.params.id); } catch { return res.status(400).json({ error: 'bad id' }); }
+        await _salesCol.deleteOne({ _id: oid });
+        res.json({ ok: true });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/sales/ensure-initial', async (req, res) => {
     try {
         if (_mongoReady) await _mongoReady;

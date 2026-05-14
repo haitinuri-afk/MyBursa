@@ -1,4 +1,4 @@
-const STORAGE_KEY   = 'trading_station_pro_data_v2';
+﻿const STORAGE_KEY   = 'trading_station_pro_data_v2';
 const PORTFOLIO_KEY = 'trading_station_portfolio';
 
 // ── Toast notifications ────────────────────────────────────────────────────
@@ -52,7 +52,6 @@ const TASE125_DATA = [
     { ticker:'JBNK.TA', nameHe:'בנק ירושלים',         nameEn:'Bank of Jerusalem',        sector:'בנקים' },
     { ticker:'YAHV.TA', nameHe:'בנק יהב',             nameEn:'Bank Yahav',               sector:'בנקים' },
     { ticker:'BNKI.TA', nameHe:'אוצר החייל',           nameEn:'Otzar Ha-Hayal',           sector:'בנקים' },
-    { ticker:'MARC.TA', nameHe:'מרכנתיל דיסקונט',     nameEn:'Mercantile Discount',      sector:'בנקים' },
     { ticker:'IBI.TA',  nameHe:'אי.בי.אי',             nameEn:'IBI Investment House',     sector:'פיננסים' },
     // ביטוח
     { ticker:'PHOE.TA', nameHe:'הפניקס',              nameEn:'Phoenix Holdings',         sector:'ביטוח' },
@@ -69,7 +68,6 @@ const TASE125_DATA = [
     { ticker:'KMDA.TA', nameHe:'קמהדע',               nameEn:'Camtek',                   sector:'טכנולוגיה' },
     { ticker:'CYBR.TA', nameHe:'סייבר-ארק',           nameEn:'CyberArk Software',        sector:'טכנולוגיה' },
     { ticker:'AURA.TA', nameHe:'אאורה',               nameEn:'Aura Smart Air',           sector:'טכנולוגיה' },
-    { ticker:'MGRT.TA', nameHe:'מגידו',               nameEn:'Magisto',                  sector:'טכנולוגיה' },
     { ticker:'GNRS.TA', nameHe:"ג'נריישן קפיטל",     nameEn:'Generation Capital',       sector:'טכנולוגיה' },
     { ticker:'SPNS.TA', nameHe:'ספיינס',              nameEn:'Sapiens International',    sector:'טכנולוגיה' },
     { ticker:'PERI.TA', nameHe:'פריון',               nameEn:'Perion Network',           sector:'טכנולוגיה' },
@@ -86,7 +84,7 @@ const TASE125_DATA = [
     { ticker:'GVYM.TA', nameHe:'גב ים',               nameEn:'Gav-Yam',                  sector:'נדל"ן' },
     { ticker:'SKBN.TA', nameHe:'שיכון ובינוי',        nameEn:'Shikun & Binui',           sector:'נדל"ן' },
     { ticker:'RIT1.TA', nameHe:'ריט1',                nameEn:'Reit 1',                   sector:'נדל"ן' },
-    { ticker:'AFPM.TA', nameHe:'אפי נכסים',           nameEn:'Afikim Properties',        sector:'נדל"ן' },
+    { ticker:'AFI.TA', nameHe:'אפי נכסים',           nameEn:'Afikim Properties',        sector:'נדל"ן' },
     { ticker:'NBLD.TA', nameHe:'נכסים ובנין',         nameEn:'Nekhasim & Binyan',        sector:'נדל"ן' },
     { ticker:'ALRB.TA', nameHe:'אלרוב נדל"ן',         nameEn:'Alrov Real Estate',        sector:'נדל"ן' },
     { ticker:'GZT.TA',  nameHe:'גזית גלוב',           nameEn:'Gazit Globe',              sector:'נדל"ן' },
@@ -114,12 +112,10 @@ const TASE125_DATA = [
     { ticker:'ELCO.TA', nameHe:'אלקטרה מוצרים',       nameEn:'Electra Consumer Products',sector:'צריכה' },
     // תעשייה / שונות
     { ticker:'ELTR.TA', nameHe:'אלקטרה',              nameEn:'Electra',                  sector:'תעשייה' },
-    { ticker:'ISCR.TA', nameHe:'ישקר',                nameEn:'Iscar',                    sector:'תעשייה' },
     { ticker:'DISI.TA', nameHe:'דיסקאונט השקעות',     nameEn:'Discount Investments',     sector:'תעשייה' },
     { ticker:'CRSO.TA', nameHe:'קרסו מוטורס',         nameEn:'Carasso Motors',           sector:'תעשייה' },
     { ticker:'ELAL.TA', nameHe:'אל על',               nameEn:'El Al Airlines',           sector:'תחבורה' },
     { ticker:'ILCO.TA', nameHe:'ישראל קורפ',          nameEn:'Israel Corporation',       sector:'תעשייה' },
-    { ticker:'IDBH.TA', nameHe:'IDB',                 nameEn:'IDB Holdings',             sector:'תעשייה' },
 ];
 
 // Fast lookup: nameHe → ticker  (built once from TASE125_DATA)
@@ -523,6 +519,14 @@ async function refreshRealData() {
     drawChart(); drawIndexChart(); updateAllStockWindows();
     checkPortfolioAlerts();
     saveState();
+
+    // Auto-fix zero-profit sales once prices are live
+    if (liveCount > 0 && !window._salesZeroFixed) {
+        window._salesZeroFixed = true;
+        setTimeout(() => _autoFixZeroSales(_salesData).then(fixed => {
+            if (fixed) refreshSalesData();
+        }), 500);
+    }
     scheduleFetch();
 }
 
@@ -566,6 +570,8 @@ const _SECTOR_COLORS = {
     'תחבורה':    '#0e7490',
 };
 
+function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
 function _sectorBadge(sector) {
     if (!sector) return '';
     const c = _SECTOR_COLORS[sector] ?? '#6b7280';
@@ -602,10 +608,9 @@ function stockAutocomplete(q) {
     dd.innerHTML = hits.map((s, i) => {
         const livePrice = stocksData[s.nameHe]?.price;
         const priceTag  = livePrice ? `<span style="color:#374151;font-size:10px;font-family:monospace">₪${parseFloat(livePrice).toFixed(2)}</span>` : '';
-        const safeHe    = s.nameHe.replace(/'/g, "\\'");
-        return `<div class="ac-item" data-name="${s.nameHe}" data-ticker="${s.ticker}" data-i="${i}"
+        return `<div class="ac-item" data-name="${escAttr(s.nameHe)}" data-ticker="${escAttr(s.ticker)}" data-i="${i}"
             style="padding:6px 10px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;border-bottom:1px solid rgba(0,0,0,0.05)"
-            onmousedown="selectAutocomplete('${safeHe}')">
+            onmousedown="selectAutocomplete(this.dataset.name)">
             <div style="flex:1;min-width:0">
                 <div style="font-weight:700;direction:rtl">${s.nameHe}</div>
                 <div style="font-size:9.5px;color:#9aa0a6">${s.nameEn}</div>
@@ -857,15 +862,15 @@ function openStockWindow(name) {
         <div class="window-header">
             <div style="display:flex;align-items:center;gap:8px">
                 <h3>${name}</h3>
-                <button onclick="event.stopPropagation();quickBuy('${name}')" style="background:#16a34a;color:#fff;border:none;border-radius:12px;font-size:11px;font-weight:700;padding:2px 10px;cursor:pointer">קנה</button>
+                <button data-win-buy style="background:#16a34a;color:#fff;border:none;border-radius:12px;font-size:11px;font-weight:700;padding:2px 10px;cursor:pointer">קנה</button>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
                 <div class="timeframe-buttons" style="margin:0">
                     ${['day','week','month','3months'].map(tf => `
-                        <button id="tf-${name}-${tf}" class="${tf==='day'?'active':''}" onclick="updateStockWindowTf('${name}','${tf}')">${tfLabels[tf]}</button>
+                        <button id="tf-${name}-${tf}" data-win-tf="${tf}" class="${tf==='day'?'active':''}">${tfLabels[tf]}</button>
                     `).join('')}
                 </div>
-                <button onclick="closeStockWindow('${name}')" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text3);line-height:1;padding:2px 4px">✕</button>
+                <button data-win-close style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text3);line-height:1;padding:2px 4px">✕</button>
             </div>
         </div>
         <div class="card-body" style="padding:8px 12px">
@@ -890,6 +895,10 @@ function openStockWindow(name) {
     `;
 
     dashboard.appendChild(card);
+    card.querySelector('[data-win-close]').addEventListener('click', () => closeStockWindow(name));
+    card.querySelector('[data-win-buy]').addEventListener('click', e => { e.stopPropagation(); quickBuy(name); });
+    card.querySelectorAll('[data-win-tf]').forEach(btn =>
+        btn.addEventListener('click', () => updateStockWindowTf(name, btn.dataset.winTf)));
     makeDraggable(card);
     makeResizable(card);
 
@@ -1383,7 +1392,8 @@ function updateStockList() {
     list.innerHTML = '';
 
     // Build ordered array: pinned first, then rest
-    let names = Object.keys(stocksData);
+    // Only show stocks with a live price or a portfolio position (hides TA-125 with no data)
+    let names = Object.keys(stocksData).filter(n => (stocksData[n]?.price > 0) || !!portfolio[n]);
     if (_pinnedStock && names.includes(_pinnedStock)) {
         names = [_pinnedStock, ...names.filter(n => n !== _pinnedStock)];
     }
@@ -1465,7 +1475,7 @@ function _txRow(tx) {
 function updateTransactionHistory() {
     // Show only the latest transaction in the card
     const latest = document.getElementById('tx-latest');
-    if (latest) {
+    if (latest) { latest.style.display = 'none';
         const tx = transactionHistory[0];
         if (tx) {
             const isBuy = tx.action === 'Buy';
@@ -1557,7 +1567,7 @@ function updatePortfolioList() {
     const totalDisplay = document.getElementById('total-portfolio-value');
     if (!list || !totalDisplay) return;
     list.innerHTML = "";
-    let totalValue = 0, totalCost = 0, openValue = 0, openCount = 0, totalDailyPL = 0;
+    let totalValue = 0, totalCost = 0, plValue = 0, plCost = 0, openValue = 0, openCount = 0, totalDailyPL = 0;
     const mobCards = document.getElementById('mob-ptf-cards');
     if (mobCards) mobCards.innerHTML = '';
 
@@ -1570,6 +1580,17 @@ function updatePortfolioList() {
         const positionValue = p.qty * currentPrice;
         totalValue += positionValue;
         totalCost  += costBasis;
+        // P&L: count only lots with known price (exclude zero-price lots)
+        const validLots = (p.lots || []).filter(l => l.price > 0);
+        if (validLots.length > 0) {
+            const vQty  = validLots.reduce((s, l) => s + (l.qty || 0), 0);
+            const vCost = validLots.reduce((s, l) => s + (l.qty || 0) * l.price, 0);
+            plValue += vQty * currentPrice;
+            plCost  += vCost;
+        } else if (costBasis > 0) {
+            plValue += positionValue;
+            plCost  += costBasis;
+        }
         if (stock.initial > 0) {
             openValue   += p.qty * stock.initial;
             totalDailyPL += p.qty * (currentPrice - stock.initial);
@@ -1630,8 +1651,10 @@ function updatePortfolioList() {
 
     if (openCount > 0) window._portfolioOpenVal = openValue;
     snapshotPortfolioValue(totalValue);
-    const totalPL    = totalCost > 0 ? calculatePctChange(totalValue, totalCost) : "0.00";
-    const totalPLils = totalValue - totalCost;
+    // Keep server summary in sync with latest market value (best-effort, non-blocking)
+    fetchPortfolioSummary();
+    const totalPL    = plCost > 0 ? calculatePctChange(plValue, plCost) : "0.00";
+    const totalPLils = plValue - plCost;
     const c          = pctColor(totalPL);
     const plSign     = totalPLils >= 0 ? '+' : '-';
     // ── Desktop footer ──
@@ -1771,6 +1794,28 @@ function quickBuy(name) {
     if (qtyEl) { qtyEl.value = ''; qtyEl.focus(); }
 }
 
+// ── FIFO cost basis calculator ────────────────────────────────────────────────
+// Returns { costBasis, remainingLots } after consuming `qtyToSell` from lots FIFO.
+// Falls back to weighted-average price when no lots are stored.
+function calcFifoCost(lots, qtyToSell, fallbackAvgPrice) {
+    if (!lots?.length) {
+        return { costBasis: parseFloat((qtyToSell * fallbackAvgPrice).toFixed(2)), remainingLots: [] };
+    }
+    const working = lots.map(l => ({ ...l }));   // clone so original is unchanged
+    let rem = qtyToSell, cost = 0;
+    for (const lot of working) {
+        if (rem <= 0) break;
+        const take = Math.min(lot.qty, rem);
+        cost += take * lot.price;
+        lot.qty -= take;
+        rem -= take;
+    }
+    return {
+        costBasis: parseFloat(cost.toFixed(2)),
+        remainingLots: working.filter(l => l.qty > 0),
+    };
+}
+
 function buyStock() {
     const raw    = document.getElementById('sim-symbol').value.trim();
     const symbol = resolveStockName(raw);
@@ -1778,18 +1823,37 @@ function buyStock() {
     if (!symbol || isNaN(qty) || qty <= 0) return;
     const price = parseFloat(stocksData[symbol].price);
     const cost  = price * qty;
+    const today = new Date().toISOString().split('T')[0];
     if (portfolio[symbol]) {
         portfolio[symbol].qty       += qty;
         portfolio[symbol].totalCost += cost;
         portfolio[symbol].buyPrice   = portfolio[symbol].totalCost / portfolio[symbol].qty;
+        // Append lot for FIFO tracking
+        (portfolio[symbol].lots ??= []).push({ qty, price, date: today });
     } else {
-        portfolio[symbol] = { qty, buyPrice: price, totalCost: cost };
+        portfolio[symbol] = { qty, buyPrice: price, totalCost: cost,
+            lots: [{ qty, price, date: today }] };
     }
     transactionHistory.unshift({ time: new Date().toLocaleTimeString(), action: 'Buy', symbol, qty, price: price.toFixed(2) });
     if (transactionHistory.length > 50) transactionHistory.pop();
     savePortfolio();
     updatePortfolioList();
     updateTransactionHistory();
+
+    // ── Log purchase to cash-balance tracker ──────────────────────────────
+    const ticker = STOCK_SYMBOLS[symbol] ?? symbol;
+    fetch('/api/purchases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            symbol:   ticker,
+            name:     symbol,
+            buyDate:  new Date().toISOString().split('T')[0],
+            buyPrice: price,
+            quantity: qty,
+            priceUnit: 'NIS',
+        }),
+    }).catch(() => {});   // fire-and-forget
 }
 
 function sellStockSim() {
@@ -1797,28 +1861,197 @@ function sellStockSim() {
     if (symbol) sellStock(symbol);
 }
 
-function sellStock(symbol) {
-    if (!portfolio[symbol]) return;
-    const holding   = portfolio[symbol];
-    const qty       = holding.qty;
+// ── Sell confirm modal ────────────────────────────────────────────────────────
+function showSellModal(symbol) {
+    const p = portfolio[symbol];
+    if (!p) return;
     const sellPrice = parseFloat(stocksData[symbol]?.price ?? 0);
-    const buyPrice  = parseFloat(holding.buyPrice ?? holding.avgCost ?? 0);
-    const buyDate   = holding.buyDate ?? null;
-    delete portfolio[symbol];
+    const modal = document.getElementById('sell-confirm-modal');
+    if (!modal) { sellStock(symbol, p.qty); return; }
+    modal.dataset.symbol = symbol;
+    document.getElementById('scm-symbol').textContent  = symbol;
+    document.getElementById('scm-price').textContent   = sellPrice > 0 ? `₪${sellPrice.toFixed(2)}` : '—';
+    const qtyInput = document.getElementById('scm-qty');
+    qtyInput.max   = p.qty;
+    qtyInput.value = p.qty;
+    document.getElementById('scm-max').textContent = p.qty;
+    _updateSellPreview(symbol);
+    modal.style.display = 'flex';
+}
+function closeSellModal() {
+    const m = document.getElementById('sell-confirm-modal');
+    if (m) m.style.display = 'none';
+}
+function _updateSellPreview(symbol) {
+    const p = portfolio[symbol];
+    if (!p) return;
+    const qty = parseInt(document.getElementById('scm-qty')?.value) || 0;
+    const sellPrice = parseFloat(stocksData[symbol]?.price ?? 0);
+    const { costBasis } = calcFifoCost(p.lots ?? [], qty, p.buyPrice ?? p.avgCost ?? 0);
+    const proceeds = sellPrice * qty;
+    const pnl = parseFloat((proceeds - costBasis).toFixed(2));
+    const el  = document.getElementById('scm-preview');
+    if (!el) return;
+    const col = pnl >= 0 ? '#16a34a' : '#dc2626';
+
+    // Post-sale equity simulation
+    const s = _portfolioSummary;
+    let equityLine = '';
+    if (s && proceeds > 0) {
+        const postCash   = s.availableCash + proceeds;
+        // Remaining position value
+        const remaining  = (p.qty - qty) * sellPrice;
+        const postMkt    = (s.totalMarketValue - (p.qty * sellPrice)) + remaining;
+        const postEquity = postCash + postMkt;
+        const fmt = v => '₪' + Math.round(v).toLocaleString('he-IL');
+        equityLine = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #e5e7eb;width:100%;font-size:11px;color:#374151">
+            שווי תיק לאחר מכירה: <strong>${fmt(postEquity)}</strong>
+            <span style="color:#9ca3af">&nbsp;(מזומן: ${fmt(postCash)})</span>
+        </div>`;
+    }
+
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;width:100%">
+        <span style="color:#6b7280;font-size:11px">עלות FIFO: ₪${costBasis.toLocaleString('he-IL',{minimumFractionDigits:2})}</span>
+        <span style="font-weight:700;font-size:12px;color:${col}">&nbsp;|&nbsp;${pnl>=0?'+':''}₪${Math.abs(pnl).toLocaleString('he-IL',{minimumFractionDigits:2})}</span>
+    </div>${equityLine}`;
+}
+function confirmSellModal() {
+    const modal = document.getElementById('sell-confirm-modal');
+    if (!modal) return;
+    const symbol = modal.dataset.symbol;
+    const qty    = parseInt(document.getElementById('scm-qty').value);
+    closeSellModal();
+    if (symbol && qty > 0) sellStock(symbol, qty);
+}
+
+// ── Edit Sale Modal ────────────────────────────────────────────────────────────
+function editSaleRow(id, sellPrice, buyPrice, quantity, name) {
+    const m = document.getElementById('edit-sale-modal');
+    if (!m) return;
+    m.dataset.saleId = id;
+    document.getElementById('esm-name').textContent = name;
+
+    // Auto-fill sell price from live data if stored value is 0
+    let sp = sellPrice;
+    if (!(sp > 0)) {
+        sp = stocksData[name]?.price ?? 0;
+    }
+
+    // Buy price: use portfolio.buyPrice (total cost / total qty — includes zero-price lots)
+    // This gives the true economic average, not just the valid-lot subset
+    let bp = buyPrice;
+    if (!(bp > 0)) {
+        const holding = portfolio[name];
+        bp = holding?.buyPrice ?? holding?.avgCost ?? 0;
+    }
+
+    document.getElementById('esm-sell-price').value = sp ? parseFloat(sp.toFixed(4)) : '';
+    document.getElementById('esm-buy-price').value  = bp ? parseFloat(bp.toFixed(4)) : '';
+    document.getElementById('esm-qty').value        = quantity || '';
+    _updateEditSalePreview();
+    m.style.display = 'flex';
+}
+function closeEditSaleModal() {
+    const m = document.getElementById('edit-sale-modal');
+    if (m) m.style.display = 'none';
+}
+function _updateEditSalePreview() {
+    const sp  = parseFloat(document.getElementById('esm-sell-price')?.value) || 0;
+    const bp  = parseFloat(document.getElementById('esm-buy-price')?.value)  || 0;
+    const qty = parseFloat(document.getElementById('esm-qty')?.value)        || 0;
+    const pnl = parseFloat(((sp - bp) * qty).toFixed(2));
+    const roi = bp > 0 ? ((sp - bp) / bp * 100).toFixed(2) : '—';
+    const el  = document.getElementById('esm-preview');
+    if (!el) return;
+    const col = pnl >= 0 ? '#16a34a' : '#dc2626';
+    el.innerHTML = `<span style="color:${col};font-weight:700">${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL',{minimumFractionDigits:2})}</span>
+        <span style="color:#6b7280;font-size:11px">&nbsp;ROI: ${roi !== '—' ? (parseFloat(roi) >= 0 ? '+' : '') + roi + '%' : '—'}</span>`;
+}
+async function confirmEditSaleModal() {
+    const m   = document.getElementById('edit-sale-modal');
+    if (!m) return;
+    const id  = m.dataset.saleId;
+    const sp  = parseFloat(document.getElementById('esm-sell-price').value);
+    const bp  = parseFloat(document.getElementById('esm-buy-price').value);
+    const qty = parseFloat(document.getElementById('esm-qty').value);
+    if (!id || isNaN(sp) || isNaN(bp) || isNaN(qty) || qty <= 0) return;
+    const btn = document.getElementById('esm-save-btn');
+    if (btn) btn.disabled = true;
+    try {
+        const r = await fetch(`/api/sales/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sellPrice: sp, buyPrice: bp, quantity: qty })
+        });
+        if (!r.ok) throw new Error('שגיאת שרת');
+        closeEditSaleModal();
+        await refreshSalesData();
+        showToast('הרשומה עודכנה ✓', { color: '#16a34a' });
+    } catch(e) {
+        showToast('שגיאה בעדכון: ' + e.message, { color: '#dc2626', duration: 4000 });
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function sellStock(symbol, qtyToSell) {
+    if (!portfolio[symbol]) return;
+
+    // No qty given → show modal for qty + FIFO preview
+    if (qtyToSell === undefined) { showSellModal(symbol); return; }
+
+    const holding   = portfolio[symbol];
+    const maxQty    = holding.qty;
+    const qty       = Math.min(Math.max(1, Math.round(qtyToSell)), maxQty);
+    const sellPrice = parseFloat(stocksData[symbol]?.price ?? 0);
+    const avgPrice  = parseFloat(holding.buyPrice ?? holding.avgCost ?? 0);
+    const { costBasis, remainingLots } = calcFifoCost(holding.lots ?? [], qty, avgPrice);
+    const method    = (holding.lots?.length ?? 0) > 0 ? 'fifo' : 'weighted_avg';
+
+    // If FIFO consumed zero-price lots → use weighted avg of valid lots for P&L
+    let plCostBasis = costBasis;
+    if (costBasis === 0) {
+        const validLots = (holding.lots ?? []).filter(l => l.price > 0);
+        if (validLots.length > 0) {
+            const vCost = validLots.reduce((s, l) => s + l.qty * l.price, 0);
+            const vQty  = validLots.reduce((s, l) => s + l.qty, 0);
+            if (vQty > 0) plCostBasis = parseFloat(((vCost / vQty) * qty).toFixed(2));
+        } else if (avgPrice > 0) {
+            plCostBasis = parseFloat((avgPrice * qty).toFixed(2));
+        }
+    }
+    const plBuyPrice = qty > 0 ? plCostBasis / qty : avgPrice;
+
+    if (qty >= maxQty) {
+        delete portfolio[symbol];
+    } else {
+        // Partial sell — update lots, qty, totalCost, avgCost
+        portfolio[symbol].qty       -= qty;
+        portfolio[symbol].lots       = remainingLots;
+        portfolio[symbol].totalCost  = remainingLots.reduce((s, l) => s + l.qty * l.price, 0);
+        portfolio[symbol].buyPrice   = portfolio[symbol].qty > 0
+            ? portfolio[symbol].totalCost / portfolio[symbol].qty : 0;
+    }
+
     transactionHistory.unshift({ time: new Date().toLocaleTimeString(), action: 'Sell', symbol, qty, price: sellPrice.toFixed(2) });
     if (transactionHistory.length > 50) transactionHistory.pop();
     savePortfolio();
     updatePortfolioList();
     updateTransactionHistory();
-    // Persist to SalesHistory (async, non-blocking)
+
+    // Persist to SalesHistory with accurate P&L
     if (sellPrice > 0) {
         fetch('/api/sales', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 symbol, name: symbol,
-                buyDate, sellDate: new Date().toISOString().split('T')[0],
-                buyPrice, sellPrice, quantity: qty,
+                buyDate:  holding.buyDate ?? null,
+                sellDate: new Date().toISOString().split('T')[0],
+                buyPrice:  plBuyPrice,     // valid-lot weighted avg when FIFO gave 0
+                sellPrice, quantity: qty,
+                costBasis: plCostBasis,    // adjusted cost basis for P&L
+                method,
                 entryType: 'current',
             })
         }).catch(() => {});
@@ -1871,18 +2104,27 @@ function initPortfolioAnalytics() {
 
         // Single pass: sector values + totals + beta
         const sectorVal = {};
-        let totalVal = 0, totalCost = 0, betaWeighted = 0, totalDailyPL = 0, openVal = 0;
+        let totalVal = 0, totalCost = 0, plVal = 0, plCost = 0, betaWeighted = 0, totalDailyPL = 0, openVal = 0;
         names.forEach(name => {
             const h        = ptf[name];
-            // stocksData already has live prices mapped to Hebrew names
             const cur      = stocksData[name]?.price ?? h.buyPrice ?? h.avgPrice ?? 0;
             const initial  = stocksData[name]?.initial ?? 0;
             const qty      = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
             const buyPrice = h.buyPrice ?? h.avgPrice ?? h.avgCost ?? cur;
             const val      = cur * qty;
             const cost     = h.totalCost ?? (buyPrice * qty);
-            totalVal      += val;
-            totalCost     += cost;
+            totalVal  += val;
+            totalCost += cost;
+            const validLots = (h.lots || []).filter(l => l.price > 0);
+            if (validLots.length > 0) {
+                const vQty  = validLots.reduce((s, l) => s + (l.qty || 0), 0);
+                const vCost = validLots.reduce((s, l) => s + (l.qty || 0) * l.price, 0);
+                plVal  += vQty * cur;
+                plCost += vCost;
+            } else if (cost > 0) {
+                plVal  += val;
+                plCost += cost;
+            }
             betaWeighted  += val * (_BETAS[name] ?? 1.0);
             if (initial > 0) { openVal += qty * initial; totalDailyPL += qty * (cur - initial); }
             const sector   = Object.entries(_SECTORS_CLIENT).find(([, s]) => s.includes(name))?.[0] ?? 'אחר';
@@ -1911,8 +2153,8 @@ function initPortfolioAnalytics() {
         const diversification = Object.keys(sectorVal).length >= 4 ? 'טובה' : 'מוגבלת';
 
         // Derived metrics
-        const totalPnL     = totalVal - totalCost;
-        const totalPnLPct  = totalCost > 0 ? (totalPnL / totalCost * 100) : 0;
+        const totalPnL     = plVal - plCost;
+        const totalPnLPct  = plCost > 0 ? (totalPnL / plCost * 100) : 0;
         const portfolioBeta = totalVal > 0 ? (betaWeighted / totalVal) : 1.0;
         const hhi          = sectors.reduce((s, sec) => s + (sec.value / 100) ** 2, 0);
         const divScore     = Math.round((1 - hhi) * 100);
@@ -2173,7 +2415,7 @@ function renderPnLClient(holdingsData) {
     // ── Build data ─────────────────────────────────────────────────────────
     // Always use client-side stocksData for prices (Yahoo Finance, in shekels).
     // Server holdingsData enriches with purchaseDate + sector only.
-    let rows = [], totalVal = 0, totalCost = 0, dailyPnl = 0;
+    let rows = [], totalCost = 0;
 
     const serverMap = {};
     (holdingsData ?? []).forEach(h => { serverMap[h.name] = h; });
@@ -2182,16 +2424,18 @@ function renderPnLClient(holdingsData) {
     Object.entries(ptf).forEach(([name, h]) => {
         const sd  = stocksData[name] ?? {};
         const cur = sd.price ?? 0;
-        const prev = sd.initial ?? cur;
+        // previous close: only valid when explicitly > 0
+        const prev = (sd.initial > 0) ? sd.initial : 0;
         const qty = h.qty ?? h.quantity ?? h.shares ?? 0;
         const buyPrice = parseFloat(h.buyPrice ?? h.avgCost ?? 0);
         const cost = h.totalCost ?? (buyPrice * qty);
-        const mktValue = cur * qty;
-        totalVal += mktValue; totalCost += cost;
-        const dayIls = (cur - prev) * qty;
-        dailyPnl += dayIls;
+        // Only include in rows when all values are usable
         if (qty && buyPrice && cur > 0) {
+            const mktValue = cur * qty;
+            // Daily ILS: (curPrice - prevClose) × qty; 0 when prev close unknown
+            const dayIls = prev > 0 ? (cur - prev) * qty : 0;
             const srv = serverMap[name] ?? {};
+            totalCost += cost;
             rows.push({
                 name, qty, buyPrice, curPrice: cur,
                 mktValue: Math.round(mktValue), costBasis: Math.round(cost),
@@ -2206,8 +2450,13 @@ function renderPnLClient(holdingsData) {
     });
     rows.sort((a, b) => b.inceptionPnlIls - a.inceptionPnlIls);
 
+    // totalVal and dailyPnl derived exclusively from visible rows — no "ghost" stocks
+    const totalVal = rows.reduce((s, r) => s + r.mktValue, 0);
+    const dailyPnl = rows.reduce((s, r) => s + r.dayChangeIls, 0);
+
     const cumPnl  = totalVal - totalCost;
     const cumPct  = totalCost > 0 ? (cumPnl / totalCost * 100) : 0;
+    // dayPct = dailyPnl / yesterday's value (today − gain = yesterday)
     const dayBase = totalVal - dailyPnl;
     const dayPct  = dayBase > 0 ? (dailyPnl / dayBase * 100) : 0;
 
@@ -2252,22 +2501,26 @@ function renderPnLClient(holdingsData) {
 
     // ── P&L table rows ─────────────────────────────────────────────────────
     const isMob = window.innerWidth <= 600;
-    const tdP   = isMob ? '5px 4px' : '7px 6px';
+    const tdP   = isMob ? '10px 6px' : '12px 8px';
     let tRows = '';
     rows.forEach(h => {
-        const pnlPos = h.inceptionPnlIls >= 0;
-        const rowBg  = pnlPos ? 'rgba(16,185,129,0.04)' : 'rgba(239,68,68,0.04)';
-        tRows += `<tr class="pnl-tr" data-bg="${rowBg}" style="border-bottom:1px solid var(--border);background:${rowBg};transition:background 0.12s"
-            onmouseenter="this.style.background='rgba(0,0,0,0.05)'"
-            onmouseleave="this.style.background=this.dataset.bg">
-            <td style="padding:${isMob?'5px 6px':tdP}">
-                <div style="font-weight:700;font-size:${isMob?'11':'12'}px;color:var(--text)">${h.name}</div>
-                <div style="font-size:9px;color:var(--text3);margin-top:1px">₪${parseFloat(h.buyPrice).toLocaleString('he-IL')} · ${fmtDate(h.purchaseDate)}</div>
+        tRows += `<tr style="border-bottom:1px solid #f1f5f9;background:#fff;transition:background 0.12s"
+            onmouseenter="this.style.background='#f8fafc'"
+            onmouseleave="this.style.background='#fff'">
+            <td style="padding:${isMob?'10px 6px':tdP}">
+                <div style="font-weight:700;font-size:${isMob?'11':'13'}px;color:var(--text);white-space:nowrap">${h.name}</div>
+                <div style="font-size:10px;color:#94a3b8;margin-top:2px">₪${parseFloat(h.curPrice).toLocaleString('he-IL')}</div>
             </td>
-            ${isMob ? '' : `<td style="padding:${tdP};text-align:center;font-size:11px;color:var(--text3);font-weight:500">${h.qty}</td>`}
-            <td style="padding:${tdP};text-align:right;direction:ltr;font-size:${isMob?'10':'11'}px;font-weight:600;color:var(--text)">₪${h.mktValue.toLocaleString('he-IL')}</td>
-            <td style="padding:${tdP};text-align:right">${pill(h.dayChangeIls,h.dayChangePct)}<div style="font-size:9px;margin-top:1px;direction:ltr">${money(h.dayChangeIls,10)}</div></td>
-            <td style="padding:${tdP};text-align:right">${pill(h.inceptionPnlIls,h.inceptionPnlPct)}<div style="font-size:9px;margin-top:1px;direction:ltr">${money(h.inceptionPnlIls,10)}</div></td>
+            ${isMob ? '' : `<td style="padding:${tdP};text-align:center;font-size:12px;color:var(--text);font-weight:500">${h.qty.toLocaleString('he-IL')}</td>`}
+            <td style="padding:${tdP};text-align:right;direction:ltr;font-size:12px;font-weight:600;color:var(--text)">₪${h.mktValue.toLocaleString('he-IL')}</td>
+            <td style="padding:${tdP};text-align:right">
+                <div style="font-weight:600;font-size:11px">${pill(h.dayChangeIls,h.dayChangePct)}</div>
+                <div style="font-size:10px;margin-top:3px;direction:ltr">${money(h.dayChangeIls,10)}</div>
+            </td>
+            <td style="padding:${tdP};text-align:right">
+                <div style="font-weight:600;font-size:11px">${pill(h.inceptionPnlIls,h.inceptionPnlPct)}</div>
+                <div style="font-size:10px;margin-top:3px;direction:ltr">${money(h.inceptionPnlIls,10)}</div>
+            </td>
         </tr>`;
     });
 
@@ -2283,7 +2536,7 @@ function renderPnLClient(holdingsData) {
                     ${money(dailyPnl,14)}<br><span style="display:inline-block;margin-top:3px">${pill(dailyPnl,dayPct)}</span>
                 </div>
                 <div style="text-align:center;padding:6px 8px">
-                    <div style="font-size:10px;color:var(--text3);margin-bottom:3px">רווח מצטבר</div>
+                    <div style="font-size:10px;color:var(--text3);margin-bottom:3px">P&amp;L פתוח</div>
                     ${money(cumPnl,14)}<br><span style="display:inline-block;margin-top:3px">${pill(cumPnl,cumPct)}</span>
                 </div>
             </div>
@@ -2300,16 +2553,29 @@ function renderPnLClient(holdingsData) {
         <div style="display:${window.innerWidth <= 600 ? 'none' : 'block'}">${gaugeSvg}</div>
     </div>
 
-    <div id="pnl-table-wrap" style="border-radius:8px;border:1px solid var(--border);margin-bottom:14px;overflow-y:auto;max-height:${Math.min(rows.length * 58 + 36, 340)}px">
-    <table style="width:100%;border-collapse:collapse;font-size:11px;direction:rtl">
-        <thead><tr style="color:var(--text3);border-bottom:2px solid var(--border);font-size:10px;background:#f9fafb;position:sticky;top:0;z-index:2">
-            <th style="text-align:right;padding:${isMob?'5px 6px':'7px 8px'};font-weight:600">מניה</th>
-            ${isMob ? '' : `<th style="text-align:center;padding:7px 6px;font-weight:600">כמות</th>`}
-            <th style="text-align:right;padding:${isMob?'5px 4px':'7px 8px'};font-weight:600">שווי</th>
-            <th style="text-align:right;padding:${isMob?'5px 4px':'7px 8px'};font-weight:600">יומי</th>
-            <th style="text-align:right;padding:${isMob?'5px 4px':'7px 8px'};font-weight:600">P&amp;L</th>
+    <div id="pnl-table-wrap" style="border-radius:10px;border:1px solid #e5e7eb;margin-bottom:14px;overflow-y:auto;max-height:${Math.min(rows.length * 66 + 40, 360)}px">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;direction:rtl;table-layout:fixed">
+        <colgroup>
+            <col style="width:${isMob?'38%':'34%'}">
+            ${isMob ? '' : `<col style="width:10%">`}
+            <col style="width:${isMob?'22%':'18%'}">
+            <col style="width:${isMob?'20%':'19%'}">
+            <col style="width:${isMob?'20%':'19%'}">
+        </colgroup>
+        <thead><tr style="color:#6b7280;border-bottom:2px solid #e5e7eb;font-size:10px;background:#f9fafb;position:sticky;top:0;z-index:2">
+            <th style="text-align:right;padding:${isMob?'8px 6px':'8px 8px'};font-weight:600">מניה</th>
+            ${isMob ? '' : `<th style="text-align:center;padding:8px 6px;font-weight:600">כמות</th>`}
+            <th style="text-align:right;padding:${isMob?'8px 4px':'8px 8px'};font-weight:600">שווי</th>
+            <th style="text-align:right;padding:${isMob?'8px 4px':'8px 8px'};font-weight:600">יומי</th>
+            <th style="text-align:right;padding:${isMob?'8px 4px':'8px 8px'};font-weight:600">P&amp;L</th>
         </tr></thead>
         <tbody>${tRows}</tbody>
+        <tfoot><tr style="background:#f9fafb;border-top:2px solid #e5e7eb">
+            <td colspan="${isMob ? 3 : 4}" style="padding:8px 8px;font-size:10px;font-weight:600;color:#6b7280;text-align:right">תרומה לרווח/הפסד המצטבר (₪)</td>
+            <td style="padding:8px 8px;text-align:right">
+                <div style="font-size:11px;font-weight:700;color:${cumPnl>=0?'#15803d':'#b91c1c'}">${cumPnl>=0?'+':'−'}₪${Math.abs(Math.round(cumPnl)).toLocaleString('he-IL')}</div>
+            </td>
+        </tr></tfoot>
     </table>
     </div>
 
@@ -3601,7 +3867,6 @@ function togglePortfolioChart() {
         win.classList.remove('mob-hidden');
         win.style.zIndex = window.innerWidth <= 768 ? 200 : ++highestZIndex;
         if (_lwPortfolio) { _lwPortfolio.remove(); _lwPortfolio = null; }
-        // Two rAF to let the browser paint at correct dimensions before chart init
         requestAnimationFrame(() => requestAnimationFrame(() => drawPortfolioChart()));
     } else {
         win.style.display = 'none';
@@ -3838,18 +4103,132 @@ async function markAlertsRead() {
     if (badge) badge.style.display = 'none';
 }
 
+// ── Portfolio Equity Summary ───────────────────────────────────────────────────
+let _portfolioSummary = null;  // { totalMarketValue, availableCash, totalEquity, investedPct, cashPct }
+
+async function fetchPortfolioSummary() {
+    try {
+        const r = await fetch('/api/portfolio/summary');
+        if (!r.ok) return;
+        _portfolioSummary = await r.json();
+        renderEquityBar();
+    } catch(e) { /* silent */ }
+}
+
+function renderEquityBar() {
+    const s   = _portfolioSummary;
+    const bar = document.getElementById('equity-progress-bar');
+    const lbl = document.getElementById('equity-bar-labels');
+    const eq  = document.getElementById('total-equity-value');
+    if (!s) return;
+    const fmt = v => '₪' + Math.round(v).toLocaleString('he-IL');
+    if (eq) eq.textContent = fmt(s.totalEquity);
+    if (bar) bar.style.width = `${s.investedPct}%`;
+    if (lbl) lbl.innerHTML =
+        `<span style="color:#1a73e8;font-weight:600">${fmt(s.totalMarketValue)} מושקע (${s.investedPct}%)</span>` +
+        `<span style="color:#16a34a;font-weight:600">${fmt(s.availableCash)} מזומן (${s.cashPct}%)</span>`;
+}
+
 // ── Sales History ─────────────────────────────────────────────────────────────
-let _salesData    = [];
-let _salesPeriod  = 'all';
-let _salesSummary = null;
+let _salesData       = [];
+let _salesPeriod     = 'all';
+let _salesSummary    = null;
+let _salesAssetFilter = 'all';   // 'all' | 'stock' | 'index'
+
+function setSalesAssetFilter(filter) {
+    _salesAssetFilter = filter;
+    document.querySelectorAll('.sales-asset-btn').forEach(b => {
+        const active = b.dataset.filter === filter;
+        b.classList.toggle('active', active);
+        b.style.background  = active ? '#0f172a' : '#fff';
+        b.style.color       = active ? '#fff'    : '#374151';
+        b.style.borderColor = active ? '#0f172a' : '#e5e7eb';
+    });
+    renderSalesLog();
+}
 
 async function openSalesModal() {
     document.getElementById('sales-modal').style.display = 'flex';
-    await refreshSalesData();   // syncInitialCash() runs server-side inside GET /api/sales
+    await Promise.all([refreshSalesData(), fetchPortfolioSummary()]);
 }
 
 function closeSalesModal() {
     document.getElementById('sales-modal').style.display = 'none';
+}
+
+// Auto-patch sale records that have sellPrice=0 (recorded during price-fetch failure)
+async function _autoFixZeroSales(sales) {
+    const toFix = (sales ?? []).filter(s =>
+        s._id && s.entryType === 'current' && s.quantity > 0 &&
+        Math.abs(s.profitLoss ?? 0) < 0.01
+    );
+    if (!toFix.length) return false;
+
+    // Fetch prices for records missing from stocksData, using STOCK_SYMBOLS for Hebrew→ticker
+    const missingNames = toFix.filter(s => !(stocksData[s.name ?? s.symbol]?.price > 0));
+    const priceByTicker = {};
+    if (missingNames.length) {
+        const tickers = [...new Set(missingNames.map(s => STOCK_SYMBOLS[s.name ?? s.symbol]).filter(Boolean))];
+        if (tickers.length) {
+            try {
+                const r = await fetch(`/api/stock/batch?symbols=${encodeURIComponent(tickers.join(','))}`);
+                const d = await r.json();
+                (d.quotes ?? []).forEach(q => { if (q.regularMarketPrice > 0) priceByTicker[q.symbol] = q.regularMarketPrice; });
+            } catch(_) {}
+        }
+    }
+
+    let fixed = 0;
+    for (const s of toFix) {
+        const name   = s.name ?? s.symbol;
+        const ticker = STOCK_SYMBOLS[name];
+        const sp     = stocksData[name]?.price ?? priceByTicker[ticker] ?? 0;
+        if (!(sp > 0)) { console.warn('[autoFix] no price for', name); continue; }
+
+        // Buy price: portfolio.buyPrice = totalCost / totalQty (all lots, incl. zero-price)
+        const holding = portfolio[name];
+        const bp = holding?.buyPrice ?? holding?.avgCost ?? 0;
+        console.log(`[autoFix] ${name}: sp=${sp} bp=${bp} qty=${s.quantity}`);
+
+        const id = typeof s._id === 'object' ? (s._id.$oid ?? String(s._id)) : String(s._id);
+        try {
+            const r = await fetch(`/api/sales/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sellPrice: sp, buyPrice: bp, quantity: s.quantity })
+            });
+            if (r.ok) fixed++;
+            else console.warn('[autoFix] PATCH failed', id, r.status, await r.text());
+        } catch(e) { console.warn('[autoFix] error', e); }
+    }
+
+    if (fixed > 0) {
+        showToast(`תוקנו ${fixed} רשומות ✓`, { color: '#4f8ef7', duration: 2500 });
+        return true;
+    }
+    return false;
+}
+
+// Exposed for manual "תקן" button
+async function manualFixZeroSales() {
+    const btn = document.getElementById('sales-fix-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'מתקן...'; }
+    try {
+        const didFix = await _autoFixZeroSales(_salesData);
+        if (didFix) {
+            const [r, s] = await Promise.all([
+                fetch(`/api/sales?period=${_salesPeriod}`),
+                fetch('/api/sales/summary'),
+            ]);
+            _salesData    = await r.json();
+            _salesSummary = await s.json();
+            renderSalesLog();
+            renderSalesSummary();
+            renderSalesInline();
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'תקן'; }
+    }
 }
 
 async function refreshSalesData() {
@@ -3860,8 +4239,23 @@ async function refreshSalesData() {
         ]);
         _salesData    = await salesRes.json();
         _salesSummary = await summaryRes.json();
+
+        // Auto-fix records saved with sellPrice=0 (if live prices are available)
+        if (Object.keys(stocksData).length > 0) {
+            const didFix = await _autoFixZeroSales(_salesData);
+            if (didFix) {
+                const [r2, s2] = await Promise.all([
+                    fetch(`/api/sales?period=${_salesPeriod}`),
+                    fetch('/api/sales/summary'),
+                ]);
+                _salesData    = await r2.json();
+                _salesSummary = await s2.json();
+            }
+        }
+
         renderSalesLog();
         renderSalesSummary();
+        renderSalesInline();
     } catch(e) { console.warn('refreshSalesData:', e); }
 }
 
@@ -3882,15 +4276,26 @@ function renderSalesSummary() {
     const tav = s.totalAccountValue ?? s.totalCashBalance ?? 0;
     const el = id => document.getElementById(id);
 
-    // Big number: always all-time total account value
+    // Primary: available cash = 500k + proceeds - purchases
+    const cash = s.cashBalance ?? s.totalCashBalance ?? 0;
     if (el('sales-total-cash'))
-        el('sales-total-cash').textContent = `₪${tav.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        el('sales-total-cash').textContent = `₪${cash.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    // Base cash: always ₪500,000
+    // Total Equity from portfolio summary
+    if (el('sales-total-equity') && _portfolioSummary) {
+        const te = _portfolioSummary.totalEquity;
+        el('sales-total-equity').textContent = `₪${Math.round(te).toLocaleString('he-IL')}`;
+    }
+
+    // Base cash card
     if (el('sales-base-cash'))
-        el('sales-base-cash').textContent = `₪${(s.baseCash ?? 500000).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+        el('sales-base-cash').textContent = `₪${(s.baseCash ?? 500000).toLocaleString('he-IL', { minimumFractionDigits: 0 })}`;
 
-    // Realized P&L: period-filtered when in ytd/12m, otherwise all-time
+    // Invested card
+    if (el('sales-invested'))
+        el('sales-invested').textContent = `₪${(s.purchaseCosts ?? 0).toLocaleString('he-IL', { minimumFractionDigits: 0 })}`;
+
+    // Realized P&L (period-aware)
     const pnl = (_salesPeriod === 'all' ? (s.realizedPNL ?? data?.totalProfitLoss) : data?.totalProfitLoss) ?? 0;
     if (el('sales-total-pnl')) {
         el('sales-total-pnl').textContent = `${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL', { minimumFractionDigits: 2 })}`;
@@ -3904,45 +4309,143 @@ function renderSalesSummary() {
         el('sales-avg-roi').style.color = roi >= 0 ? '#16a34a' : '#dc2626';
     }
 
-    // Trade count (period)
+    // Trade count (period, excludes purchases)
     if (el('sales-count')) el('sales-count').textContent = (data?.count ?? 0);
+
+    // Monthly average P/L (always all-time, from server)
+    const mPnl = s.monthlyAvgPNL ?? 0;
+    if (el('sales-monthly-pnl')) {
+        el('sales-monthly-pnl').textContent = `${mPnl >= 0 ? '+' : ''}₪${Math.abs(mPnl).toLocaleString('he-IL', { minimumFractionDigits: 0 })}`;
+        el('sales-monthly-pnl').style.color = mPnl >= 0 ? '#16a34a' : '#dc2626';
+    }
+    if (el('sales-months-active'))
+        el('sales-months-active').textContent = `ממוצע / ${s.monthsActive ?? 1} חודשים`;
+}
+
+// ── Inline Sales Card (replaces portfolio chart window) ───────────────────────
+function renderSalesInline() {
+    const tbody = document.getElementById('sales-inline-body');
+    const sumEl = document.getElementById('sales-inline-summary');
+    if (!tbody) return;
+
+    const real = (_salesData ?? []).filter(s => s.entryType === 'current' || s.entryType === 'historical');
+
+    // Summary bar
+    if (sumEl && _salesSummary) {
+        const pnl = _salesSummary.realizedPNL ?? 0;
+        const col = pnl >= 0 ? '#16a34a' : '#dc2626';
+        const mPnl = _salesSummary.monthlyAvgPNL ?? 0;
+        sumEl.innerHTML = `
+            <span style="font-size:10px;color:#9ca3af">רווח ממומש:</span>
+            <span style="font-size:12px;font-weight:700;color:${col}">${pnl>=0?'+':''}₪${Math.abs(Math.round(pnl)).toLocaleString('he-IL')}</span>
+            <span style="font-size:10px;color:#9ca3af;margin-right:8px">ממוצע/חודש:</span>
+            <span style="font-size:12px;font-weight:700;color:${mPnl>=0?'#16a34a':'#dc2626'}">${mPnl>=0?'+':''}₪${Math.abs(Math.round(mPnl)).toLocaleString('he-IL')}</span>
+            <span style="font-size:10px;color:#9ca3af;margin-right:8px">עסקאות:</span>
+            <span style="font-size:12px;font-weight:700;color:#374151">${real.length}</span>`;
+    }
+
+    if (!real.length) {
+        tbody.innerHTML = `<tr><td style="text-align:center;padding:18px;color:#9ca3af;font-size:12px">אין עסקאות</td></tr>`;
+        return;
+    }
+
+    // Show last 8 trades
+    tbody.innerHTML = real.slice(0, 8).map(s => {
+        const pnl = s.profitLoss ?? 0;
+        const roi = s.roi ?? 0;
+        const col = pnl >= 0 ? '#16a34a' : '#dc2626';
+        return `<tr style="border-bottom:1px solid #f3f4f6">
+            <td style="padding:5px 10px;font-weight:600;white-space:nowrap">${s.symbol}</td>
+            <td style="padding:5px 4px;color:#6b7280;font-size:10.5px;white-space:nowrap">${s.sellDate ?? '—'}</td>
+            <td style="padding:5px 4px;text-align:left;font-weight:700;color:${col}" dir="ltr">${pnl>=0?'+':''}₪${Math.abs(Math.round(pnl)).toLocaleString('he-IL')}</td>
+            <td style="padding:5px 10px 5px 4px;text-align:left;color:${col};font-size:10.5px" dir="ltr">${roi>=0?'+':''}${roi.toFixed(1)}%</td>
+        </tr>`;
+    }).join('');
 }
 
 function renderSalesLog() {
     const tbody = document.getElementById('sales-log-body');
     if (!tbody) return;
-    if (!_salesData.length) {
+
+    // Hide only blank "יתרת פתיחה" rows (symbol='—'), keep all real trades
+    const _isBlankSetup = s => s.entryType === 'initial_setup' && (!s.symbol || s.symbol === '—');
+    const _isIndex = s => s.symbol &&
+        (['TA35','TA90','TA125','^TA35','^TA90','^TA125'].includes(s.symbol) ||
+        (!s.symbol.endsWith('.TA') && !s.symbol.match(/^[A-Z]{1,5}$/)));
+    let data = _salesData.filter(s => !_isBlankSetup(s));
+    if (_salesAssetFilter === 'index') data = data.filter(_isIndex);
+    else if (_salesAssetFilter === 'stock') data = data.filter(s => !_isIndex(s));
+
+    // Sort: purchases first (by buyDate desc), then sales (by sellDate desc)
+    data = [
+        ...data.filter(s => s.entryType === 'purchase').sort((a,b) => (b.buyDate??'') > (a.buyDate??'') ? 1 : -1),
+        ...data.filter(s => s.entryType !== 'purchase'),
+    ];
+
+    if (!data.length) {
         tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#9ca3af;font-size:12px">אין עסקאות להצגה</td></tr>`;
         return;
     }
-    tbody.innerHTML = _salesData.map(s => {
-        const isSetup = s.entryType === 'initial_setup';
-        if (isSetup) {
-            return `<tr style="border-bottom:1px solid #f3f4f6;font-size:12px;background:#f0f9ff;color:#6b7280">
-                <td style="padding:6px 4px;white-space:nowrap">—</td>
-                <td style="padding:6px 4px;font-weight:600">—</td>
-                <td style="padding:6px 4px" colspan="2">יתרת פתיחה</td>
-                <td style="padding:6px 4px;text-align:right;font-weight:700;color:#0369a1" dir="ltr">₪500,000.00</td>
-                <td style="padding:6px 4px;text-align:right">—</td>
-                <td style="padding:6px 4px"><span style="font-size:9px;background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 5px;font-weight:600">בסיס</span></td>
-            </tr>`;
-        }
+    tbody.innerHTML = data.map(s => {
         const pnl    = s.profitLoss ?? 0;
         const roi    = s.roi ?? 0;
         const col    = pnl >= 0 ? '#16a34a' : '#dc2626';
-        const tag    = s.entryType === 'current'
-            ? `<span style="font-size:9px;background:#dcfce7;color:#166534;border-radius:4px;padding:1px 5px;font-weight:600">נוכחי</span>`
-            : `<span style="font-size:9px;background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 5px;font-weight:600">היסטורי</span>`;
-        return `<tr style="border-bottom:1px solid #f3f4f6;font-size:12px">
-            <td style="padding:6px 4px;white-space:nowrap">${s.sellDate ?? '—'}</td>
-            <td style="padding:6px 4px;font-weight:600">${s.symbol}</td>
-            <td class="sales-col-name" style="padding:6px 4px;color:#374151">${s.name ?? s.symbol}</td>
-            <td style="padding:6px 4px;text-align:right" dir="ltr">${s.quantity}</td>
-            <td style="padding:6px 4px;text-align:right;font-weight:600;color:${col}" dir="ltr">${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL',{minimumFractionDigits:2})}</td>
-            <td style="padding:6px 4px;text-align:right;color:${col}" dir="ltr">${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%</td>
-            <td style="padding:6px 4px">${tag}</td>
+        const methodBadge = s.method === 'fifo'
+            ? `<span style="font-size:8px;background:#ede9fe;color:#5b21b6;border-radius:3px;padding:1px 4px;font-weight:600;margin-right:2px">FIFO</span>`
+            : '';
+        const tag    = s.entryType === 'purchase'
+            ? `<span style="font-size:9px;background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 5px;font-weight:600">קנייה</span>`
+            : s.entryType === 'current'
+            ? `${methodBadge}<span style="font-size:9px;background:#dcfce7;color:#166534;border-radius:4px;padding:1px 5px;font-weight:600">נוכחי</span>`
+            : `${methodBadge}<span style="font-size:9px;background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 5px;font-weight:600">היסטורי</span>`;
+        const id = s._id ? (typeof s._id === 'object' ? (s._id.$oid ?? String(s._id)) : String(s._id)) : '';
+        const editBtn = id
+            ? `<button class="_sale-edit-btn" data-sale-id="${id}" data-sell="${s.sellPrice??0}" data-buy="${s.buyPrice??0}" data-qty="${s.quantity??0}" data-name="${escAttr(s.name??s.symbol)}"
+                style="border:none;background:none;cursor:pointer;padding:0 2px;font-size:12px;opacity:0.6" title="ערוך">✏️</button>
+               <button class="_sale-del-btn" data-sale-id="${id}" data-name="${escAttr(s.name??s.symbol)}"
+                style="border:none;background:none;cursor:pointer;padding:0 2px;font-size:11px;opacity:0.45" title="מחק">🗑</button>`
+            : '';
+        const isPurchase = s.entryType === 'purchase';
+        const dateCol  = isPurchase ? (s.buyDate ?? '—') : (s.sellDate ?? '—');
+        const pnlCol   = isPurchase
+            ? `<span style="color:#6b7280">₪${(s.cost ?? s.costBasis ?? 0).toLocaleString('he-IL',{minimumFractionDigits:2})}</span>`
+            : `${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL',{minimumFractionDigits:2})}`;
+        const roiCol   = isPurchase ? `<span style="color:#9ca3af">—</span>` : `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%`;
+        return `<tr style="border-bottom:1px solid #f3f4f6;font-size:12px;vertical-align:middle${isPurchase ? ';background:#f8fafc' : ''}">
+            <td style="padding:9px 6px;white-space:nowrap">${dateCol}</td>
+            <td style="padding:9px 6px;font-weight:600">${s.symbol}</td>
+            <td class="sales-col-name" style="padding:9px 6px;color:#374151">${s.name ?? s.symbol}</td>
+            <td style="padding:9px 6px;text-align:right" dir="ltr">${s.quantity}</td>
+            <td style="padding:9px 6px;text-align:right;font-weight:600;color:${col}" dir="ltr">${pnlCol}</td>
+            <td style="padding:9px 6px;text-align:right;color:${col}" dir="ltr">${roiCol}</td>
+            <td style="padding:9px 6px"><div style="display:flex;align-items:center;gap:2px">${tag}${editBtn}</div></td>
         </tr>`;
     }).join('');
+
+    // Attach edit button listeners (avoids apostrophe-in-name onclick bug)
+    tbody.querySelectorAll('._sale-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            editSaleRow(
+                btn.dataset.saleId,
+                parseFloat(btn.dataset.sell),
+                parseFloat(btn.dataset.buy),
+                parseFloat(btn.dataset.qty),
+                btn.dataset.name
+            );
+        });
+    });
+
+    // Attach delete button listeners
+    tbody.querySelectorAll('._sale-del-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm(`למחוק את רשומת המכירה של ${btn.dataset.name}?`)) return;
+            try {
+                const r = await fetch(`/api/sales/${btn.dataset.saleId}`, { method: 'DELETE' });
+                if (r.ok) { await refreshSalesData(); showToast('נמחק ✓', { color: '#6b7280', duration: 2000 }); }
+                else showToast('שגיאה במחיקה', { color: '#dc2626', duration: 3000 });
+            } catch(e) { showToast('שגיאה', { color: '#dc2626' }); }
+        });
+    });
 }
 
 // ── Sales-form autocomplete (ms-symbol field) ──────────────────────────────
@@ -3960,8 +4463,7 @@ function salesAutocomplete(q) {
 
     if (!hits.length) { dd.style.display = 'none'; return; }
     dd.innerHTML = hits.map(s => {
-        const safeHe = s.nameHe.replace(/'/g, "\\'");
-        return `<div onmousedown="selectSalesStock('${s.ticker}','${safeHe}')"
+        return `<div data-ticker="${escAttr(s.ticker)}" data-name="${escAttr(s.nameHe)}" onmousedown="selectSalesStock(this.dataset.ticker,this.dataset.name)"
             style="padding:7px 10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:12px;border-bottom:1px solid #f3f4f6">
             <div>
                 <span style="font-weight:700">${s.nameHe}</span>
