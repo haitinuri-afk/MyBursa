@@ -810,6 +810,7 @@ const CONTEXT_IQ_PATH = path.join(__dirname, '..', 'ContextIQ');
 // ── MongoDB Atlas (optional — set MONGODB_URI env var to enable) ───────────
 const MONGODB_URI = process.env.MONGODB_URI;
 let _profilesCol  = null;   // Company profiles + vector embeddings
+let _db           = null;   // bursa database handle
 let _ragCol       = null;   // MongoDB collection handle
 let _scansCol     = null;   // Persistent scan results collection
 let _portfolioCol = null;   // User portfolio symbols collection
@@ -826,6 +827,7 @@ async function initMongoDB() {
         const client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
         await client.connect();
         const db      = client.db('bursa');
+        _db           = db;
         _ragCol       = db.collection('knowledge');
         _scansCol     = db.collection('scan_results');
         _portfolioCol = db.collection('user_portfolio');
@@ -2299,6 +2301,35 @@ app.post('/api/sales/bulk', express.json({ limit: '2mb' }), async (req, res) => 
         for (const doc of docs) await saveSaleDoc(doc);
         res.json({ ok: true, imported: docs.length, errors });
     } catch(e) { res.status(400).json({ error: e.message }); }
+});
+
+// ── TA-125 index endpoints ────────────────────────────────────────────────────
+
+// GET /api/tase125 — full TA-125 component list for autocomplete / search
+app.get('/api/tase125', (req, res) => {
+    const { TASE125 } = require('./dataConstants');
+    res.json(TASE125);
+});
+
+// POST /api/indices/tase125/seed — idempotent upsert of all components into market_assets
+app.post('/api/indices/tase125/seed', async (req, res) => {
+    try {
+        if (_mongoReady) await _mongoReady;
+        const { TASE125 } = require('./dataConstants');
+        if (!_db) return res.status(503).json({ error: 'MongoDB not connected' });
+        const col = _db.collection('market_assets');
+        await col.createIndex({ ticker: 1 }, { unique: true });
+        let upserted = 0;
+        for (const item of TASE125) {
+            await col.updateOne(
+                { ticker: item.ticker },
+                { $set: { ...item, isTA125: true, updatedAt: new Date().toISOString() } },
+                { upsert: true }
+            );
+            upserted++;
+        }
+        res.json({ ok: true, upserted, total: TASE125.length });
+    } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/sales/ensure-initial — kept for backward compat, now just delegates

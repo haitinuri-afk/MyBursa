@@ -40,58 +40,100 @@ function showToast(msg, { duration = 3000, color = '#1db954' } = {}) {
 }
 
 
-// Yahoo Finance ticker symbols for each Hebrew stock name
-const STOCK_SYMBOLS = {
-    // מדדים
-    "מדד תא-35":    "^TA35",
-    "מדד תא-90":    "^TA90",
-    "מדד תא-125":   "^TA100",
+// ── TA-125 complete component list (local cache — updated from dataConstants.js) ──
+// Format: { ticker, nameHe, nameEn, sector }
+const TASE125_DATA = [
     // בנקים
-    "לאומי":        "LUMI.TA",
-    "פועלים":       "POLI.TA",
-    "דיסקונט":      "DSCT.TA",
-    "מזרחי טפחות": "MZTF.TA",
-    // ביטחון
-    "אלביט":        "ESLT.TA",
-    // טכנולוגיה
-    "נייס":         "NICE.TA",
-    "טאוור":        "TSEM.TA",
-    "אאורה":        "AURA.TA",
-    // פארמה/כימיה
-    "טבע":          "TEVA.TA",
-    "כיל":          "ICL.TA",
-    // פיננסים — בנקים נוספים
-    "הבינלאומי":    "FIBI.TA",
-    "בנק ירושלים":  "JBNK.TA",
-    // פיננסים — שוק ההון
-    "אי.בי.אי":     "IBI.TA",
+    { ticker:'LUMI.TA', nameHe:'לאומי',              nameEn:'Bank Leumi',               sector:'בנקים' },
+    { ticker:'POLI.TA', nameHe:'פועלים',              nameEn:'Bank Hapoalim',            sector:'בנקים' },
+    { ticker:'DSCT.TA', nameHe:'דיסקונט',             nameEn:'Bank Discount',            sector:'בנקים' },
+    { ticker:'MZTF.TA', nameHe:'מזרחי טפחות',         nameEn:'Mizrahi Tefahot',          sector:'בנקים' },
+    { ticker:'FIBI.TA', nameHe:'הבינלאומי',           nameEn:'First International Bank', sector:'בנקים' },
+    { ticker:'JBNK.TA', nameHe:'בנק ירושלים',         nameEn:'Bank of Jerusalem',        sector:'בנקים' },
+    { ticker:'YAHV.TA', nameHe:'בנק יהב',             nameEn:'Bank Yahav',               sector:'בנקים' },
+    { ticker:'BNKI.TA', nameHe:'אוצר החייל',           nameEn:'Otzar Ha-Hayal',           sector:'בנקים' },
+    { ticker:'MARC.TA', nameHe:'מרכנתיל דיסקונט',     nameEn:'Mercantile Discount',      sector:'בנקים' },
+    { ticker:'IBI.TA',  nameHe:'אי.בי.אי',             nameEn:'IBI Investment House',     sector:'פיננסים' },
     // ביטוח
-    "הפניקס":       "PHOE.TA",
-    "הראל":         "HARL.TA",
-    "כלל ביטוח":    "CLIS.TA",
+    { ticker:'PHOE.TA', nameHe:'הפניקס',              nameEn:'Phoenix Holdings',         sector:'ביטוח' },
+    { ticker:'HARL.TA', nameHe:'הראל',                nameEn:'Harel Insurance',          sector:'ביטוח' },
+    { ticker:'CLIS.TA', nameHe:'כלל ביטוח',           nameEn:'Clal Insurance',           sector:'ביטוח' },
+    { ticker:'MNRT.TA', nameHe:'מנורה מבטחים',        nameEn:'Menora Mivtachim',         sector:'ביטוח' },
+    { ticker:'MGDL.TA', nameHe:'מגדל ביטוח',          nameEn:'Migdal Insurance',         sector:'ביטוח' },
+    { ticker:'HKSH.TA', nameHe:'הכשרה ביטוח',         nameEn:'Hachshara Insurance',      sector:'ביטוח' },
+    // טכנולוגיה
+    { ticker:'ESLT.TA', nameHe:'אלביט',               nameEn:'Elbit Systems',            sector:'טכנולוגיה' },
+    { ticker:'NICE.TA', nameHe:'נייס',                nameEn:'NICE Systems',             sector:'טכנולוגיה' },
+    { ticker:'TSEM.TA', nameHe:'טאוור',               nameEn:'Tower Semiconductor',      sector:'טכנולוגיה' },
+    { ticker:'NVMI.TA', nameHe:'נובה',                nameEn:'Nova Measuring',           sector:'טכנולוגיה' },
+    { ticker:'KMDA.TA', nameHe:'קמהדע',               nameEn:'Camtek',                   sector:'טכנולוגיה' },
+    { ticker:'CYBR.TA', nameHe:'סייבר-ארק',           nameEn:'CyberArk Software',        sector:'טכנולוגיה' },
+    { ticker:'AURA.TA', nameHe:'אאורה',               nameEn:'Aura Smart Air',           sector:'טכנולוגיה' },
+    { ticker:'MGRT.TA', nameHe:'מגידו',               nameEn:'Magisto',                  sector:'טכנולוגיה' },
+    { ticker:'GNRS.TA', nameHe:"ג'נריישן קפיטל",     nameEn:'Generation Capital',       sector:'טכנולוגיה' },
+    { ticker:'SPNS.TA', nameHe:'ספיינס',              nameEn:'Sapiens International',    sector:'טכנולוגיה' },
+    { ticker:'PERI.TA', nameHe:'פריון',               nameEn:'Perion Network',           sector:'טכנולוגיה' },
+    { ticker:'ALLT.TA', nameHe:'אלוט',                nameEn:'Allot Communications',     sector:'טכנולוגיה' },
+    { ticker:'SANO.TA', nameHe:'סנו',                 nameEn:'Sano Industries',          sector:'צריכה' },
+    // פארמה / כימיה
+    { ticker:'TEVA.TA', nameHe:'טבע',                 nameEn:'Teva Pharmaceutical',      sector:'פארמה' },
+    { ticker:'ICL.TA',  nameHe:'כיל',                 nameEn:'ICL Group',                sector:'פארמה' },
     // נדל"ן
-    "עזריאלי":      "AZRG.TA",
-    "מליסרון":      "MLSR.TA",
-    "אמות":         "AMOT.TA",
-    "ביג":          "BIG.TA",
-    "גב ים":        "GVYM.TA",
-    "שיכון ובינוי": "SKBN.TA",
-    "ריט1":         "RIT1.TA",
+    { ticker:'AZRG.TA', nameHe:'עזריאלי',             nameEn:'Azrieli Group',            sector:'נדל"ן' },
+    { ticker:'MLSR.TA', nameHe:'מליסרון',             nameEn:'Melisron',                 sector:'נדל"ן' },
+    { ticker:'AMOT.TA', nameHe:'אמות',                nameEn:'Amot Investments',         sector:'נדל"ן' },
+    { ticker:'BIG.TA',  nameHe:'ביג',                 nameEn:'Big Shopping Centers',     sector:'נדל"ן' },
+    { ticker:'GVYM.TA', nameHe:'גב ים',               nameEn:'Gav-Yam',                  sector:'נדל"ן' },
+    { ticker:'SKBN.TA', nameHe:'שיכון ובינוי',        nameEn:'Shikun & Binui',           sector:'נדל"ן' },
+    { ticker:'RIT1.TA', nameHe:'ריט1',                nameEn:'Reit 1',                   sector:'נדל"ן' },
+    { ticker:'AFPM.TA', nameHe:'אפי נכסים',           nameEn:'Afikim Properties',        sector:'נדל"ן' },
+    { ticker:'NBLD.TA', nameHe:'נכסים ובנין',         nameEn:'Nekhasim & Binyan',        sector:'נדל"ן' },
+    { ticker:'ALRB.TA', nameHe:'אלרוב נדל"ן',         nameEn:'Alrov Real Estate',        sector:'נדל"ן' },
+    { ticker:'GZT.TA',  nameHe:'גזית גלוב',           nameEn:'Gazit Globe',              sector:'נדל"ן' },
+    { ticker:'MNIV.TA', nameHe:'מניב',                nameEn:'Mivne Real Estate',        sector:'נדל"ן' },
+    { ticker:'ALHE.TA', nameHe:'אלוני חץ',            nameEn:'Alony-Hetz',               sector:'נדל"ן' },
+    { ticker:'RBUA.TA', nameHe:'רבוע כחול נדל"ן',     nameEn:'Blue Square Real Estate',  sector:'נדל"ן' },
     // אנרגיה
-    "אנרג'יקס":     "ENRG.TA",
-    "אנלייט":       "ENLT.TA",
-    "אורמת":        "ORA.TA",
-    "קבוצת דלק":    "DLEKG.TA",
+    { ticker:'ENRG.TA', nameHe:"אנרג'יקס",           nameEn:'Energix',                  sector:'אנרגיה' },
+    { ticker:'ENLT.TA', nameHe:'אנלייט',              nameEn:'Enlight Energy',           sector:'אנרגיה' },
+    { ticker:'ORA.TA',  nameHe:'אורמת',               nameEn:'Ormat Technologies',       sector:'אנרגיה' },
+    { ticker:'DLEKG.TA',nameHe:'קבוצת דלק',           nameEn:'Delek Group',              sector:'אנרגיה' },
+    { ticker:'PZOL.TA', nameHe:'פז נפט',              nameEn:'Paz Oil',                  sector:'אנרגיה' },
+    { ticker:'DCRB.TA', nameHe:'דלק רכב',             nameEn:'Delek Automotive',         sector:'אנרגיה' },
+    { ticker:'DLKR.TA', nameHe:'דלק קידוחים',         nameEn:'Delek Drilling',           sector:'אנרגיה' },
+    { ticker:'OPCE.TA', nameHe:'OPC אנרגיה',          nameEn:'OPC Energy',               sector:'אנרגיה' },
     // תקשורת
-    "בזק":          "BEZQ.TA",
-    "סלקום":        "CEL.TA",
-    "פרטנר":        "PTNR.TA",
-    // מזון/קמעונאות
-    "שטראוס":       "STRS.TA",
-    "שופרסל":       "SAE.TA",
-    "פוקס":         "FOX.TA",
-    "רמי לוי":      "RMLI.TA",
-};
+    { ticker:'BEZQ.TA', nameHe:'בזק',                 nameEn:'Bezeq',                    sector:'תקשורת' },
+    { ticker:'CEL.TA',  nameHe:'סלקום',               nameEn:'Cellcom',                  sector:'תקשורת' },
+    { ticker:'PTNR.TA', nameHe:'פרטנר',               nameEn:'Partner Communications',   sector:'תקשורת' },
+    // קמעונאות / מזון
+    { ticker:'STRS.TA', nameHe:'שטראוס',              nameEn:'Strauss Group',            sector:'צריכה' },
+    { ticker:'SAE.TA',  nameHe:'שופרסל',              nameEn:'Shufersal',                sector:'צריכה' },
+    { ticker:'FOX.TA',  nameHe:'פוקס',                nameEn:'Fox Fashion',              sector:'צריכה' },
+    { ticker:'RMLI.TA', nameHe:'רמי לוי',             nameEn:'Rami Levy',                sector:'צריכה' },
+    { ticker:'ELCO.TA', nameHe:'אלקטרה מוצרים',       nameEn:'Electra Consumer Products',sector:'צריכה' },
+    // תעשייה / שונות
+    { ticker:'ELTR.TA', nameHe:'אלקטרה',              nameEn:'Electra',                  sector:'תעשייה' },
+    { ticker:'ISCR.TA', nameHe:'ישקר',                nameEn:'Iscar',                    sector:'תעשייה' },
+    { ticker:'DISI.TA', nameHe:'דיסקאונט השקעות',     nameEn:'Discount Investments',     sector:'תעשייה' },
+    { ticker:'CRSO.TA', nameHe:'קרסו מוטורס',         nameEn:'Carasso Motors',           sector:'תעשייה' },
+    { ticker:'ELAL.TA', nameHe:'אל על',               nameEn:'El Al Airlines',           sector:'תחבורה' },
+    { ticker:'ILCO.TA', nameHe:'ישראל קורפ',          nameEn:'Israel Corporation',       sector:'תעשייה' },
+    { ticker:'IDBH.TA', nameHe:'IDB',                 nameEn:'IDB Holdings',             sector:'תעשייה' },
+];
+
+// Fast lookup: nameHe → ticker  (built once from TASE125_DATA)
+const _t125ByName   = Object.fromEntries(TASE125_DATA.map(s => [s.nameHe,   s]));
+const _t125ByTicker = Object.fromEntries(TASE125_DATA.map(s => [s.ticker,   s]));
+
+// Yahoo Finance ticker symbols for each Hebrew stock name
+// (superset: TASE125 stocks + indices + any portfolio-only additions)
+const STOCK_SYMBOLS = Object.fromEntries([
+    // מדדים
+    ['מדד תא-35', '^TA35'], ['מדד תא-90', '^TA90'], ['מדד תא-125', '^TA100'],
+    // TA-125 stocks — generated from TASE125_DATA
+    ...TASE125_DATA.map(s => [s.nameHe, s.ticker]),
+]);
 
 const TASE_MAP = { "^TA35": "מדד תא-35", "^TA100": "מדד תא-125", "^TA90": "מדד תא-90" };
 
@@ -510,38 +552,88 @@ function pctColor(pct) {
 // ── Hebrew stock autocomplete ──────────────────────────────────────────────
 let _acIndex = -1;
 
+// Sector badge colours
+const _SECTOR_COLORS = {
+    'בנקים':     '#1d4ed8', 'פיננסים': '#1d4ed8',
+    'ביטוח':     '#7c3aed',
+    'טכנולוגיה': '#0369a1',
+    'פארמה':     '#059669',
+    'נדל"ן':     '#d97706',
+    'אנרגיה':    '#dc2626',
+    'תקשורת':    '#6d28d9',
+    'צריכה':     '#92400e',
+    'תעשייה':    '#374151',
+    'תחבורה':    '#0e7490',
+};
+
+function _sectorBadge(sector) {
+    if (!sector) return '';
+    const c = _SECTOR_COLORS[sector] ?? '#6b7280';
+    return `<span style="font-size:8.5px;background:${c}18;color:${c};border:1px solid ${c}44;border-radius:3px;padding:1px 4px;white-space:nowrap">${sector}</span>`;
+}
+
 function stockAutocomplete(q) {
     const dd = document.getElementById('ac-dropdown');
     if (!dd) return;
-    const query = q.trim();
-    const allNames = Object.keys(STOCK_SYMBOLS);
-    const matches = query.length === 0
-        ? allNames.slice(0, 10)
-        : allNames.filter(n =>
-            n.includes(query) ||
-            (STOCK_SYMBOLS[n] || '').toLowerCase().includes(query.toLowerCase())
-          ).slice(0, 10);
+    const query  = q.trim();
+    const ql     = query.toLowerCase();
 
-    if (!matches.length) { dd.style.display = 'none'; return; }
+    // Search TASE125_DATA (Hebrew name, English name, ticker)
+    let hits = query.length === 0
+        ? TASE125_DATA.slice(0, 10)
+        : TASE125_DATA.filter(s =>
+            s.nameHe.includes(query) ||
+            s.nameEn.toLowerCase().includes(ql) ||
+            s.ticker.toLowerCase().includes(ql) ||
+            s.sector.includes(query)
+          ).slice(0, 12);
+
+    // Fallback: also check STOCK_SYMBOLS names not in TASE125_DATA (indices)
+    if (hits.length < 6) {
+        const extra = Object.keys(STOCK_SYMBOLS)
+            .filter(n => !_t125ByName[n] && (n.includes(query) || (STOCK_SYMBOLS[n]||'').toLowerCase().includes(ql)))
+            .slice(0, 4 - hits.length)
+            .map(n => ({ nameHe: n, ticker: STOCK_SYMBOLS[n], nameEn: '', sector: 'מדד' }));
+        hits = [...hits, ...extra];
+    }
+
+    if (!hits.length) { dd.style.display = 'none'; return; }
     _acIndex = -1;
-    dd.innerHTML = matches.map((name, i) => {
-        const sym = STOCK_SYMBOLS[name] || '';
-        const price = stocksData[name]?.price ? `₪${parseFloat(stocksData[name].price).toFixed(2)}` : '';
-        return `<div class="ac-item" data-name="${name}" data-i="${i}"
-            style="padding:6px 10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:12px;border-bottom:1px solid rgba(0,0,0,0.05)"
-            onmousedown="selectAutocomplete('${name}')">
-            <span style="font-weight:600;direction:rtl">${name}</span>
-            <span style="color:#9aa0a6;font-size:10px;font-family:monospace">${sym} ${price}</span>
+    dd.innerHTML = hits.map((s, i) => {
+        const livePrice = stocksData[s.nameHe]?.price;
+        const priceTag  = livePrice ? `<span style="color:#374151;font-size:10px;font-family:monospace">₪${parseFloat(livePrice).toFixed(2)}</span>` : '';
+        const safeHe    = s.nameHe.replace(/'/g, "\\'");
+        return `<div class="ac-item" data-name="${s.nameHe}" data-ticker="${s.ticker}" data-i="${i}"
+            style="padding:6px 10px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;border-bottom:1px solid rgba(0,0,0,0.05)"
+            onmousedown="selectAutocomplete('${safeHe}')">
+            <div style="flex:1;min-width:0">
+                <div style="font-weight:700;direction:rtl">${s.nameHe}</div>
+                <div style="font-size:9.5px;color:#9aa0a6">${s.nameEn}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+                ${_sectorBadge(s.sector)}
+                <span style="font-size:9px;color:#9aa0a6;font-family:monospace">${s.ticker}</span>
+                ${priceTag}
+            </div>
         </div>`;
     }).join('');
     dd.style.display = 'block';
 }
 
 function selectAutocomplete(name) {
-    const inp = document.getElementById('sim-symbol');
-    const dd  = document.getElementById('ac-dropdown');
+    const inp  = document.getElementById('sim-symbol');
+    const dd   = document.getElementById('ac-dropdown');
     if (inp) { inp.value = name; inp.dispatchEvent(new Event('change')); }
     if (dd)  dd.style.display = 'none';
+    // Auto-detect agurot for TASE stocks (price > 200 usually means agurot quoted)
+    const meta = _t125ByName[name];
+    if (meta) {
+        const priceUnitEl = document.getElementById('ms-price-unit');
+        if (priceUnitEl) {
+            // TASE stocks priced in agurot when buyPrice input > 200
+            priceUnitEl.value = 'NIS'; // default; user can override
+        }
+    }
     document.getElementById('sim-qty')?.focus();
 }
 
@@ -1654,12 +1746,20 @@ function searchSymbol() {
 // ── Simulator ──────────────────────────────────────────────────────────────
 
 function resolveStockName(input) {
-    if (stocksData[input]) return input;
-    const lower = input.toLowerCase();
-    return Object.keys(STOCK_SYMBOLS).find(name =>
+    if (!input) return null;
+    const trimmed = input.trim();
+    if (stocksData[trimmed]) return trimmed;
+    const lower = trimmed.toLowerCase();
+    // Try Hebrew name match first
+    const byName = Object.keys(STOCK_SYMBOLS).find(name =>
         STOCK_SYMBOLS[name].toLowerCase() === lower ||
         STOCK_SYMBOLS[name].toLowerCase().replace('.ta','') === lower
-    ) ?? null;
+    );
+    if (byName) return byName;
+    // Try TASE125 English name match
+    const byEn = TASE125_DATA.find(s => s.nameEn.toLowerCase().includes(lower) || s.ticker.toLowerCase() === lower);
+    if (byEn) return byEn.nameHe;
+    return null;
 }
 
 function quickBuy(name) {
@@ -3843,6 +3943,50 @@ function renderSalesLog() {
             <td style="padding:6px 4px">${tag}</td>
         </tr>`;
     }).join('');
+}
+
+// ── Sales-form autocomplete (ms-symbol field) ──────────────────────────────
+function salesAutocomplete(q) {
+    const dd = document.getElementById('ms-ac-dd');
+    if (!dd) return;
+    const ql  = q.trim().toLowerCase();
+    if (!ql) { dd.style.display = 'none'; return; }
+
+    const hits = TASE125_DATA.filter(s =>
+        s.nameHe.includes(q.trim()) ||
+        s.nameEn.toLowerCase().includes(ql) ||
+        s.ticker.toLowerCase().includes(ql)
+    ).slice(0, 10);
+
+    if (!hits.length) { dd.style.display = 'none'; return; }
+    dd.innerHTML = hits.map(s => {
+        const safeHe = s.nameHe.replace(/'/g, "\\'");
+        return `<div onmousedown="selectSalesStock('${s.ticker}','${safeHe}')"
+            style="padding:7px 10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:12px;border-bottom:1px solid #f3f4f6">
+            <div>
+                <span style="font-weight:700">${s.nameHe}</span>
+                <span style="font-size:9.5px;color:#9ca3af;margin-right:4px">${s.nameEn}</span>
+            </div>
+            <div style="text-align:left">
+                ${_sectorBadge(s.sector)}
+                <div style="font-size:9px;color:#9ca3af;font-family:monospace;text-align:left">${s.ticker}</div>
+            </div>
+        </div>`;
+    }).join('');
+    dd.style.display = 'block';
+}
+
+function selectSalesStock(ticker, nameHe) {
+    const sym  = document.getElementById('ms-symbol');
+    const name = document.getElementById('ms-name');
+    const dd   = document.getElementById('ms-ac-dd');
+    if (sym)  sym.value  = ticker;
+    if (name) name.value = nameHe;
+    if (dd)   dd.style.display = 'none';
+    // Agurot hint: if stock is on TASE and typically priced in agurot (most are)
+    const pu = document.getElementById('ms-price-unit');
+    if (pu && ticker.endsWith('.TA')) pu.value = 'agorot';
+    document.getElementById('ms-buy-date')?.focus();
 }
 
 async function submitManualSale() {
