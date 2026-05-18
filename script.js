@@ -2249,34 +2249,73 @@ function closeInsightsPanel() {
     const backdrop = document.getElementById('insights-backdrop');
     if (!panel) return;
     const isMob = window.innerWidth <= 768;
-    panel.style.opacity   = isMob ? '1' : '0';
-    panel.style.transform = isMob ? 'translateY(100%)' : 'translate(-50%,-48%) scale(0.96)';
+    if (isMob) {
+        panel.style.transform = 'translateY(100%)';
+    } else {
+        panel.style.opacity   = '0';
+        panel.style.transform = 'translate(-50%,-48%) scale(0.96)';
+    }
     if (backdrop) { backdrop.style.opacity = '0'; backdrop.style.pointerEvents = 'none'; }
     setTimeout(() => {
         panel.style.display = 'none';
         if (backdrop) { backdrop.style.display = 'none'; backdrop.style.pointerEvents = ''; }
-    }, 260);
+    }, 280);
 }
 
 function openInsightsPanel() {
     const panel    = document.getElementById('win-ai-insights');
     const backdrop = document.getElementById('insights-backdrop');
     if (!panel) return;
-    // Already visible — don't restart animation
     if (panel.style.display === 'flex' && panel.style.opacity === '1') {
         if (!_insightsHistoryData) loadInsightsHistory();
         return;
     }
-    // Show backdrop blur
-    if (backdrop) {
-        backdrop.style.opacity = '0';
-        backdrop.style.display = 'block';
-    }
-    // Mobile: slide up from bottom. Desktop: scale from center.
     const isMob = window.innerWidth <= 768;
-    panel.style.display   = 'flex';
-    panel.style.opacity   = isMob ? '1' : '0';
-    panel.style.transform = isMob ? 'translateY(30px)' : 'translate(-50%,-48%) scale(0.96)';
+
+    // Apply correct position for mobile (bottom-sheet) vs desktop (centered)
+    if (isMob) {
+        Object.assign(panel.style, {
+            display: 'flex',
+            position: 'fixed',
+            top: 'auto',
+            bottom: '0',
+            left: '0',
+            right: '0',
+            width: '100%',
+            maxWidth: '100%',
+            maxHeight: '88vh',
+            borderRadius: '20px 20px 0 0',
+            transform: 'translateY(100%)',
+            opacity: '1',
+            transition: 'transform .28s cubic-bezier(.4,0,.2,1)',
+        });
+    } else {
+        Object.assign(panel.style, {
+            display: 'flex',
+            position: 'fixed',
+            top: '50%',
+            bottom: 'auto',
+            left: '50%',
+            right: 'auto',
+            width: 'min(680px,92vw)',
+            maxWidth: '',
+            maxHeight: '84vh',
+            borderRadius: '22px',
+            transform: 'translate(-50%,-48%) scale(0.96)',
+            opacity: '0',
+            transition: 'opacity .22s,transform .22s',
+        });
+    }
+
+    // Show backdrop — no blur on mobile (performance), just dark overlay
+    if (backdrop) {
+        backdrop.style.backdropFilter      = isMob ? 'none' : 'blur(6px)';
+        backdrop.style.webkitBackdropFilter = isMob ? 'none' : 'blur(6px)';
+        backdrop.style.background = isMob ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.08)';
+        backdrop.style.opacity    = '0';
+        backdrop.style.display    = 'block';
+    }
+
     requestAnimationFrame(() => requestAnimationFrame(() => {
         panel.style.opacity   = '1';
         panel.style.transform = isMob ? 'translateY(0)' : 'translate(-50%,-50%) scale(1)';
@@ -2295,7 +2334,6 @@ function switchInsightsTab(tab) {
     if (tab === 'pnl') renderPnLClient(_insightsHistoryData?.holdings);
     if (tab === 'perf') {
         renderPerformanceTabClient();
-        // Re-render after historical fetches complete (baseWeek/Month/3m loaded async)
         setTimeout(() => { if (document.getElementById('itab-content-perf')?.style.display !== 'none') renderPerformanceTabClient(); }, 4000);
         setTimeout(() => { if (document.getElementById('itab-content-perf')?.style.display !== 'none') renderPerformanceTabClient(); }, 10000);
     }
