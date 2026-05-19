@@ -18,6 +18,25 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
     <link rel="stylesheet" href="style.css?v=55">
+    <style>
+        .mob-sd-tf {
+            padding: 4px 12px;
+            border-radius: 7px;
+            border: 1px solid var(--border, #e5e7eb);
+            background: transparent;
+            color: var(--text3, #6b7280);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background .15s, color .15s;
+        }
+        .mob-sd-tf.active {
+            background: var(--primary, #1a73e8);
+            color: #fff;
+            border-color: var(--primary, #1a73e8);
+        }
+    </style>
 </head>
 <body>
     <div class="main-wrapper">
@@ -156,6 +175,28 @@
                     </div>
                     <button id="stock-show-more-btn" onclick="_stockShowAll=!_stockShowAll;updateStockList()" style="display:none;margin-top:8px;font-size:11px;padding:6px 0;width:100%;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--primary);font-weight:600;cursor:pointer"></button>
                     <button id="refresh-btn" style="margin-top:6px;font-size:11px;padding:6px 0;width:100%;background:transparent;border:1px solid var(--border);border-radius:10px;color:var(--text3);cursor:pointer">רענן</button>
+
+                    <!-- Mobile inline stock chart panel -->
+                    <div id="mob-stock-detail" style="display:none;margin-top:12px;border-radius:14px;overflow:hidden;background:#fff;border:1px solid var(--border)">
+                        <div style="padding:12px 14px 8px;display:flex;justify-content:space-between;align-items:flex-start">
+                            <div>
+                                <div id="mob-sd-name" style="font-size:15px;font-weight:700;color:var(--text)"></div>
+                                <div id="mob-sd-ticker" style="font-size:10px;color:var(--text3);margin-top:2px"></div>
+                            </div>
+                            <div style="text-align:left">
+                                <div id="mob-sd-price" style="font-size:15px;font-weight:700;color:var(--text);direction:ltr"></div>
+                                <div id="mob-sd-pct" style="font-size:12px;font-weight:700;margin-top:2px;text-align:left;direction:ltr"></div>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:5px;padding:0 14px 10px;overflow-x:auto">
+                            <button class="mob-sd-tf active" data-tf="intraday" onclick="switchMobSdTf('intraday')">1ד</button>
+                            <button class="mob-sd-tf" data-tf="daily"    onclick="switchMobSdTf('daily')">יום</button>
+                            <button class="mob-sd-tf" data-tf="weekly"   onclick="switchMobSdTf('weekly')">שבוע</button>
+                            <button class="mob-sd-tf" data-tf="monthly"  onclick="switchMobSdTf('monthly')">חודש</button>
+                            <button class="mob-sd-tf" data-tf="3months"  onclick="switchMobSdTf('3months')">שנה</button>
+                        </div>
+                        <div id="mob-sd-chart" style="height:260px;width:100%"></div>
+                    </div>
                 </div>
             </div>
 
@@ -717,7 +758,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=101"></script>
+    <script src="script.js?v=102"></script>
     <script>
       if ('serviceWorker' in navigator) {
         // Unregister any broken service workers, then re-register

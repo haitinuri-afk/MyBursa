@@ -270,6 +270,14 @@ let _lwChart    = null;
 let _lwSeries   = null;
 let _lwVolume   = null;
 let _lwStock    = null;
+
+// ── Mobile inline stock chart state ─────────────────────────────────────────
+let _mobSdChart  = null;
+let _mobSdCandle = null;
+let _mobSdVol    = null;
+let _mobSdStock  = null;
+let _mobSdTf     = 'intraday';
+let _mobSdResizeOb = null;
 let _lwTf       = null;
 let _lwResizeOb = null;  // singleton ResizeObserver for the main chart
 
@@ -526,6 +534,13 @@ async function refreshRealData() {
         setTimeout(() => _autoFixZeroSales(_salesData).then(fixed => {
             if (fixed) refreshSalesData();
         }), 500);
+    }
+
+    // Auto-show first stock chart on mobile after prices load
+    if (liveCount > 0 && !window._mobSdInitDone && window.innerWidth <= 768) {
+        window._mobSdInitDone = true;
+        const firstStock = Object.keys(stocksData).find(n => stocksData[n]?.price > 0);
+        if (firstStock) showMobStockDetail(firstStock);
     }
     scheduleFetch();
 }
@@ -1385,6 +1400,128 @@ function updateMiniIndicesBar() {
     });
 }
 
+// ── Mobile inline candlestick chart ─────────────────────────────────────────
+function switchMobSdTf(tf) {
+    _mobSdTf = tf;
+    document.querySelectorAll('.mob-sd-tf').forEach(b =>
+        b.classList.toggle('active', b.dataset.tf === tf)
+    );
+    if (_mobSdStock) renderMobSdChart(_mobSdStock, tf);
+}
+
+async function showMobStockDetail(name) {
+    const panel = document.getElementById('mob-stock-detail');
+    if (!panel) return;
+
+    _mobSdStock = name;
+    const sd    = stocksData[name] ?? {};
+    const price = sd.price ?? 0;
+    const prev  = (sd.initial > 0) ? sd.initial : price;
+    const pct   = prev > 0 ? ((price - prev) / prev * 100) : 0;
+    const up    = pct >= 0;
+    const ticker = STOCK_SYMBOLS[name] ?? '';
+
+    const nameEl   = document.getElementById('mob-sd-name');
+    const tickerEl = document.getElementById('mob-sd-ticker');
+    const priceEl  = document.getElementById('mob-sd-price');
+    const pctEl    = document.getElementById('mob-sd-pct');
+
+    if (nameEl)   nameEl.textContent  = name;
+    if (tickerEl) tickerEl.textContent = ticker;
+    if (priceEl)  priceEl.textContent  = price > 0
+        ? `₪${price.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : '—';
+    if (pctEl) {
+        pctEl.textContent = `${up ? '+' : ''}${pct.toFixed(2)}%`;
+        pctEl.style.color = up ? '#10b981' : '#ef4444';
+    }
+
+    panel.style.display = 'block';
+    await renderMobSdChart(name, _mobSdTf);
+}
+
+async function renderMobSdChart(name, tf) {
+    const container = document.getElementById('mob-sd-chart');
+    if (!container) return;
+
+    // loading state
+    container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:12px">טוען...</div>`;
+
+    const sym = STOCK_SYMBOLS[name];
+    if (!sym) {
+        container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:12px">אין נתוני גרף</div>`;
+        return;
+    }
+
+    const { range, interval } = tfToOhlcRange(tf);
+    const isIntraday = tf === 'intraday';
+    const { ohlc } = await fetchHistoricalOHLC(sym, range, interval);
+
+    if (!ohlc.length) {
+        container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:12px">אין נתונים היסטוריים</div>`;
+        return;
+    }
+
+    // destroy old chart + observer
+    if (_mobSdResizeOb) { _mobSdResizeOb.disconnect(); _mobSdResizeOb = null; }
+    if (_mobSdChart)    { try { _mobSdChart.remove(); } catch(e) {} _mobSdChart = null; }
+    container.innerHTML = '';
+
+    const dark   = document.documentElement.getAttribute('data-theme') === 'dark';
+    const bg     = dark ? '#1a1d23' : '#ffffff';
+    const txtClr = dark ? '#9aa0a6' : '#374151';
+
+    _mobSdChart = LightweightCharts.createChart(container, {
+        width:  container.clientWidth,
+        height: container.clientHeight,
+        layout: { background: { color: bg }, textColor: txtClr, fontSize: 10,
+                  fontFamily: 'Inter,system-ui,sans-serif' },
+        grid:   { vertLines: { visible: false }, horzLines: { color: dark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' } },
+        crosshair:      { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
+        rightPriceScale:{ borderVisible: false, scaleMargins: { top: 0.06, bottom: 0.22 } },
+        timeScale:      { borderVisible: false, timeVisible: isIntraday, secondsVisible: false, fixRightEdge: true },
+        handleScroll:   { mouseWheel: false, pressedMouseMove: true, touchMove: true },
+        handleScale:    { mouseWheel: false, pinch: true },
+    });
+
+    // Candlestick series
+    _mobSdCandle = _mobSdChart.addCandlestickSeries({
+        upColor: '#10b981', downColor: '#ef4444',
+        borderUpColor: '#10b981', borderDownColor: '#ef4444',
+        wickUpColor:   '#10b981', wickDownColor:   '#ef4444',
+    });
+    _mobSdCandle.setData(ohlc.map(d => ({
+        time: d.time, open: d.open, high: d.high, low: d.low, close: d.close
+    })));
+
+    // Volume histogram (bottom 20%)
+    const hasVol = ohlc.some(d => (d.volume ?? 0) > 0);
+    if (hasVol) {
+        _mobSdVol = _mobSdChart.addHistogramSeries({
+            priceFormat: { type: 'volume' },
+            priceScaleId: 'mobvol',
+        });
+        _mobSdChart.priceScale('mobvol').applyOptions({
+            scaleMargins: { top: 0.8, bottom: 0 },
+            drawTicks: false,
+        });
+        _mobSdVol.setData(ohlc.map(d => ({
+            time:  d.time,
+            value: d.volume ?? 0,
+            color: (d.close >= d.open) ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)',
+        })));
+    }
+
+    _mobSdChart.timeScale().fitContent();
+
+    // Resize observer
+    _mobSdResizeOb = new ResizeObserver(() => {
+        if (_mobSdChart && container.clientWidth)
+            _mobSdChart.applyOptions({ width: container.clientWidth });
+    });
+    _mobSdResizeOb.observe(container);
+}
+
 function updateStockList() {
     const list    = document.getElementById('stock-list');
     const showBtn = document.getElementById('stock-show-more-btn');
@@ -1417,8 +1554,13 @@ function updateStockList() {
             <td class="pct-col"><span dir="ltr" class="inline-block" style="color:${pctColor(pct).text};background:${pctColor(pct).bg};padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700">${up ? '+' : ''}${pct}%</span></td>
             <td class="text-center"><button onclick="event.stopPropagation();quickBuy('${name}')" style="background:#16a34a;color:#fff;border:none;border-radius:4px;font-size:9px;font-weight:700;padding:2px 5px;cursor:pointer">קנה</button></td>`;
         tr.onclick = () => {
-            _pinnedStock = (_pinnedStock === name) ? null : name; // toggle pin
-            currentStock = name; _lwStock = null; drawChart(); openStockWindow(name);
+            _pinnedStock = (_pinnedStock === name) ? null : name;
+            currentStock = name; _lwStock = null;
+            if (window.innerWidth <= 768) {
+                showMobStockDetail(name);
+            } else {
+                drawChart(); openStockWindow(name);
+            }
             updateStockList();
         };
         list.appendChild(tr);
