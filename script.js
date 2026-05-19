@@ -2733,7 +2733,7 @@ function renderPnLClient(holdingsData) {
         <div style="display:${window.innerWidth <= 600 ? 'none' : 'block'}">${gaugeSvg}</div>
     </div>
 
-    <div id="pnl-table-wrap" style="border-radius:10px;border:1px solid #e5e7eb;margin-bottom:14px;overflow-y:auto;max-height:${Math.min(rows.length * 66 + 40, 360)}px">
+    <div id="pnl-table-wrap" style="border-radius:10px;border:1px solid #e5e7eb;margin-bottom:14px;overflow-y:auto;max-height:${Math.min(rows.length * 66 + 80, 400)}px">
     <table style="width:100%;border-collapse:collapse;font-size:12px;direction:rtl;table-layout:fixed">
         <colgroup>
             <col style="width:${isMob?'38%':'34%'}">
