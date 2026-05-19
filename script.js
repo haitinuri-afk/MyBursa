@@ -1410,7 +1410,7 @@ function switchMobSdTf(tf) {
 }
 
 async function showMobStockDetail(name) {
-    const panel = document.getElementById('mob-stock-detail');
+    const panel = document.getElementById('mob-candle-panel');
     if (!panel) return;
 
     _mobSdStock = name;
@@ -1437,6 +1437,9 @@ async function showMobStockDetail(name) {
     }
 
     panel.style.display = 'block';
+    // hide the existing portfolio detail panel to avoid conflict
+    const oldDetail = document.getElementById('mob-stock-detail');
+    if (oldDetail) oldDetail.style.display = 'none';
     await renderMobSdChart(name, _mobSdTf);
 }
 
