@@ -4620,10 +4620,35 @@ function renderSalesLog() {
 
     // Attach delete button listeners
     tbody.querySelectorAll('._sale-del-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            if (!confirm(`למחוק את רשומת המכירה של ${btn.dataset.name}?`)) return;
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const id   = btn.dataset.saleId;
+            const name = btn.dataset.name;
+            if (!id) { showToast('אין מזהה לרשומה', { color: '#dc2626' }); return; }
+
+            // Inline confirm: first click turns button red + shows "אישור?"
+            if (!btn._confirmPending) {
+                btn._confirmPending = true;
+                const orig = btn.textContent;
+                btn.textContent = 'אישור?';
+                btn.style.color  = '#dc2626';
+                btn.style.opacity = '1';
+                setTimeout(() => {
+                    if (btn._confirmPending) {
+                        btn._confirmPending = false;
+                        btn.textContent = orig;
+                        btn.style.color  = '';
+                        btn.style.opacity = '0.45';
+                    }
+                }, 3000);
+                return;
+            }
+
+            // Second click — confirmed
+            btn._confirmPending = false;
+            btn.textContent = '⏳';
             try {
-                const r = await fetch(`/api/sales/${btn.dataset.saleId}`, { method: 'DELETE' });
+                const r = await fetch(`/api/sales/${id}`, { method: 'DELETE' });
                 if (r.ok) { await refreshSalesData(); showToast('נמחק ✓', { color: '#6b7280', duration: 2000 }); }
                 else showToast('שגיאה במחיקה', { color: '#dc2626', duration: 3000 });
             } catch(e) { showToast('שגיאה', { color: '#dc2626' }); }
