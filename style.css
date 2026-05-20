@@ -978,8 +978,10 @@ canvas { width: 100% !important; height: 100% !important; }
 
 @media (max-width: 768px) {
 
-    body { overflow: auto; height: auto; min-height: 0; background: #f0f2f5; }
-    .main-wrapper { height: auto; min-height: 0; padding: 0; gap: 0; padding-bottom: 72px; }
+    body { overflow: auto !important; height: auto !important; min-height: 0 !important; background: #f0f2f5; }
+    html { height: auto !important; overflow: auto !important; }
+    .main-wrapper { height: auto !important; min-height: 0 !important; padding: 0; gap: 0; padding-bottom: 72px; }
+    .dashboard-grid { min-height: 0 !important; }
 
     /* ── Header ── */
     header.top-bar {
@@ -1221,8 +1223,6 @@ canvas { width: 100% !important; height: 100% !important; }
     /* Real estate card hidden on mobile */
     #win-realestate { display: none !important; }
 
-    /* Portfolio analytics hidden on mobile — appears empty */
-    #win-portfolio-analytics { display: none !important; }
 
     /* ── Portfolio ── */
     #win-portfolio .scroll-container { min-height: 200px; }
