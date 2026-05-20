@@ -979,7 +979,7 @@ canvas { width: 100% !important; height: 100% !important; }
 @media (max-width: 768px) {
 
     body { overflow: auto; height: auto; min-height: 100vh; background: #f0f2f5; }
-    .main-wrapper { height: auto; min-height: 100vh; padding: 0; gap: 0; padding-bottom: 72px; }
+    .main-wrapper { height: auto; min-height: auto; padding: 0; gap: 0; padding-bottom: 72px; }
 
     /* ── Header ── */
     header.top-bar {
