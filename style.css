@@ -1210,10 +1210,13 @@ canvas { width: 100% !important; height: 100% !important; }
 
     /* Reset desktop fixed heights for mobile */
     #win-portfolio, #win-simulator, #win-portfolio-analytics,
-    #win-stocks, #win-indices-tase, #win-main-chart, #win-realestate {
+    #win-stocks, #win-indices-tase, #win-realestate {
         height: auto !important; width: 100% !important;
         position: static !important; top: auto !important; left: auto !important;
     }
+
+    /* Main chart hidden on mobile — replaced by inline mob-candle-panel */
+    #win-main-chart:not(.mob-chart-open) { display: none !important; }
 
     /* ── Portfolio ── */
     #win-portfolio .scroll-container { min-height: 200px; }
