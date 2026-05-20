@@ -3123,7 +3123,7 @@ let highestZIndex = 100;
 // ── Mobile Tabs ─────────────────────────────────────────────────────────────
 const MOB_TABS = {
     market:    ['win-indices-tase', 'win-stocks'],
-    portfolio: ['win-portfolio', 'win-simulator', 'win-portfolio-analytics'],
+    portfolio: ['win-portfolio', 'win-simulator'],
     analysis:  ['win-ai-insights'],
 };
 const MOB_ALL = Object.values(MOB_TABS).flat();
