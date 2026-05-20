@@ -1218,6 +1218,9 @@ canvas { width: 100% !important; height: 100% !important; }
     /* Main chart hidden on mobile — replaced by inline mob-candle-panel */
     #win-main-chart:not(.mob-chart-open) { display: none !important; }
 
+    /* Real estate card hidden on mobile */
+    #win-realestate { display: none !important; }
+
     /* ── Portfolio ── */
     #win-portfolio .scroll-container { min-height: 200px; }
 
