@@ -270,14 +270,6 @@ let _lwChart    = null;
 let _lwSeries   = null;
 let _lwVolume   = null;
 let _lwStock    = null;
-
-// ── Mobile inline stock chart state ─────────────────────────────────────────
-let _mobSdChart  = null;
-let _mobSdCandle = null;
-let _mobSdVol    = null;
-let _mobSdStock  = null;
-let _mobSdTf     = 'intraday';
-let _mobSdResizeOb = null;
 let _lwTf       = null;
 let _lwResizeOb = null;  // singleton ResizeObserver for the main chart
 
@@ -333,7 +325,7 @@ function isMarketOpen() {
     const [h, m] = timePart.split(':').map(Number);
     const day = new Date(y, mo - 1, d).getDay(); // 0=Sun..6=Sat
     const mins = h * 60 + m;
-    return day >= 1 && day <= 5 && mins >= 585 && mins < 1050; // Mon–Fri 9:45–17:30 (TASE: Sun closed, Sat closed)
+    return day >= 1 && day <= 5 && mins >= 585 && mins < 1050; // Mon–Fri 9:45–17:30
 }
 
 function scheduleFetch() {
@@ -527,21 +519,6 @@ async function refreshRealData() {
     drawChart(); drawIndexChart(); updateAllStockWindows();
     checkPortfolioAlerts();
     saveState();
-
-    // Auto-fix zero-profit sales once prices are live
-    if (liveCount > 0 && !window._salesZeroFixed) {
-        window._salesZeroFixed = true;
-        setTimeout(() => _autoFixZeroSales(_salesData).then(fixed => {
-            if (fixed) refreshSalesData();
-        }), 500);
-    }
-
-    // Auto-show first stock chart on mobile after prices load
-    if (liveCount > 0 && !window._mobSdInitDone && window.innerWidth <= 768) {
-        window._mobSdInitDone = true;
-        const firstStock = Object.keys(stocksData).find(n => stocksData[n]?.price > 0);
-        if (firstStock) showMobStockDetail(firstStock).then(() => _fillMobileTab('market'));
-    }
     scheduleFetch();
 }
 
@@ -877,15 +854,15 @@ function openStockWindow(name) {
         <div class="window-header">
             <div style="display:flex;align-items:center;gap:8px">
                 <h3>${name}</h3>
-                <button data-win-buy style="background:#16a34a;color:#fff;border:none;border-radius:12px;font-size:11px;font-weight:700;padding:2px 10px;cursor:pointer">קנה</button>
+                <button onclick="event.stopPropagation();quickBuy('${name}')" style="background:#16a34a;color:#fff;border:none;border-radius:12px;font-size:11px;font-weight:700;padding:2px 10px;cursor:pointer">קנה</button>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
                 <div class="timeframe-buttons" style="margin:0">
                     ${['day','week','month','3months'].map(tf => `
-                        <button id="tf-${name}-${tf}" data-win-tf="${tf}" class="${tf==='day'?'active':''}">${tfLabels[tf]}</button>
+                        <button id="tf-${name}-${tf}" class="${tf==='day'?'active':''}" onclick="updateStockWindowTf('${name}','${tf}')">${tfLabels[tf]}</button>
                     `).join('')}
                 </div>
-                <button data-win-close style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text3);line-height:1;padding:2px 4px">✕</button>
+                <button onclick="closeStockWindow('${name}')" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text3);line-height:1;padding:2px 4px">✕</button>
             </div>
         </div>
         <div class="card-body" style="padding:8px 12px">
@@ -910,10 +887,6 @@ function openStockWindow(name) {
     `;
 
     dashboard.appendChild(card);
-    card.querySelector('[data-win-close]').addEventListener('click', () => closeStockWindow(name));
-    card.querySelector('[data-win-buy]').addEventListener('click', e => { e.stopPropagation(); quickBuy(name); });
-    card.querySelectorAll('[data-win-tf]').forEach(btn =>
-        btn.addEventListener('click', () => updateStockWindowTf(name, btn.dataset.winTf)));
     makeDraggable(card);
     makeResizable(card);
 
@@ -1400,131 +1373,6 @@ function updateMiniIndicesBar() {
     });
 }
 
-// ── Mobile inline candlestick chart ─────────────────────────────────────────
-function switchMobSdTf(tf) {
-    _mobSdTf = tf;
-    document.querySelectorAll('.mob-sd-tf').forEach(b =>
-        b.classList.toggle('active', b.dataset.tf === tf)
-    );
-    if (_mobSdStock) renderMobSdChart(_mobSdStock, tf);
-}
-
-async function showMobStockDetail(name) {
-    const panel = document.getElementById('mob-candle-panel');
-    if (!panel) return;
-
-    _mobSdStock = name;
-    const sd    = stocksData[name] ?? {};
-    const price = sd.price ?? 0;
-    const prev  = (sd.initial > 0) ? sd.initial : price;
-    const pct   = prev > 0 ? ((price - prev) / prev * 100) : 0;
-    const up    = pct >= 0;
-    const ticker = STOCK_SYMBOLS[name] ?? '';
-
-    const nameEl   = document.getElementById('mob-sd-name');
-    const tickerEl = document.getElementById('mob-sd-ticker');
-    const priceEl  = document.getElementById('mob-sd-price');
-    const pctEl    = document.getElementById('mob-sd-pct');
-
-    if (nameEl)   nameEl.textContent  = name;
-    if (tickerEl) tickerEl.textContent = ticker;
-    if (priceEl)  priceEl.textContent  = price > 0
-        ? `₪${price.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        : '—';
-    if (pctEl) {
-        pctEl.textContent = `${up ? '+' : ''}${pct.toFixed(2)}%`;
-        pctEl.style.color = up ? '#10b981' : '#ef4444';
-    }
-
-    panel.style.display = 'block';
-    // hide the existing portfolio detail panel to avoid conflict
-    const oldDetail = document.getElementById('mob-stock-detail');
-    if (oldDetail) oldDetail.style.display = 'none';
-    await renderMobSdChart(name, _mobSdTf);
-}
-
-async function renderMobSdChart(name, tf) {
-    const container = document.getElementById('mob-sd-chart');
-    if (!container) return;
-
-    // loading state
-    container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:12px">טוען...</div>`;
-
-    const sym = STOCK_SYMBOLS[name];
-    if (!sym) {
-        container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:12px">אין נתוני גרף</div>`;
-        return;
-    }
-
-    const { range, interval } = tfToOhlcRange(tf);
-    const isIntraday = tf === 'intraday';
-    const { ohlc } = await fetchHistoricalOHLC(sym, range, interval);
-
-    if (!ohlc.length) {
-        container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;font-size:12px">אין נתונים היסטוריים</div>`;
-        return;
-    }
-
-    // destroy old chart + observer
-    if (_mobSdResizeOb) { _mobSdResizeOb.disconnect(); _mobSdResizeOb = null; }
-    if (_mobSdChart)    { try { _mobSdChart.remove(); } catch(e) {} _mobSdChart = null; }
-    container.innerHTML = '';
-
-    const dark   = document.documentElement.getAttribute('data-theme') === 'dark';
-    const bg     = dark ? '#1a1d23' : '#ffffff';
-    const txtClr = dark ? '#9aa0a6' : '#374151';
-
-    _mobSdChart = LightweightCharts.createChart(container, {
-        width:  container.clientWidth,
-        height: container.clientHeight,
-        layout: { background: { color: bg }, textColor: txtClr, fontSize: 10,
-                  fontFamily: 'Inter,system-ui,sans-serif' },
-        grid:   { vertLines: { visible: false }, horzLines: { color: dark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' } },
-        crosshair:      { mode: 1, vertLine: { labelVisible: false }, horzLine: { labelVisible: true } },
-        rightPriceScale:{ borderVisible: false, scaleMargins: { top: 0.06, bottom: 0.22 } },
-        timeScale:      { borderVisible: false, timeVisible: isIntraday, secondsVisible: false, fixRightEdge: true },
-        handleScroll:   { mouseWheel: false, pressedMouseMove: true, touchMove: true },
-        handleScale:    { mouseWheel: false, pinch: true },
-    });
-
-    // Candlestick series
-    _mobSdCandle = _mobSdChart.addCandlestickSeries({
-        upColor: '#10b981', downColor: '#ef4444',
-        borderUpColor: '#10b981', borderDownColor: '#ef4444',
-        wickUpColor:   '#10b981', wickDownColor:   '#ef4444',
-    });
-    _mobSdCandle.setData(ohlc.map(d => ({
-        time: d.time, open: d.open, high: d.high, low: d.low, close: d.close
-    })));
-
-    // Volume histogram (bottom 20%)
-    const hasVol = ohlc.some(d => (d.volume ?? 0) > 0);
-    if (hasVol) {
-        _mobSdVol = _mobSdChart.addHistogramSeries({
-            priceFormat: { type: 'volume' },
-            priceScaleId: 'mobvol',
-        });
-        _mobSdChart.priceScale('mobvol').applyOptions({
-            scaleMargins: { top: 0.8, bottom: 0 },
-            drawTicks: false,
-        });
-        _mobSdVol.setData(ohlc.map(d => ({
-            time:  d.time,
-            value: d.volume ?? 0,
-            color: (d.close >= d.open) ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)',
-        })));
-    }
-
-    _mobSdChart.timeScale().fitContent();
-
-    // Resize observer
-    _mobSdResizeOb = new ResizeObserver(() => {
-        if (_mobSdChart && container.clientWidth)
-            _mobSdChart.applyOptions({ width: container.clientWidth });
-    });
-    _mobSdResizeOb.observe(container);
-}
-
 function updateStockList() {
     const list    = document.getElementById('stock-list');
     const showBtn = document.getElementById('stock-show-more-btn');
@@ -1557,13 +1405,8 @@ function updateStockList() {
             <td class="pct-col"><span dir="ltr" class="inline-block" style="color:${pctColor(pct).text};background:${pctColor(pct).bg};padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700">${up ? '+' : ''}${pct}%</span></td>
             <td class="text-center"><button onclick="event.stopPropagation();quickBuy('${name}')" style="background:#16a34a;color:#fff;border:none;border-radius:4px;font-size:9px;font-weight:700;padding:2px 5px;cursor:pointer">קנה</button></td>`;
         tr.onclick = () => {
-            _pinnedStock = (_pinnedStock === name) ? null : name;
-            currentStock = name; _lwStock = null;
-            if (window.innerWidth <= 768) {
-                showMobStockDetail(name);
-            } else {
-                drawChart(); openStockWindow(name);
-            }
+            _pinnedStock = (_pinnedStock === name) ? null : name; // toggle pin
+            currentStock = name; _lwStock = null; drawChart(); openStockWindow(name);
             updateStockList();
         };
         list.appendChild(tr);
@@ -1577,11 +1420,6 @@ function updateStockList() {
             : `▼ הצג עוד (${names.length - STOCK_LIST_LIMIT})`;
     }
     updateMiniIndicesBar();
-    // Re-fill tab space whenever stock list updates (content height may have changed)
-    if (window.innerWidth <= 768) {
-        const tab = document.querySelector('.mob-tab.active')?.dataset.tab || 'market';
-        setTimeout(() => _fillMobileTab(tab), 0);
-    }
 }
 
 
@@ -1717,7 +1555,7 @@ function updatePortfolioList() {
     const totalDisplay = document.getElementById('total-portfolio-value');
     if (!list || !totalDisplay) return;
     list.innerHTML = "";
-    let totalValue = 0, totalCost = 0, plValue = 0, plCost = 0, openValue = 0, openCount = 0, totalDailyPL = 0;
+    let totalValue = 0, totalCost = 0, openValue = 0, openCount = 0, totalDailyPL = 0;
     const mobCards = document.getElementById('mob-ptf-cards');
     if (mobCards) mobCards.innerHTML = '';
 
@@ -1730,17 +1568,6 @@ function updatePortfolioList() {
         const positionValue = p.qty * currentPrice;
         totalValue += positionValue;
         totalCost  += costBasis;
-        // P&L: count only lots with known price (exclude zero-price lots)
-        const validLots = (p.lots || []).filter(l => l.price > 0);
-        if (validLots.length > 0) {
-            const vQty  = validLots.reduce((s, l) => s + (l.qty || 0), 0);
-            const vCost = validLots.reduce((s, l) => s + (l.qty || 0) * l.price, 0);
-            plValue += vQty * currentPrice;
-            plCost  += vCost;
-        } else if (costBasis > 0) {
-            plValue += positionValue;
-            plCost  += costBasis;
-        }
         if (stock.initial > 0) {
             openValue   += p.qty * stock.initial;
             totalDailyPL += p.qty * (currentPrice - stock.initial);
@@ -1800,11 +1627,12 @@ function updatePortfolioList() {
     });
 
     if (openCount > 0) window._portfolioOpenVal = openValue;
+    window._portfolioDailyPL = totalDailyPL;   // expose for equity trend indicator
     snapshotPortfolioValue(totalValue);
     // Keep server summary in sync with latest market value (best-effort, non-blocking)
     fetchPortfolioSummary();
-    const totalPL    = plCost > 0 ? calculatePctChange(plValue, plCost) : "0.00";
-    const totalPLils = plValue - plCost;
+    const totalPL    = totalCost > 0 ? calculatePctChange(totalValue, totalCost) : "0.00";
+    const totalPLils = totalValue - totalCost;
     const c          = pctColor(totalPL);
     const plSign     = totalPLils >= 0 ? '+' : '-';
     // ── Desktop footer ──
@@ -2074,76 +1902,6 @@ function confirmSellModal() {
     if (symbol && qty > 0) sellStock(symbol, qty);
 }
 
-// ── Edit Sale Modal ────────────────────────────────────────────────────────────
-function editSaleRow(id, sellPrice, buyPrice, quantity, name) {
-    const m = document.getElementById('edit-sale-modal');
-    if (!m) return;
-    m.dataset.saleId = id;
-    document.getElementById('esm-name').textContent = name;
-
-    // Auto-fill sell price from live data if stored value is 0
-    let sp = sellPrice;
-    if (!(sp > 0)) {
-        sp = stocksData[name]?.price ?? 0;
-    }
-
-    // Buy price: use portfolio.buyPrice (total cost / total qty — includes zero-price lots)
-    // This gives the true economic average, not just the valid-lot subset
-    let bp = buyPrice;
-    if (!(bp > 0)) {
-        const holding = portfolio[name];
-        bp = holding?.buyPrice ?? holding?.avgCost ?? 0;
-    }
-
-    document.getElementById('esm-sell-price').value = sp ? parseFloat(sp.toFixed(4)) : '';
-    document.getElementById('esm-buy-price').value  = bp ? parseFloat(bp.toFixed(4)) : '';
-    document.getElementById('esm-qty').value        = quantity || '';
-    _updateEditSalePreview();
-    m.style.display = 'flex';
-}
-function closeEditSaleModal() {
-    const m = document.getElementById('edit-sale-modal');
-    if (m) m.style.display = 'none';
-}
-function _updateEditSalePreview() {
-    const sp  = parseFloat(document.getElementById('esm-sell-price')?.value) || 0;
-    const bp  = parseFloat(document.getElementById('esm-buy-price')?.value)  || 0;
-    const qty = parseFloat(document.getElementById('esm-qty')?.value)        || 0;
-    const pnl = parseFloat(((sp - bp) * qty).toFixed(2));
-    const roi = bp > 0 ? ((sp - bp) / bp * 100).toFixed(2) : '—';
-    const el  = document.getElementById('esm-preview');
-    if (!el) return;
-    const col = pnl >= 0 ? '#16a34a' : '#dc2626';
-    el.innerHTML = `<span style="color:${col};font-weight:700">${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL',{minimumFractionDigits:2})}</span>
-        <span style="color:#6b7280;font-size:11px">&nbsp;ROI: ${roi !== '—' ? (parseFloat(roi) >= 0 ? '+' : '') + roi + '%' : '—'}</span>`;
-}
-async function confirmEditSaleModal() {
-    const m   = document.getElementById('edit-sale-modal');
-    if (!m) return;
-    const id  = m.dataset.saleId;
-    const sp  = parseFloat(document.getElementById('esm-sell-price').value);
-    const bp  = parseFloat(document.getElementById('esm-buy-price').value);
-    const qty = parseFloat(document.getElementById('esm-qty').value);
-    if (!id || isNaN(sp) || isNaN(bp) || isNaN(qty) || qty <= 0) return;
-    const btn = document.getElementById('esm-save-btn');
-    if (btn) btn.disabled = true;
-    try {
-        const r = await fetch(`/api/sales/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sellPrice: sp, buyPrice: bp, quantity: qty })
-        });
-        if (!r.ok) throw new Error('שגיאת שרת');
-        closeEditSaleModal();
-        await refreshSalesData();
-        showToast('הרשומה עודכנה ✓', { color: '#16a34a' });
-    } catch(e) {
-        showToast('שגיאה בעדכון: ' + e.message, { color: '#dc2626', duration: 4000 });
-    } finally {
-        if (btn) btn.disabled = false;
-    }
-}
-
 function sellStock(symbol, qtyToSell) {
     if (!portfolio[symbol]) return;
 
@@ -2157,20 +1915,6 @@ function sellStock(symbol, qtyToSell) {
     const avgPrice  = parseFloat(holding.buyPrice ?? holding.avgCost ?? 0);
     const { costBasis, remainingLots } = calcFifoCost(holding.lots ?? [], qty, avgPrice);
     const method    = (holding.lots?.length ?? 0) > 0 ? 'fifo' : 'weighted_avg';
-
-    // If FIFO consumed zero-price lots → use weighted avg of valid lots for P&L
-    let plCostBasis = costBasis;
-    if (costBasis === 0) {
-        const validLots = (holding.lots ?? []).filter(l => l.price > 0);
-        if (validLots.length > 0) {
-            const vCost = validLots.reduce((s, l) => s + l.qty * l.price, 0);
-            const vQty  = validLots.reduce((s, l) => s + l.qty, 0);
-            if (vQty > 0) plCostBasis = parseFloat(((vCost / vQty) * qty).toFixed(2));
-        } else if (avgPrice > 0) {
-            plCostBasis = parseFloat((avgPrice * qty).toFixed(2));
-        }
-    }
-    const plBuyPrice = qty > 0 ? plCostBasis / qty : avgPrice;
 
     if (qty >= maxQty) {
         delete portfolio[symbol];
@@ -2189,7 +1933,7 @@ function sellStock(symbol, qtyToSell) {
     updatePortfolioList();
     updateTransactionHistory();
 
-    // Persist to SalesHistory with accurate P&L
+    // Persist to SalesHistory with accurate FIFO costBasis
     if (sellPrice > 0) {
         fetch('/api/sales', {
             method: 'POST',
@@ -2198,9 +1942,9 @@ function sellStock(symbol, qtyToSell) {
                 symbol, name: symbol,
                 buyDate:  holding.buyDate ?? null,
                 sellDate: new Date().toISOString().split('T')[0],
-                buyPrice:  plBuyPrice,     // valid-lot weighted avg when FIFO gave 0
+                buyPrice: qty > 0 ? costBasis / qty : avgPrice,
                 sellPrice, quantity: qty,
-                costBasis: plCostBasis,    // adjusted cost basis for P&L
+                costBasis,   // FIFO-computed — overrides server default
                 method,
                 entryType: 'current',
             })
@@ -2254,27 +1998,18 @@ function initPortfolioAnalytics() {
 
         // Single pass: sector values + totals + beta
         const sectorVal = {};
-        let totalVal = 0, totalCost = 0, plVal = 0, plCost = 0, betaWeighted = 0, totalDailyPL = 0, openVal = 0;
+        let totalVal = 0, totalCost = 0, betaWeighted = 0, totalDailyPL = 0, openVal = 0;
         names.forEach(name => {
             const h        = ptf[name];
+            // stocksData already has live prices mapped to Hebrew names
             const cur      = stocksData[name]?.price ?? h.buyPrice ?? h.avgPrice ?? 0;
             const initial  = stocksData[name]?.initial ?? 0;
             const qty      = h.qty ?? h.quantity ?? h.shares ?? h.amount ?? h.units ?? h.count ?? 0;
             const buyPrice = h.buyPrice ?? h.avgPrice ?? h.avgCost ?? cur;
             const val      = cur * qty;
             const cost     = h.totalCost ?? (buyPrice * qty);
-            totalVal  += val;
-            totalCost += cost;
-            const validLots = (h.lots || []).filter(l => l.price > 0);
-            if (validLots.length > 0) {
-                const vQty  = validLots.reduce((s, l) => s + (l.qty || 0), 0);
-                const vCost = validLots.reduce((s, l) => s + (l.qty || 0) * l.price, 0);
-                plVal  += vQty * cur;
-                plCost += vCost;
-            } else if (cost > 0) {
-                plVal  += val;
-                plCost += cost;
-            }
+            totalVal      += val;
+            totalCost     += cost;
             betaWeighted  += val * (_BETAS[name] ?? 1.0);
             if (initial > 0) { openVal += qty * initial; totalDailyPL += qty * (cur - initial); }
             const sector   = Object.entries(_SECTORS_CLIENT).find(([, s]) => s.includes(name))?.[0] ?? 'אחר';
@@ -2303,8 +2038,8 @@ function initPortfolioAnalytics() {
         const diversification = Object.keys(sectorVal).length >= 4 ? 'טובה' : 'מוגבלת';
 
         // Derived metrics
-        const totalPnL     = plVal - plCost;
-        const totalPnLPct  = plCost > 0 ? (totalPnL / plCost * 100) : 0;
+        const totalPnL     = totalVal - totalCost;
+        const totalPnLPct  = totalCost > 0 ? (totalPnL / totalCost * 100) : 0;
         const portfolioBeta = totalVal > 0 ? (betaWeighted / totalVal) : 1.0;
         const hhi          = sectors.reduce((s, sec) => s + (sec.value / 100) ** 2, 0);
         const divScore     = Math.round((1 - hhi) * 100);
@@ -2399,73 +2134,34 @@ function closeInsightsPanel() {
     const backdrop = document.getElementById('insights-backdrop');
     if (!panel) return;
     const isMob = window.innerWidth <= 768;
-    if (isMob) {
-        panel.style.transform = 'translateY(100%)';
-    } else {
-        panel.style.opacity   = '0';
-        panel.style.transform = 'translate(-50%,-48%) scale(0.96)';
-    }
+    panel.style.opacity   = isMob ? '1' : '0';
+    panel.style.transform = isMob ? 'translateY(100%)' : 'translate(-50%,-48%) scale(0.96)';
     if (backdrop) { backdrop.style.opacity = '0'; backdrop.style.pointerEvents = 'none'; }
     setTimeout(() => {
         panel.style.display = 'none';
         if (backdrop) { backdrop.style.display = 'none'; backdrop.style.pointerEvents = ''; }
-    }, 280);
+    }, 260);
 }
 
 function openInsightsPanel() {
     const panel    = document.getElementById('win-ai-insights');
     const backdrop = document.getElementById('insights-backdrop');
     if (!panel) return;
+    // Already visible — don't restart animation
     if (panel.style.display === 'flex' && panel.style.opacity === '1') {
         if (!_insightsHistoryData) loadInsightsHistory();
         return;
     }
-    const isMob = window.innerWidth <= 768;
-
-    // Apply correct position for mobile (bottom-sheet) vs desktop (centered)
-    if (isMob) {
-        Object.assign(panel.style, {
-            display: 'flex',
-            position: 'fixed',
-            top: 'auto',
-            bottom: '0',
-            left: '0',
-            right: '0',
-            width: '100%',
-            maxWidth: '100%',
-            maxHeight: '88vh',
-            borderRadius: '20px 20px 0 0',
-            transform: 'translateY(100%)',
-            opacity: '1',
-            transition: 'transform .28s cubic-bezier(.4,0,.2,1)',
-        });
-    } else {
-        Object.assign(panel.style, {
-            display: 'flex',
-            position: 'fixed',
-            top: '50%',
-            bottom: 'auto',
-            left: '50%',
-            right: 'auto',
-            width: 'min(680px,92vw)',
-            maxWidth: '',
-            maxHeight: '84vh',
-            borderRadius: '22px',
-            transform: 'translate(-50%,-48%) scale(0.96)',
-            opacity: '0',
-            transition: 'opacity .22s,transform .22s',
-        });
-    }
-
-    // Show backdrop — no blur on mobile (performance), just dark overlay
+    // Show backdrop blur
     if (backdrop) {
-        backdrop.style.backdropFilter      = isMob ? 'none' : 'blur(6px)';
-        backdrop.style.webkitBackdropFilter = isMob ? 'none' : 'blur(6px)';
-        backdrop.style.background = isMob ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.08)';
-        backdrop.style.opacity    = '0';
-        backdrop.style.display    = 'block';
+        backdrop.style.opacity = '0';
+        backdrop.style.display = 'block';
     }
-
+    // Mobile: slide up from bottom. Desktop: scale from center.
+    const isMob = window.innerWidth <= 768;
+    panel.style.display   = 'flex';
+    panel.style.opacity   = isMob ? '1' : '0';
+    panel.style.transform = isMob ? 'translateY(30px)' : 'translate(-50%,-48%) scale(0.96)';
     requestAnimationFrame(() => requestAnimationFrame(() => {
         panel.style.opacity   = '1';
         panel.style.transform = isMob ? 'translateY(0)' : 'translate(-50%,-50%) scale(1)';
@@ -2484,6 +2180,7 @@ function switchInsightsTab(tab) {
     if (tab === 'pnl') renderPnLClient(_insightsHistoryData?.holdings);
     if (tab === 'perf') {
         renderPerformanceTabClient();
+        // Re-render after historical fetches complete (baseWeek/Month/3m loaded async)
         setTimeout(() => { if (document.getElementById('itab-content-perf')?.style.display !== 'none') renderPerformanceTabClient(); }, 4000);
         setTimeout(() => { if (document.getElementById('itab-content-perf')?.style.display !== 'none') renderPerformanceTabClient(); }, 10000);
     }
@@ -2603,40 +2300,31 @@ function renderPnLClient(holdingsData) {
     // ── Build data ─────────────────────────────────────────────────────────
     // Always use client-side stocksData for prices (Yahoo Finance, in shekels).
     // Server holdingsData enriches with purchaseDate + sector only.
-    let rows = [], totalCost = 0;
+    let rows = [], totalVal = 0, totalCost = 0, dailyPnl = 0;
 
     const serverMap = {};
     (holdingsData ?? []).forEach(h => { serverMap[h.name] = h; });
-
-    // When market is closed (weekends / off-hours) freeze daily figures at 0
-    // to prevent after-hours noise / FX drift from polluting the display.
-    const marketClosed = !isMarketOpen();
 
     const ptf = portfolio ?? {};
     Object.entries(ptf).forEach(([name, h]) => {
         const sd  = stocksData[name] ?? {};
         const cur = sd.price ?? 0;
-        // previous close: only valid when explicitly > 0
-        const prev = (sd.initial > 0) ? sd.initial : 0;
+        const prev = sd.initial ?? cur;
         const qty = h.qty ?? h.quantity ?? h.shares ?? 0;
         const buyPrice = parseFloat(h.buyPrice ?? h.avgCost ?? 0);
         const cost = h.totalCost ?? (buyPrice * qty);
-        // Only include in rows when all values are usable
+        const mktValue = cur * qty;
+        totalVal += mktValue; totalCost += cost;
+        const dayIls = (cur - prev) * qty;
+        dailyPnl += dayIls;
         if (qty && buyPrice && cur > 0) {
-            // When market is closed: pin cur to prev to eliminate after-hours drift
-            const effectiveCur = (marketClosed && prev > 0) ? prev : cur;
-            const mktValue = effectiveCur * qty;
-            // Daily figures: freeze at 0 when market is closed
-            const dayIls    = (!marketClosed && prev > 0) ? (effectiveCur - prev) * qty : 0;
-            const dayPctVal = (!marketClosed && prev > 0) ? ((effectiveCur - prev) / prev * 100).toFixed(2) : '0';
             const srv = serverMap[name] ?? {};
-            totalCost += cost;
             rows.push({
-                name, qty, buyPrice, curPrice: effectiveCur,
+                name, qty, buyPrice, curPrice: cur,
                 mktValue: Math.round(mktValue), costBasis: Math.round(cost),
                 inceptionPnlIls: Math.round(mktValue - cost),
-                inceptionPnlPct: buyPrice > 0 ? ((effectiveCur - buyPrice) / buyPrice * 100).toFixed(2) : '0',
-                dayChangePct: dayPctVal,
+                inceptionPnlPct: buyPrice > 0 ? ((cur - buyPrice) / buyPrice * 100).toFixed(2) : '0',
+                dayChangePct: prev > 0 ? ((cur - prev) / prev * 100).toFixed(2) : '0',
                 dayChangeIls: Math.round(dayIls),
                 purchaseDate: srv.purchaseDate ?? null,
                 sector: srv.sector ?? 'אחר'
@@ -2645,13 +2333,8 @@ function renderPnLClient(holdingsData) {
     });
     rows.sort((a, b) => b.inceptionPnlIls - a.inceptionPnlIls);
 
-    // totalVal and dailyPnl derived exclusively from visible rows — no "ghost" stocks
-    const totalVal = rows.reduce((s, r) => s + r.mktValue, 0);
-    const dailyPnl = rows.reduce((s, r) => s + r.dayChangeIls, 0);
-
     const cumPnl  = totalVal - totalCost;
     const cumPct  = totalCost > 0 ? (cumPnl / totalCost * 100) : 0;
-    // dayPct = dailyPnl / yesterday's value (today − gain = yesterday)
     const dayBase = totalVal - dailyPnl;
     const dayPct  = dayBase > 0 ? (dailyPnl / dayBase * 100) : 0;
 
@@ -2696,26 +2379,22 @@ function renderPnLClient(holdingsData) {
 
     // ── P&L table rows ─────────────────────────────────────────────────────
     const isMob = window.innerWidth <= 600;
-    const tdP   = isMob ? '10px 6px' : '12px 8px';
+    const tdP   = isMob ? '5px 4px' : '7px 6px';
     let tRows = '';
     rows.forEach(h => {
-        tRows += `<tr style="border-bottom:1px solid #f1f5f9;background:#fff;transition:background 0.12s"
-            onmouseenter="this.style.background='#f8fafc'"
-            onmouseleave="this.style.background='#fff'">
-            <td style="padding:${isMob?'10px 6px':tdP}">
-                <div style="font-weight:700;font-size:${isMob?'11':'13'}px;color:var(--text);white-space:nowrap">${h.name}</div>
-                <div style="font-size:10px;color:#94a3b8;margin-top:2px">₪${parseFloat(h.curPrice).toLocaleString('he-IL')}</div>
+        const pnlPos = h.inceptionPnlIls >= 0;
+        const rowBg  = pnlPos ? 'rgba(16,185,129,0.04)' : 'rgba(239,68,68,0.04)';
+        tRows += `<tr class="pnl-tr" data-bg="${rowBg}" style="border-bottom:1px solid var(--border);background:${rowBg};transition:background 0.12s"
+            onmouseenter="this.style.background='rgba(0,0,0,0.05)'"
+            onmouseleave="this.style.background=this.dataset.bg">
+            <td style="padding:${isMob?'5px 6px':tdP}">
+                <div style="font-weight:700;font-size:${isMob?'11':'12'}px;color:var(--text)">${h.name}</div>
+                <div style="font-size:9px;color:var(--text3);margin-top:1px">₪${parseFloat(h.buyPrice).toLocaleString('he-IL')} · ${fmtDate(h.purchaseDate)}</div>
             </td>
-            ${isMob ? '' : `<td style="padding:${tdP};text-align:center;font-size:12px;color:var(--text);font-weight:500">${h.qty.toLocaleString('he-IL')}</td>`}
-            <td style="padding:${tdP};text-align:right;direction:ltr;font-size:12px;font-weight:600;color:var(--text)">₪${h.mktValue.toLocaleString('he-IL')}</td>
-            <td style="padding:${tdP};text-align:right">
-                <div style="font-weight:600;font-size:11px">${pill(h.dayChangeIls,h.dayChangePct)}</div>
-                <div style="font-size:10px;margin-top:3px;direction:ltr">${money(h.dayChangeIls,10)}</div>
-            </td>
-            <td style="padding:${tdP};text-align:right">
-                <div style="font-weight:600;font-size:11px">${pill(h.inceptionPnlIls,h.inceptionPnlPct)}</div>
-                <div style="font-size:10px;margin-top:3px;direction:ltr">${money(h.inceptionPnlIls,10)}</div>
-            </td>
+            ${isMob ? '' : `<td style="padding:${tdP};text-align:center;font-size:11px;color:var(--text3);font-weight:500">${h.qty}</td>`}
+            <td style="padding:${tdP};text-align:right;direction:ltr;font-size:${isMob?'10':'11'}px;font-weight:600;color:var(--text)">₪${h.mktValue.toLocaleString('he-IL')}</td>
+            <td style="padding:${tdP};text-align:right">${pill(h.dayChangeIls,h.dayChangePct)}<div style="font-size:9px;margin-top:1px;direction:ltr">${money(h.dayChangeIls,10)}</div></td>
+            <td style="padding:${tdP};text-align:right">${pill(h.inceptionPnlIls,h.inceptionPnlPct)}<div style="font-size:9px;margin-top:1px;direction:ltr">${money(h.inceptionPnlIls,10)}</div></td>
         </tr>`;
     });
 
@@ -2731,7 +2410,7 @@ function renderPnLClient(holdingsData) {
                     ${money(dailyPnl,14)}<br><span style="display:inline-block;margin-top:3px">${pill(dailyPnl,dayPct)}</span>
                 </div>
                 <div style="text-align:center;padding:6px 8px">
-                    <div style="font-size:10px;color:var(--text3);margin-bottom:3px">P&amp;L פתוח</div>
+                    <div style="font-size:10px;color:var(--text3);margin-bottom:3px">רווח מצטבר</div>
                     ${money(cumPnl,14)}<br><span style="display:inline-block;margin-top:3px">${pill(cumPnl,cumPct)}</span>
                 </div>
             </div>
@@ -2748,29 +2427,16 @@ function renderPnLClient(holdingsData) {
         <div style="display:${window.innerWidth <= 600 ? 'none' : 'block'}">${gaugeSvg}</div>
     </div>
 
-    <div id="pnl-table-wrap" style="border-radius:10px;border:1px solid #e5e7eb;margin-bottom:14px;overflow-y:auto;max-height:${Math.min(rows.length * 66 + 80, 400)}px">
-    <table style="width:100%;border-collapse:collapse;font-size:12px;direction:rtl;table-layout:fixed">
-        <colgroup>
-            <col style="width:${isMob?'38%':'34%'}">
-            ${isMob ? '' : `<col style="width:10%">`}
-            <col style="width:${isMob?'22%':'18%'}">
-            <col style="width:${isMob?'20%':'19%'}">
-            <col style="width:${isMob?'20%':'19%'}">
-        </colgroup>
-        <thead><tr style="color:#6b7280;border-bottom:2px solid #e5e7eb;font-size:10px;background:#f9fafb;position:sticky;top:0;z-index:2">
-            <th style="text-align:right;padding:${isMob?'8px 6px':'8px 8px'};font-weight:600">מניה</th>
-            ${isMob ? '' : `<th style="text-align:center;padding:8px 6px;font-weight:600">כמות</th>`}
-            <th style="text-align:right;padding:${isMob?'8px 4px':'8px 8px'};font-weight:600">שווי</th>
-            <th style="text-align:right;padding:${isMob?'8px 4px':'8px 8px'};font-weight:600">יומי</th>
-            <th style="text-align:right;padding:${isMob?'8px 4px':'8px 8px'};font-weight:600">P&amp;L</th>
+    <div id="pnl-table-wrap" style="border-radius:8px;border:1px solid var(--border);margin-bottom:14px;overflow-y:auto;max-height:${Math.min(rows.length * 58 + 36, 340)}px">
+    <table style="width:100%;border-collapse:collapse;font-size:11px;direction:rtl">
+        <thead><tr style="color:var(--text3);border-bottom:2px solid var(--border);font-size:10px;background:#f9fafb;position:sticky;top:0;z-index:2">
+            <th style="text-align:right;padding:${isMob?'5px 6px':'7px 8px'};font-weight:600">מניה</th>
+            ${isMob ? '' : `<th style="text-align:center;padding:7px 6px;font-weight:600">כמות</th>`}
+            <th style="text-align:right;padding:${isMob?'5px 4px':'7px 8px'};font-weight:600">שווי</th>
+            <th style="text-align:right;padding:${isMob?'5px 4px':'7px 8px'};font-weight:600">יומי</th>
+            <th style="text-align:right;padding:${isMob?'5px 4px':'7px 8px'};font-weight:600">P&amp;L</th>
         </tr></thead>
         <tbody>${tRows}</tbody>
-        <tfoot><tr style="background:#f9fafb;border-top:2px solid #e5e7eb">
-            <td colspan="${isMob ? 3 : 4}" style="padding:8px 8px;font-size:10px;font-weight:600;color:#6b7280;text-align:right">תרומה לרווח/הפסד המצטבר (₪)</td>
-            <td style="padding:8px 8px;text-align:right">
-                <div style="font-size:11px;font-weight:700;color:${cumPnl>=0?'#15803d':'#b91c1c'}">${cumPnl>=0?'+':'−'}₪${Math.abs(Math.round(cumPnl)).toLocaleString('he-IL')}</div>
-            </td>
-        </tr></tfoot>
     </table>
     </div>
 
@@ -3134,7 +2800,7 @@ let highestZIndex = 100;
 
 // ── Mobile Tabs ─────────────────────────────────────────────────────────────
 const MOB_TABS = {
-    market:    ['win-indices-tase', 'win-stocks'],
+    market:    ['win-indices-tase', 'win-stocks', 'win-realestate'],
     portfolio: ['win-portfolio', 'win-simulator', 'win-portfolio-analytics'],
     analysis:  ['win-ai-insights'],
 };
@@ -3207,37 +2873,6 @@ function switchMobileTab(tab) {
             Object.keys(activeStockWindows).forEach(n => activeStockWindows[n].chart?.resize());
         }, 80);
     }
-    // Fill remaining screen space after tab switch
-    setTimeout(() => _fillMobileTab(tab), 120);
-}
-
-function _fillMobileTab(tab) {
-    if (window.innerWidth > 768) return;
-    if (tab === 'analysis') return; // charts size themselves
-    requestAnimationFrame(() => {
-        const grid = document.getElementById('dashboard');
-        if (!grid) return;
-        const cards = [...grid.querySelectorAll('.card')].filter(
-            c => !c.classList.contains('mob-hidden') &&
-                 getComputedStyle(c).display !== 'none'
-        );
-        if (!cards.length) return;
-        // Reset min-height on all cards first
-        cards.forEach(c => c.style.removeProperty('min-height'));
-        // Measure gap between bottom of last card and top of tab bar
-        const lastCard = cards[cards.length - 1];
-        const tabBar   = document.getElementById('mobile-tabs');
-        const tabBarTop = tabBar
-            ? tabBar.getBoundingClientRect().top
-            : window.innerHeight - 64;
-        const cardRect = lastCard.getBoundingClientRect();
-        const gap = tabBarTop - cardRect.bottom - 8;
-        if (gap > 4) {
-            // Expand last card by the gap so its white background covers the void
-            const newMinH = Math.floor(cardRect.height + gap);
-            lastCard.style.setProperty('min-height', newMinH + 'px', 'important');
-        }
-    });
 }
 
 // ── Panel Picker ─────────────────────────────────────────────────────────────
@@ -3280,19 +2915,7 @@ function _renderPanelPicker() {
     `).join('');
 }
 
-// ── iOS Safari viewport-height fix ───────────────────────────────────────────
-// iOS URL bar collapses on scroll, making window.innerHeight grow and revealing
-// empty gray space below content. We capture the INITIAL height and pin it as
-// a CSS variable so the layout never grows beyond the original viewport.
-function _setMobVh() {
-    if (window.innerWidth > 768) return;
-    document.documentElement.style.setProperty('--mob-vh', window.innerHeight + 'px');
-}
-_setMobVh();
-window.addEventListener('resize', _setMobVh);
-
 document.addEventListener('DOMContentLoaded', () => {
-    _setMobVh(); // re-measure after DOM ready (fonts/UI settled)
     if (window.innerWidth <= 768) switchMobileTab('market');
     else resetWindows();   // apply default layout on desktop first load
     try { initWindowManager(); } catch(e) { console.error("Window manager failed:", e); }
@@ -4358,13 +3981,26 @@ function renderEquityBar() {
     const bar = document.getElementById('equity-progress-bar');
     const lbl = document.getElementById('equity-bar-labels');
     const eq  = document.getElementById('total-equity-value');
+    const trend = document.getElementById('equity-daily-trend');
     if (!s) return;
     const fmt = v => '₪' + Math.round(v).toLocaleString('he-IL');
     if (eq) eq.textContent = fmt(s.totalEquity);
     if (bar) bar.style.width = `${s.investedPct}%`;
     if (lbl) lbl.innerHTML =
-        `<span style="color:#1a73e8;font-weight:600">${fmt(s.totalMarketValue)} מושקע (${s.investedPct}%)</span>` +
-        `<span style="color:#16a34a;font-weight:600">${fmt(s.availableCash)} מזומן (${s.cashPct}%)</span>`;
+        `<span style="color:#1e40af;font-weight:600;font-size:10px">▪ מושקע ${fmt(s.totalMarketValue)} (${s.investedPct}%)</span>` +
+        `<span style="color:#059669;font-weight:600;font-size:10px">▪ מזומן ${fmt(s.availableCash)} (${s.cashPct}%)</span>`;
+    // Daily trend: use totalDailyPL stored from updatePortfolioList
+    if (trend) {
+        const dailyPL = window._portfolioDailyPL ?? 0;
+        const eq2 = s.totalEquity || 1;
+        const pct = ((dailyPL / eq2) * 100).toFixed(2);
+        if (dailyPL !== 0) {
+            const up = dailyPL >= 0;
+            trend.innerHTML = `<span style="color:${up?'#16a34a':'#dc2626'}">${up?'▲':'▼'} ${up?'+':''}${pct}% היום</span>`;
+        } else {
+            trend.textContent = '';
+        }
+    }
 }
 
 // ── Sales History ─────────────────────────────────────────────────────────────
@@ -4394,81 +4030,6 @@ function closeSalesModal() {
     document.getElementById('sales-modal').style.display = 'none';
 }
 
-// Auto-patch sale records that have sellPrice=0 (recorded during price-fetch failure)
-async function _autoFixZeroSales(sales) {
-    const toFix = (sales ?? []).filter(s =>
-        s._id && s.entryType === 'current' && s.quantity > 0 &&
-        Math.abs(s.profitLoss ?? 0) < 0.01
-    );
-    if (!toFix.length) return false;
-
-    // Fetch prices for records missing from stocksData, using STOCK_SYMBOLS for Hebrew→ticker
-    const missingNames = toFix.filter(s => !(stocksData[s.name ?? s.symbol]?.price > 0));
-    const priceByTicker = {};
-    if (missingNames.length) {
-        const tickers = [...new Set(missingNames.map(s => STOCK_SYMBOLS[s.name ?? s.symbol]).filter(Boolean))];
-        if (tickers.length) {
-            try {
-                const r = await fetch(`/api/stock/batch?symbols=${encodeURIComponent(tickers.join(','))}`);
-                const d = await r.json();
-                (d.quotes ?? []).forEach(q => { if (q.regularMarketPrice > 0) priceByTicker[q.symbol] = q.regularMarketPrice; });
-            } catch(_) {}
-        }
-    }
-
-    let fixed = 0;
-    for (const s of toFix) {
-        const name   = s.name ?? s.symbol;
-        const ticker = STOCK_SYMBOLS[name];
-        const sp     = stocksData[name]?.price ?? priceByTicker[ticker] ?? 0;
-        if (!(sp > 0)) { console.warn('[autoFix] no price for', name); continue; }
-
-        // Buy price: portfolio.buyPrice = totalCost / totalQty (all lots, incl. zero-price)
-        const holding = portfolio[name];
-        const bp = holding?.buyPrice ?? holding?.avgCost ?? 0;
-        console.log(`[autoFix] ${name}: sp=${sp} bp=${bp} qty=${s.quantity}`);
-
-        const id = typeof s._id === 'object' ? (s._id.$oid ?? String(s._id)) : String(s._id);
-        try {
-            const r = await fetch(`/api/sales/${id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sellPrice: sp, buyPrice: bp, quantity: s.quantity })
-            });
-            if (r.ok) fixed++;
-            else console.warn('[autoFix] PATCH failed', id, r.status, await r.text());
-        } catch(e) { console.warn('[autoFix] error', e); }
-    }
-
-    if (fixed > 0) {
-        showToast(`תוקנו ${fixed} רשומות ✓`, { color: '#4f8ef7', duration: 2500 });
-        return true;
-    }
-    return false;
-}
-
-// Exposed for manual "תקן" button
-async function manualFixZeroSales() {
-    const btn = document.getElementById('sales-fix-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'מתקן...'; }
-    try {
-        const didFix = await _autoFixZeroSales(_salesData);
-        if (didFix) {
-            const [r, s] = await Promise.all([
-                fetch(`/api/sales?period=${_salesPeriod}`),
-                fetch('/api/sales/summary'),
-            ]);
-            _salesData    = await r.json();
-            _salesSummary = await s.json();
-            renderSalesLog();
-            renderSalesSummary();
-            renderSalesInline();
-        }
-    } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'תקן'; }
-    }
-}
-
 async function refreshSalesData() {
     try {
         const [salesRes, summaryRes] = await Promise.all([
@@ -4477,20 +4038,6 @@ async function refreshSalesData() {
         ]);
         _salesData    = await salesRes.json();
         _salesSummary = await summaryRes.json();
-
-        // Auto-fix records saved with sellPrice=0 (if live prices are available)
-        if (Object.keys(stocksData).length > 0) {
-            const didFix = await _autoFixZeroSales(_salesData);
-            if (didFix) {
-                const [r2, s2] = await Promise.all([
-                    fetch(`/api/sales?period=${_salesPeriod}`),
-                    fetch('/api/sales/summary'),
-                ]);
-                _salesData    = await r2.json();
-                _salesSummary = await s2.json();
-            }
-        }
-
         renderSalesLog();
         renderSalesSummary();
         renderSalesInline();
@@ -4529,9 +4076,10 @@ function renderSalesSummary() {
     if (el('sales-base-cash'))
         el('sales-base-cash').textContent = `₪${(s.baseCash ?? 500000).toLocaleString('he-IL', { minimumFractionDigits: 0 })}`;
 
-    // Invested card
+    // Invested card — current market value of open positions (not cumulative purchases)
+    const investedNow = _portfolioSummary?.totalMarketValue ?? s.purchaseCosts ?? 0;
     if (el('sales-invested'))
-        el('sales-invested').textContent = `₪${(s.purchaseCosts ?? 0).toLocaleString('he-IL', { minimumFractionDigits: 0 })}`;
+        el('sales-invested').textContent = `₪${Math.round(investedNow).toLocaleString('he-IL')}`;
 
     // Realized P&L (period-aware)
     const pnl = (_salesPeriod === 'all' ? (s.realizedPNL ?? data?.totalProfitLoss) : data?.totalProfitLoss) ?? 0;
@@ -4605,110 +4153,46 @@ function renderSalesLog() {
     const tbody = document.getElementById('sales-log-body');
     if (!tbody) return;
 
-    // Hide only blank "יתרת פתיחה" rows (symbol='—'), keep all real trades
-    const _isBlankSetup = s => s.entryType === 'initial_setup' && (!s.symbol || s.symbol === '—');
-    const _isIndex = s => s.symbol &&
-        (['TA35','TA90','TA125','^TA35','^TA90','^TA125'].includes(s.symbol) ||
-        (!s.symbol.endsWith('.TA') && !s.symbol.match(/^[A-Z]{1,5}$/)));
-    let data = _salesData.filter(s => !_isBlankSetup(s));
+    // Asset type filter
+    const _isIndex = s => !s.symbol || s.entryType === 'initial_setup'
+        || ['TA35','TA90','TA125','^TA35','^TA90','^TA125'].includes(s.symbol)
+        || (s.symbol && !s.symbol.endsWith('.TA') && !s.symbol.match(/^[A-Z]{1,5}$/));
+    let data = _salesData;
     if (_salesAssetFilter === 'index') data = data.filter(_isIndex);
-    else if (_salesAssetFilter === 'stock') data = data.filter(s => !_isIndex(s));
-
-    // Sort: purchases first (by buyDate desc), then sales (by sellDate desc)
-    data = [
-        ...data.filter(s => s.entryType === 'purchase').sort((a,b) => (b.buyDate??'') > (a.buyDate??'') ? 1 : -1),
-        ...data.filter(s => s.entryType !== 'purchase'),
-    ];
+    else if (_salesAssetFilter === 'stock') data = data.filter(s => !_isIndex(s) && s.entryType !== 'initial_setup');
 
     if (!data.length) {
         tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#9ca3af;font-size:12px">אין עסקאות להצגה</td></tr>`;
         return;
     }
-    tbody.innerHTML = data.map(s => {
+    // Separate setup row (show once as footer, not inline)
+    const trades = data.filter(s => s.entryType !== 'initial_setup');
+    const hasSetup = data.some(s => s.entryType === 'initial_setup');
+
+    const tradeRows = trades.map(s => {
         const pnl    = s.profitLoss ?? 0;
         const roi    = s.roi ?? 0;
         const col    = pnl >= 0 ? '#16a34a' : '#dc2626';
         const methodBadge = s.method === 'fifo'
             ? `<span style="font-size:8px;background:#ede9fe;color:#5b21b6;border-radius:3px;padding:1px 4px;font-weight:600;margin-right:2px">FIFO</span>`
             : '';
-        const tag    = s.entryType === 'purchase'
-            ? `<span style="font-size:9px;background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 5px;font-weight:600">קנייה</span>`
-            : s.entryType === 'current'
+        const tag = s.entryType === 'current'
             ? `${methodBadge}<span style="font-size:9px;background:#dcfce7;color:#166534;border-radius:4px;padding:1px 5px;font-weight:600">נוכחי</span>`
             : `${methodBadge}<span style="font-size:9px;background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 5px;font-weight:600">היסטורי</span>`;
-        const id = s._id ? (typeof s._id === 'object' ? (s._id.$oid ?? String(s._id)) : String(s._id)) : '';
-        const editBtn = id
-            ? `<button class="_sale-edit-btn" data-sale-id="${id}" data-sell="${s.sellPrice??0}" data-buy="${s.buyPrice??0}" data-qty="${s.quantity??0}" data-name="${escAttr(s.name??s.symbol)}"
-                style="border:none;background:none;cursor:pointer;padding:0 2px;font-size:12px;opacity:0.6" title="ערוך">✏️</button>
-               <button class="_sale-del-btn" data-sale-id="${id}" data-name="${escAttr(s.name??s.symbol)}"
-                style="border:none;background:none;cursor:pointer;padding:0 2px;font-size:11px;opacity:0.45" title="מחק">🗑</button>`
-            : '';
-        const isPurchase = s.entryType === 'purchase';
-        const dateCol  = isPurchase ? (s.buyDate ?? '—') : (s.sellDate ?? '—');
-        const pnlCol   = isPurchase
-            ? `<span style="color:#6b7280">₪${(s.cost ?? s.costBasis ?? 0).toLocaleString('he-IL',{minimumFractionDigits:2})}</span>`
-            : `${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL',{minimumFractionDigits:2})}`;
-        const roiCol   = isPurchase ? `<span style="color:#9ca3af">—</span>` : `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%`;
-        return `<tr style="border-bottom:1px solid #f3f4f6;font-size:12px;vertical-align:middle${isPurchase ? ';background:#f8fafc' : ''}">
-            <td style="padding:9px 6px;white-space:nowrap">${dateCol}</td>
-            <td style="padding:9px 6px;font-weight:600">${s.symbol}</td>
-            <td class="sales-col-name" style="padding:9px 6px;color:#374151">${s.name ?? s.symbol}</td>
-            <td style="padding:9px 6px;text-align:right" dir="ltr">${s.quantity}</td>
-            <td style="padding:9px 6px;text-align:right;font-weight:600;color:${col}" dir="ltr">${pnlCol}</td>
-            <td style="padding:9px 6px;text-align:right;color:${col}" dir="ltr">${roiCol}</td>
-            <td style="padding:9px 6px"><div style="display:flex;align-items:center;gap:2px">${tag}${editBtn}</div></td>
+        return `<tr style="border-bottom:1px solid #f3f4f6;font-size:12px">
+            <td style="padding:6px 4px;white-space:nowrap">${s.sellDate ?? '—'}</td>
+            <td style="padding:6px 4px;font-weight:600">${s.symbol}</td>
+            <td class="sales-col-name" style="padding:6px 4px;color:#374151">${s.name ?? s.symbol}</td>
+            <td style="padding:6px 4px;text-align:right" dir="ltr">${s.quantity}</td>
+            <td style="padding:6px 4px;text-align:right;font-weight:600;color:${col}" dir="ltr">${pnl >= 0 ? '+' : ''}₪${Math.abs(pnl).toLocaleString('he-IL',{minimumFractionDigits:2})}</td>
+            <td style="padding:6px 4px;text-align:right;color:${col}" dir="ltr">${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%</td>
+            <td style="padding:6px 4px">${tag}</td>
         </tr>`;
-    }).join('');
-
-    // Attach edit button listeners (avoids apostrophe-in-name onclick bug)
-    tbody.querySelectorAll('._sale-edit-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            editSaleRow(
-                btn.dataset.saleId,
-                parseFloat(btn.dataset.sell),
-                parseFloat(btn.dataset.buy),
-                parseFloat(btn.dataset.qty),
-                btn.dataset.name
-            );
-        });
     });
 
-    // Attach delete button listeners
-    tbody.querySelectorAll('._sale-del-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const id   = btn.dataset.saleId;
-            const name = btn.dataset.name;
-            if (!id) { showToast('אין מזהה לרשומה', { color: '#dc2626' }); return; }
-
-            // Inline confirm: first click turns button red + shows "אישור?"
-            if (!btn._confirmPending) {
-                btn._confirmPending = true;
-                const orig = btn.textContent;
-                btn.textContent = 'אישור?';
-                btn.style.color  = '#dc2626';
-                btn.style.opacity = '1';
-                setTimeout(() => {
-                    if (btn._confirmPending) {
-                        btn._confirmPending = false;
-                        btn.textContent = orig;
-                        btn.style.color  = '';
-                        btn.style.opacity = '0.45';
-                    }
-                }, 3000);
-                return;
-            }
-
-            // Second click — confirmed
-            btn._confirmPending = false;
-            btn.textContent = '⏳';
-            try {
-                const r = await fetch(`/api/sales/${id}`, { method: 'DELETE' });
-                if (r.ok) { await refreshSalesData(); showToast('נמחק ✓', { color: '#6b7280', duration: 2000 }); }
-                else showToast('שגיאה במחיקה', { color: '#dc2626', duration: 3000 });
-            } catch(e) { showToast('שגיאה', { color: '#dc2626' }); }
-        });
-    });
+    tbody.innerHTML = !tradeRows.length
+        ? `<tr><td colspan="7" style="text-align:center;padding:20px;color:#9ca3af;font-size:12px">אין עסקאות להצגה</td></tr>`
+        : tradeRows.join('');
 }
 
 // ── Sales-form autocomplete (ms-symbol field) ──────────────────────────────
