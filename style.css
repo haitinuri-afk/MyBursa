@@ -978,8 +978,19 @@ canvas { width: 100% !important; height: 100% !important; }
 
 @media (max-width: 768px) {
 
-    body { overflow-y: auto; height: auto; min-height: 0; background: #f0f2f5; }
-    .main-wrapper { height: auto; min-height: 0; padding: 0; gap: 0; padding-bottom: 72px; }
+    /* ── Full-height flex column — eliminates dead space on all tabs ── */
+    /* body scrolls normally (iOS won't block inner touch scroll) */
+    html { height: var(--mob-vh, 100vh) !important; overflow: hidden !important; }
+    body { height: var(--mob-vh, 100vh) !important; overflow: hidden !important; margin: 0; padding: 0; background: #f0f2f5; }
+    .main-wrapper {
+        height: var(--mob-vh, 100vh) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+        padding: 0 !important; gap: 0 !important;
+    }
+    header.top-bar { flex-shrink: 0; }
+    .ticker-row    { flex-shrink: 0; }
 
     /* ── Header ── */
     header.top-bar {
@@ -1146,11 +1157,16 @@ canvas { width: 100% !important; height: 100% !important; }
     #pnl-table-wrap { overflow-x: hidden !important; }
     #pnl-nav-body canvas { max-width: 100% !important; }
 
-    /* ── Dashboard ── */
+    /* ── Dashboard — flex:1 fills all remaining height, scrolls internally ── */
     .dashboard-grid {
-        position: static; overflow: visible;
-        display: flex; flex-direction: column; gap: 0;
-        padding: 12px 12px 0;
+        flex: 1 !important;
+        min-height: 0 !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
+        position: static;
+        display: flex; flex-direction: column;
+        padding: 12px 12px 80px;   /* 80px clears the fixed tab bar */
         gap: 12px;
     }
 
@@ -1163,6 +1179,10 @@ canvas { width: 100% !important; height: 100% !important; }
         box-shadow: 0 2px 10px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04) !important;
         border: none !important;
         overflow: hidden !important;
+        /* Flex column so flex:1 injected by JS propagates inward.
+           No !important — allows inline display:none to still hide cards. */
+        display: flex;
+        flex-direction: column;
     }
 
     /* hide desktop-only controls */
@@ -1208,12 +1228,15 @@ canvas { width: 100% !important; height: 100% !important; }
     .sim-input     { font-size: 16px !important; padding: 11px 14px; border-radius: 10px; }
     #win-simulator .card-body { min-height: 0; padding-bottom: 14px; }
 
-    /* Reset desktop fixed heights for mobile */
+    /* Reset desktop fixed positions — keep height without !important so flex:1 can override */
     #win-portfolio, #win-simulator, #win-portfolio-analytics,
     #win-stocks, #win-indices-tase, #win-realestate {
-        height: auto !important; width: 100% !important;
+        height: auto; width: 100% !important;
         position: static !important; top: auto !important; left: auto !important;
     }
+
+    /* stock-list: min-height so card has volume even when list is empty */
+    #win-stocks .scroll-container { min-height: 50px; }
 
     /* Main chart hidden on mobile — replaced by inline mob-candle-panel */
     #win-main-chart:not(.mob-chart-open) { display: none !important; }

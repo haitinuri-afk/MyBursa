@@ -333,7 +333,7 @@ function isMarketOpen() {
     const [h, m] = timePart.split(':').map(Number);
     const day = new Date(y, mo - 1, d).getDay(); // 0=Sun..6=Sat
     const mins = h * 60 + m;
-    return day >= 1 && day <= 5 && mins >= 585 && mins < 1050; // Mon–Fri 9:45–17:30
+    return day >= 1 && day <= 5 && mins >= 585 && mins < 1050; // Mon–Fri 9:45–17:30 (TASE: Sun closed, Sat closed)
 }
 
 function scheduleFetch() {
@@ -1577,6 +1577,11 @@ function updateStockList() {
             : `▼ הצג עוד (${names.length - STOCK_LIST_LIMIT})`;
     }
     updateMiniIndicesBar();
+    // Re-fill tab space whenever stock list updates (content height may have changed)
+    if (window.innerWidth <= 768) {
+        const tab = document.querySelector('.mob-tab.active')?.dataset.tab || 'market';
+        setTimeout(() => _fillMobileTab(tab), 0);
+    }
 }
 
 
@@ -2603,6 +2608,10 @@ function renderPnLClient(holdingsData) {
     const serverMap = {};
     (holdingsData ?? []).forEach(h => { serverMap[h.name] = h; });
 
+    // When market is closed (weekends / off-hours) freeze daily figures at 0
+    // to prevent after-hours noise / FX drift from polluting the display.
+    const marketClosed = !isMarketOpen();
+
     const ptf = portfolio ?? {};
     Object.entries(ptf).forEach(([name, h]) => {
         const sd  = stocksData[name] ?? {};
@@ -2614,17 +2623,20 @@ function renderPnLClient(holdingsData) {
         const cost = h.totalCost ?? (buyPrice * qty);
         // Only include in rows when all values are usable
         if (qty && buyPrice && cur > 0) {
-            const mktValue = cur * qty;
-            // Daily ILS: (curPrice - prevClose) × qty; 0 when prev close unknown
-            const dayIls = prev > 0 ? (cur - prev) * qty : 0;
+            // When market is closed: pin cur to prev to eliminate after-hours drift
+            const effectiveCur = (marketClosed && prev > 0) ? prev : cur;
+            const mktValue = effectiveCur * qty;
+            // Daily figures: freeze at 0 when market is closed
+            const dayIls    = (!marketClosed && prev > 0) ? (effectiveCur - prev) * qty : 0;
+            const dayPctVal = (!marketClosed && prev > 0) ? ((effectiveCur - prev) / prev * 100).toFixed(2) : '0';
             const srv = serverMap[name] ?? {};
             totalCost += cost;
             rows.push({
-                name, qty, buyPrice, curPrice: cur,
+                name, qty, buyPrice, curPrice: effectiveCur,
                 mktValue: Math.round(mktValue), costBasis: Math.round(cost),
                 inceptionPnlIls: Math.round(mktValue - cost),
-                inceptionPnlPct: buyPrice > 0 ? ((cur - buyPrice) / buyPrice * 100).toFixed(2) : '0',
-                dayChangePct: prev > 0 ? ((cur - prev) / prev * 100).toFixed(2) : '0',
+                inceptionPnlPct: buyPrice > 0 ? ((effectiveCur - buyPrice) / buyPrice * 100).toFixed(2) : '0',
+                dayChangePct: dayPctVal,
                 dayChangeIls: Math.round(dayIls),
                 purchaseDate: srv.purchaseDate ?? null,
                 sector: srv.sector ?? 'אחר'
@@ -3201,49 +3213,31 @@ function switchMobileTab(tab) {
 
 function _fillMobileTab(tab) {
     if (window.innerWidth > 768) return;
-    const header    = document.querySelector('header.top-bar');
-    const tabBar    = document.getElementById('mobile-tabs');
-    const dashboard = document.getElementById('dashboard');
-    if (!dashboard) return;
-
-    const headerH = header?.offsetHeight ?? 50;
-    const tabBarH = tabBar?.offsetHeight ?? 56;
-    const avail   = window.innerHeight - headerH - tabBarH;
-
-    if (tab === 'market') {
-        // Stretch the candlestick chart panel to fill remaining space
-        const stockCard  = document.getElementById('win-stocks');
-        const chartPanel = document.getElementById('mob-candle-panel');
-        const chartDiv   = document.getElementById('mob-sd-chart');
-        if (stockCard && chartPanel && chartPanel.style.display !== 'none') {
-            const usedH = stockCard.offsetTop + stockCard.querySelector('.window-header')?.offsetHeight ?? 0
-                        + (stockCard.querySelector('.card-body > *:not(#mob-candle-panel)'))?.offsetHeight ?? 0;
-            // Simpler: set chart height so total matches avail
-            const panelTop  = chartPanel.offsetTop;
-            const headerPart = chartPanel.querySelector('div')?.offsetHeight ?? 80;
-            const tabsPart   = chartPanel.querySelector('div:nth-child(2)')?.offsetHeight ?? 40;
-            const remaining  = avail - panelTop - headerPart - tabsPart - 24;
-            if (chartDiv && remaining > 120) {
-                chartDiv.style.height = remaining + 'px';
-                if (_mobSdChart) _mobSdChart.applyOptions({ height: remaining });
-            }
+    if (tab === 'analysis') return; // charts size themselves
+    requestAnimationFrame(() => {
+        const grid = document.getElementById('dashboard');
+        if (!grid) return;
+        const cards = [...grid.querySelectorAll('.card')].filter(
+            c => !c.classList.contains('mob-hidden') &&
+                 getComputedStyle(c).display !== 'none'
+        );
+        if (!cards.length) return;
+        // Reset min-height on all cards first
+        cards.forEach(c => c.style.removeProperty('min-height'));
+        // Measure gap between bottom of last card and top of tab bar
+        const lastCard = cards[cards.length - 1];
+        const tabBar   = document.getElementById('mobile-tabs');
+        const tabBarTop = tabBar
+            ? tabBar.getBoundingClientRect().top
+            : window.innerHeight - 64;
+        const cardRect = lastCard.getBoundingClientRect();
+        const gap = tabBarTop - cardRect.bottom - 8;
+        if (gap > 4) {
+            // Expand last card by the gap so its white background covers the void
+            const newMinH = Math.floor(cardRect.height + gap);
+            lastCard.style.setProperty('min-height', newMinH + 'px', 'important');
         }
-    } else if (tab === 'portfolio') {
-        // Make portfolio scroll-container fill remaining space
-        const ptfCard    = document.getElementById('win-portfolio');
-        const simCard    = document.getElementById('win-simulator');
-        const scrollCont = ptfCard?.querySelector('.scroll-container');
-        if (ptfCard && scrollCont) {
-            const simH     = simCard?.offsetHeight ?? 0;
-            const ptfTop   = ptfCard.offsetTop;
-            const ptfHdr   = ptfCard.querySelector('.window-header')?.offsetHeight ?? 44;
-            const targetH  = avail - ptfTop - ptfHdr - simH - 24;
-            if (targetH > 80) {
-                scrollCont.style.maxHeight = targetH + 'px';
-                scrollCont.style.overflowY = 'auto';
-            }
-        }
-    }
+    });
 }
 
 // ── Panel Picker ─────────────────────────────────────────────────────────────
@@ -3286,7 +3280,19 @@ function _renderPanelPicker() {
     `).join('');
 }
 
+// ── iOS Safari viewport-height fix ───────────────────────────────────────────
+// iOS URL bar collapses on scroll, making window.innerHeight grow and revealing
+// empty gray space below content. We capture the INITIAL height and pin it as
+// a CSS variable so the layout never grows beyond the original viewport.
+function _setMobVh() {
+    if (window.innerWidth > 768) return;
+    document.documentElement.style.setProperty('--mob-vh', window.innerHeight + 'px');
+}
+_setMobVh();
+window.addEventListener('resize', _setMobVh);
+
 document.addEventListener('DOMContentLoaded', () => {
+    _setMobVh(); // re-measure after DOM ready (fonts/UI settled)
     if (window.innerWidth <= 768) switchMobileTab('market');
     else resetWindows();   // apply default layout on desktop first load
     try { initWindowManager(); } catch(e) { console.error("Window manager failed:", e); }
