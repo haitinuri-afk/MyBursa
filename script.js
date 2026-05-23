@@ -1389,12 +1389,18 @@ function updateStockList() {
     const visible = _stockShowAll ? names : names.slice(0, STOCK_LIST_LIMIT);
     const hasMore = names.length > STOCK_LIST_LIMIT;
 
+    const listClosed = !isMarketOpen();
     visible.forEach(name => {
         const stock = stocksData[name];
         const price = parseFloat(stock.price);
-        const pct   = calculatePctChange(price, stock.initial);
+        const pct   = listClosed ? '0.00' : calculatePctChange(price, stock.initial);
         const up    = parseFloat(pct) >= 0;
         const priceStr = price > 0 ? `₪${price.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+        // Neutral gray pill when market closed, colored when live
+        const pillStyle = listClosed
+            ? 'color:#9ca3af;background:rgba(156,163,175,0.15);padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700'
+            : `color:${pctColor(pct).text};background:${pctColor(pct).bg};padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700`;
+        const pctLabel = listClosed ? '—' : `${up ? '+' : ''}${pct}%`;
         const isPinned = name === _pinnedStock;
         const tr = document.createElement('tr');
         tr.className = 'stock-row';
@@ -1402,7 +1408,7 @@ function updateStockList() {
         tr.innerHTML = `
             <td class="text-right" style="font-size:0.82rem;color:#202124;white-space:nowrap;cursor:pointer">${isPinned ? '📌 ' : ''}${name}</td>
             <td class="text-right" style="font-size:0.82rem;color:#202124;font-variant-numeric:tabular-nums;white-space:nowrap" dir="ltr">${priceStr}</td>
-            <td class="pct-col"><span dir="ltr" class="inline-block" style="color:${pctColor(pct).text};background:${pctColor(pct).bg};padding:2px 8px;border-radius:20px;font-size:0.76rem;font-weight:700">${up ? '+' : ''}${pct}%</span></td>
+            <td class="pct-col"><span dir="ltr" class="inline-block" style="${pillStyle}">${pctLabel}</span></td>
             <td class="text-center"><button onclick="event.stopPropagation();quickBuy('${name}')" style="background:#16a34a;color:#fff;border:none;border-radius:4px;font-size:9px;font-weight:700;padding:2px 5px;cursor:pointer">קנה</button></td>`;
         tr.onclick = () => {
             _pinnedStock = (_pinnedStock === name) ? null : name; // toggle pin
@@ -2305,17 +2311,23 @@ function renderPnLClient(holdingsData) {
     const serverMap = {};
     (holdingsData ?? []).forEach(h => { serverMap[h.name] = h; });
 
+    // Freeze daily figures when market is closed (after-hours / weekend noise)
+    const mktClosed = !isMarketOpen();
+
     const ptf = portfolio ?? {};
     Object.entries(ptf).forEach(([name, h]) => {
-        const sd  = stocksData[name] ?? {};
-        const cur = sd.price ?? 0;
-        const prev = sd.initial ?? cur;
-        const qty = h.qty ?? h.quantity ?? h.shares ?? 0;
+        const sd   = stocksData[name] ?? {};
+        const raw  = sd.price ?? 0;
+        const prev = (sd.initial > 0) ? sd.initial : raw;
+        // When closed: pin price to last official close so inception P&L is stable
+        const cur  = (mktClosed && prev > 0) ? prev : raw;
+        const qty  = h.qty ?? h.quantity ?? h.shares ?? 0;
         const buyPrice = parseFloat(h.buyPrice ?? h.avgCost ?? 0);
         const cost = h.totalCost ?? (buyPrice * qty);
         const mktValue = cur * qty;
         totalVal += mktValue; totalCost += cost;
-        const dayIls = (cur - prev) * qty;
+        // Daily change: 0 when market closed, live otherwise
+        const dayIls = mktClosed ? 0 : (prev > 0 ? (cur - prev) * qty : 0);
         dailyPnl += dayIls;
         if (qty && buyPrice && cur > 0) {
             const srv = serverMap[name] ?? {};
@@ -2324,7 +2336,7 @@ function renderPnLClient(holdingsData) {
                 mktValue: Math.round(mktValue), costBasis: Math.round(cost),
                 inceptionPnlIls: Math.round(mktValue - cost),
                 inceptionPnlPct: buyPrice > 0 ? ((cur - buyPrice) / buyPrice * 100).toFixed(2) : '0',
-                dayChangePct: prev > 0 ? ((cur - prev) / prev * 100).toFixed(2) : '0',
+                dayChangePct: mktClosed ? '0' : (prev > 0 ? ((cur - prev) / prev * 100).toFixed(2) : '0'),
                 dayChangeIls: Math.round(dayIls),
                 purchaseDate: srv.purchaseDate ?? null,
                 sector: srv.sector ?? 'אחר'
