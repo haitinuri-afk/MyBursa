@@ -17,7 +17,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-    <link rel="stylesheet" href="style.css?v=64">
+    <link rel="stylesheet" href="style.css?v=65">
     <style>
         .mob-sd-tf {
             padding: 4px 12px;
@@ -195,7 +195,7 @@
                             <button class="mob-sd-tf" data-tf="monthly"  onclick="switchMobSdTf('monthly')">חודש</button>
                             <button class="mob-sd-tf" data-tf="3months"  onclick="switchMobSdTf('3months')">שנה</button>
                         </div>
-                        <div id="mob-sd-chart" style="height:260px;width:100%"></div>
+                        <div id="mob-sd-chart" style="height:260px;width:100%;transition:height .2s"></div>
                     </div>
                 </div>
             </div>
@@ -758,7 +758,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=108"></script>
+    <script src="script.js?v=109"></script>
     <script>
       if ('serviceWorker' in navigator) {
         // Unregister any broken service workers, then re-register

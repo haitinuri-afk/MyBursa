@@ -540,7 +540,7 @@ async function refreshRealData() {
     if (liveCount > 0 && !window._mobSdInitDone && window.innerWidth <= 768) {
         window._mobSdInitDone = true;
         const firstStock = Object.keys(stocksData).find(n => stocksData[n]?.price > 0);
-        if (firstStock) showMobStockDetail(firstStock);
+        if (firstStock) showMobStockDetail(firstStock).then(() => _fillMobileTab('market'));
     }
     scheduleFetch();
 }
@@ -3194,6 +3194,55 @@ function switchMobileTab(tab) {
             else drawIndexChart();
             Object.keys(activeStockWindows).forEach(n => activeStockWindows[n].chart?.resize());
         }, 80);
+    }
+    // Fill remaining screen space after tab switch
+    setTimeout(() => _fillMobileTab(tab), 120);
+}
+
+function _fillMobileTab(tab) {
+    if (window.innerWidth > 768) return;
+    const header    = document.querySelector('header.top-bar');
+    const tabBar    = document.getElementById('mobile-tabs');
+    const dashboard = document.getElementById('dashboard');
+    if (!dashboard) return;
+
+    const headerH = header?.offsetHeight ?? 50;
+    const tabBarH = tabBar?.offsetHeight ?? 56;
+    const avail   = window.innerHeight - headerH - tabBarH;
+
+    if (tab === 'market') {
+        // Stretch the candlestick chart panel to fill remaining space
+        const stockCard  = document.getElementById('win-stocks');
+        const chartPanel = document.getElementById('mob-candle-panel');
+        const chartDiv   = document.getElementById('mob-sd-chart');
+        if (stockCard && chartPanel && chartPanel.style.display !== 'none') {
+            const usedH = stockCard.offsetTop + stockCard.querySelector('.window-header')?.offsetHeight ?? 0
+                        + (stockCard.querySelector('.card-body > *:not(#mob-candle-panel)'))?.offsetHeight ?? 0;
+            // Simpler: set chart height so total matches avail
+            const panelTop  = chartPanel.offsetTop;
+            const headerPart = chartPanel.querySelector('div')?.offsetHeight ?? 80;
+            const tabsPart   = chartPanel.querySelector('div:nth-child(2)')?.offsetHeight ?? 40;
+            const remaining  = avail - panelTop - headerPart - tabsPart - 24;
+            if (chartDiv && remaining > 120) {
+                chartDiv.style.height = remaining + 'px';
+                if (_mobSdChart) _mobSdChart.applyOptions({ height: remaining });
+            }
+        }
+    } else if (tab === 'portfolio') {
+        // Make portfolio scroll-container fill remaining space
+        const ptfCard    = document.getElementById('win-portfolio');
+        const simCard    = document.getElementById('win-simulator');
+        const scrollCont = ptfCard?.querySelector('.scroll-container');
+        if (ptfCard && scrollCont) {
+            const simH     = simCard?.offsetHeight ?? 0;
+            const ptfTop   = ptfCard.offsetTop;
+            const ptfHdr   = ptfCard.querySelector('.window-header')?.offsetHeight ?? 44;
+            const targetH  = avail - ptfTop - ptfHdr - simH - 24;
+            if (targetH > 80) {
+                scrollCont.style.maxHeight = targetH + 'px';
+                scrollCont.style.overflowY = 'auto';
+            }
+        }
     }
 }
 
