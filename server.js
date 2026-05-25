@@ -516,6 +516,17 @@ async function fetchQuotesBatch(symList) {
     // For Israeli indices: fetch % change from ETF via v7 (TA35.TA, TA90.TA work; TA100.TA is inactive).
     const indexSyms = symList.filter(s => s in SYMBOL_FALLBACKS);
     const etfPctMap = {};
+
+    // Fetch v7 changePercent for ALL symbols — more reliable than chart-derived prevClose
+    const v7AllPctMap = {};
+    try {
+        const v7all = await fetchV7Quotes(symList);
+        v7all.forEach(q => {
+            if (q.regularMarketChangePercent != null) v7AllPctMap[q.symbol] = q.regularMarketChangePercent;
+        });
+        console.log('[batch] v7 all pct:', Object.entries(v7AllPctMap).map(([s,p])=>`${s}=${p?.toFixed(2)}%`).join(', '));
+    } catch(e) { console.warn('[batch] v7 all:', e.message); }
+
     if (indexSyms.length) {
         const etfSyms = indexSyms.map(s => SYMBOL_FALLBACKS[s]).filter(e => e !== 'TA100.TA');
         if (etfSyms.length) {
@@ -556,9 +567,15 @@ async function fetchQuotesBatch(symList) {
         const prevClose = chartPrevClose ?? meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
         const finalPrice  = applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency);
         const etfPct      = etfPctMap[sym] ?? null;
+        const v7Pct       = v7AllPctMap[canonicalSymbol] ?? v7AllPctMap[sym] ?? null;
         let finalPrevClose;
         if (etfPct != null) {
+            // Index: derive from ETF changePercent
             const pct = etfPct / 100;
+            finalPrevClose = pct !== -1 ? finalPrice / (1 + pct) : finalPrice;
+        } else if (v7Pct != null) {
+            // Regular stock: use v7 changePercent to derive prevClose reliably
+            const pct = v7Pct / 100;
             finalPrevClose = pct !== -1 ? finalPrice / (1 + pct) : finalPrice;
         } else {
             const rawPrev = meta.regularMarketPreviousClose ?? prevClose;
