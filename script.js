@@ -185,7 +185,7 @@ function saveState() {
     try {
         const prices = {};
         Object.entries(stocksData).forEach(([name, d]) => {
-            if (d.price > 0) prices[name] = { price: d.price };   // initial always from server, never cache
+            if (d.price > 0) prices[name] = { price: d.price, initial: d.initial };
         });
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ indicesData, prices }));
         savePortfolio();   // always flush portfolio too
@@ -479,12 +479,15 @@ async function refreshRealData() {
         if (!q.regularMarketPrice) return;
 
         stocksData[name].price   = q.regularMarketPrice;
-        // Use server-computed prevClose; if changePercent provided, derive it exactly
-        const pc = q.regularMarketPreviousClose;
-        const pct = q.regularMarketChangePercent;
-        stocksData[name].initial = pc
-            ? pc
-            : (pct != null ? q.regularMarketPrice / (1 + pct / 100) : q.regularMarketPrice);
+        // Only update the daily baseline while market is open so weekend/after-hours
+        // data from Yahoo doesn't corrupt the last real trading-day change.
+        if (isMarketOpen()) {
+            const pc  = q.regularMarketPreviousClose;
+            const pct = q.regularMarketChangePercent;
+            stocksData[name].initial = pc
+                ? pc
+                : (pct != null ? q.regularMarketPrice / (1 + pct / 100) : q.regularMarketPrice);
+        }
         const nowSec = Math.floor(Date.now() / 1000);
         stocksData[name].history.push(stocksData[name].price);
         if (!stocksData[name].historyTs) stocksData[name].historyTs = [];
