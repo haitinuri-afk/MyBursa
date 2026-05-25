@@ -978,8 +978,8 @@ canvas { width: 100% !important; height: 100% !important; }
 
 @media (max-width: 768px) {
 
-    body { overflow: auto; height: auto; min-height: 100vh; background: #f0f2f5; }
-    .main-wrapper { height: auto; min-height: 100vh; padding: 0; gap: 0; padding-bottom: 72px; }
+    body { overflow: auto; height: auto; min-height: 0; background: #f0f2f5; }
+    .main-wrapper { height: auto; min-height: 0; padding: 0; gap: 0; padding-bottom: calc(64px + env(safe-area-inset-bottom, 16px)); }
 
     /* ── Header ── */
     header.top-bar {
@@ -1177,7 +1177,7 @@ canvas { width: 100% !important; height: 100% !important; }
     #win-indices-tase .card-body { height: 300px !important; min-height: 300px !important; }
     #win-indices-tase .idx-chart-body { height: 300px !important; }
     #win-main-chart .card-body   { height: 340px; }
-    #win-ai-chat { display: flex !important; flex-direction: column; min-height: 420px; }
+    #win-ai-chat { flex-direction: column; min-height: 420px; position: fixed !important; }
     #win-ai-chat .card-body { flex: 1; }
 
     /* ── Window headers ── */

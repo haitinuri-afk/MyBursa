@@ -308,9 +308,18 @@ async function loadSessionHistory() {
         const { ohlc: ohlc5d } = await fetchHistoricalOHLC(idxSym, '1d', '5m');
         if (ohlc5d.length > 1) {
             stocksData["מדד תא-35"].ohlcWeek = ohlc5d;
-            drawIndexChart('daily');
         }
-        fetchHistoricalOHLC(idxSym, '1mo', '1d').then(({ ohlc: o }) => { if (o.length > 1) stocksData["מדד תא-35"].ohlcMonth    = o; });
+        // Always load 1mo daily — used as D-tab fallback when intraday is unavailable
+        fetchHistoricalOHLC(idxSym, '1mo', '1d').then(({ ohlc: o }) => {
+            if (o.length > 1) {
+                stocksData["מדד תא-35"].ohlcMonth = o;
+                // If intraday failed, use monthly data for the D tab
+                if (!stocksData["מדד תא-35"].ohlcWeek?.length) {
+                    stocksData["מדד תא-35"].ohlcWeek = o;
+                }
+                drawIndexChart('daily');
+            }
+        });
         fetchHistoricalOHLC(idxSym, '3mo', '1d').then(({ ohlc: o }) => { if (o.length > 1) stocksData["מדד תא-35"].ohlc3Month   = o; });
     }
     // Main candlestick chart — force a fresh load
@@ -1207,7 +1216,7 @@ function updateMainTimeframe(tf) {
 function getIndexOHLC(tf) {
     const idx = stocksData["מדד תא-35"];
     if (!idx?.price) return null;
-    if (tf === 'daily')   return idx.ohlcWeek?.length   ? idx.ohlcWeek   : null;
+    if (tf === 'daily')   return idx.ohlcWeek?.length   ? idx.ohlcWeek   : (idx.ohlcMonth?.length ? idx.ohlcMonth : null);
     if (tf === 'weekly')  return idx.ohlcMonth?.length  ? idx.ohlcMonth  : null;
     if (tf === 'monthly') return idx.ohlc3Month?.length ? idx.ohlc3Month : null;
     return idx.ohlc3Month?.length ? idx.ohlc3Month : null;
