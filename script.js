@@ -479,9 +479,12 @@ async function refreshRealData() {
         if (!q.regularMarketPrice) return;
 
         stocksData[name].price   = q.regularMarketPrice;
-        // Only update the daily baseline while market is open so weekend/after-hours
-        // data from Yahoo doesn't corrupt the last real trading-day change.
-        if (isMarketOpen()) {
+        // Update the daily baseline when:
+        //   (a) market is open — always use fresh prevClose, OR
+        //   (b) market is closed but we have no cached initial yet (first load / old localStorage)
+        // This prevents weekend Yahoo data from overwriting a good cached value,
+        // while still populating it on first run.
+        if (isMarketOpen() || !(stocksData[name].initial > 0)) {
             const pc  = q.regularMarketPreviousClose;
             const pct = q.regularMarketChangePercent;
             stocksData[name].initial = pc
