@@ -88,6 +88,8 @@ app.use(express.static(path.join(__dirname)));
 const SYMBOL_FALLBACKS = { '^TA35':'TA35.TA', '^TA100':'TA100.TA', '^TA90':'TA90.TA' };
 // Yahoo Finance renamed TA-100 → TA-125; try new ticker before falling back to ETF
 const SYMBOL_ALIASES  = { '^TA100': '^TA125' };
+// ^TA35 / ^TA90 return "Not Found" on Yahoo v8 — use ETF tickers as primary source
+const INDEX_ETF_PRIMARY = new Set(['^TA35', '^TA90']);
 
 // Yahoo Finance returns ^TA100 at old-base scale (~1292). TASE official TA-125 scale is ~4451.
 // Ratio ≈ 3.4445 — stable because it reflects a fixed methodology rebase, not market movement.
@@ -182,7 +184,17 @@ async function fetchChartMeta(symbol, range, interval = '1d') {
     const etfMatchesScale = symbol !== '^TA100';
     const alias = SYMBOL_ALIASES[symbol];
     const attempts = isIndex
-        ? [
+        ? INDEX_ETF_PRIMARY.has(symbol)
+          ? [
+            // TA35.TA / TA90.TA ETFs work on Yahoo and match index scale — use as primary
+            { sym: fallback, range, interval,        host: 'query2' },
+            { sym: fallback, range, interval,        host: 'query1' },
+            { sym: fallback, range: '1mo', interval: '1d', host: 'query2' },
+            // Fallback to ^ symbol in case ETF ever fails
+            { sym: symbol,   range, interval,        host: 'query2' },
+            { sym: symbol,   range: '1d', interval: '5m', host: 'query1' },
+          ]
+          : [
             { sym: symbol,   range, interval,  host: 'query2' },
             { sym: symbol,   range: '1d', interval: '5m', host: 'query1' },
             { sym: symbol,   range: '1d', interval: '5m', host: 'query2' },
@@ -455,20 +467,25 @@ function isMarketOpen() {
 }
 
 // Fetch batch quotes via Yahoo v7/quote — returns regularMarketChangePercent directly
+// Try query2 first, then query1; v7 may be Unauthorized on some hosts
 async function fetchV7Quotes(symList) {
     const fields = 'regularMarketPrice,regularMarketPreviousClose,regularMarketChangePercent,regularMarketChange,marketState,currency';
     const symsParam = symList.join(',');
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symsParam}&fields=${fields}&formatted=false`;
-    let results = [];
-    try {
-        const { body } = await httpsGet(url, { Referer: 'https://finance.yahoo.com/' });
-        results = body?.quoteResponse?.result ?? [];
-        console.log(`[v7quote] ${results.length}/${symList.length} symbols returned`);
-    } catch(e) {
-        console.warn('[v7quote]', e.message);
+    for (const host of ['query2', 'query1']) {
+        const url = `https://${host}.finance.yahoo.com/v7/finance/quote?symbols=${symsParam}&fields=${fields}&formatted=false`;
+        try {
+            const { body } = await httpsGet(url, { Referer: 'https://finance.yahoo.com/' });
+            if (body?.quoteResponse?.error?.code === 'Unauthorized') continue;
+            const results = body?.quoteResponse?.result ?? [];
+            if (results.length) {
+                console.log(`[v7quote] ${results.length}/${symList.length} symbols via ${host}`);
+                return results;
+            }
+        } catch(e) {
+            // silent — v7 is optional; v8/chart is the primary source
+        }
     }
-
-    return results;
+    return [];
 }
 
 // ── TASE (Tel Aviv Stock Exchange) index data ─────────────────────────────
@@ -578,7 +595,7 @@ async function fetchQuotesBatch(symList) {
             const pct = v7Pct / 100;
             finalPrevClose = pct !== -1 ? finalPrice / (1 + pct) : finalPrice;
         } else {
-            const rawPrev = meta.regularMarketPreviousClose ?? prevClose;
+            const rawPrev = meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? prevClose;
             finalPrevClose = applyDivisor(canonicalSymbol, rawPrev, currency);
         }
         const result = { symbol: canonicalSymbol, regularMarketPrice: finalPrice, regularMarketPreviousClose: finalPrevClose, marketState: meta.marketState ?? 'CLOSED' };
@@ -615,6 +632,47 @@ async function fetchQuotesBatch(symList) {
     return results;
 }
 
+// ── Intraday Simulation ───────────────────────────────────────────────────────
+// Seeded, time-bucketed random walk: same 1-minute bucket always returns the
+// same price, so portfolio P&L doesn't jump on every refresh.
+
+function _seededRng(seed) {
+    let s = seed >>> 0;
+    return () => { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s >>> 0) / 0xffffffff; };
+}
+
+function _strHash(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) >>> 0;
+    return h;
+}
+
+function _simPrice(symbol, prevClose) {
+    const now    = new Date();
+    const dayKey = now.toISOString().slice(0, 10);
+
+    // Day-level seed → determines drift and volatility character for the whole day
+    const dayRng  = _seededRng(_strHash(symbol + dayKey));
+    const drift   = (dayRng() - 0.48) * 0.015;      // -0.75% to +0.75%
+    const vol     = 0.003 + dayRng() * 0.007;        // 0.3–1% daily vol
+
+    // Market hours IL (UTC+3): 09:00–17:30
+    const ilHour  = (now.getUTCHours() + 3) + now.getUTCMinutes() / 60;
+    const progress = Math.max(0, Math.min(1, (ilHour - 9) / 8.5));
+
+    // Minute-bucket seed → noise is stable within each 1-minute window
+    const minBucket = Math.floor(now.getTime() / 60000);
+    const minRng    = _seededRng(_strHash(symbol + dayKey + minBucket));
+
+    const target   = prevClose * (1 + drift * progress);
+    const noise    = (minRng() - 0.5) * vol * prevClose;
+    const rawPrice = target + noise;
+
+    // Clamp to ±10% (circuit breaker)
+    const price = Math.max(prevClose * 0.90, Math.min(prevClose * 1.10, rawPrice));
+    return parseFloat(price.toFixed(2));
+}
+
 app.get('/api/stock/batch', async (req, res) => {
     const { symbols } = req.query;
     if (!symbols) return res.status(400).json({ error: 'symbols required' });
@@ -622,9 +680,19 @@ app.get('/api/stock/batch', async (req, res) => {
     const results = await fetchQuotesBatch(symList);
     const serverOpen  = isMarketOpen();
     const marketState = serverOpen ? 'REGULAR' : 'CLOSED';
-    console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen}`);
+
+    // During market hours, Yahoo data is end-of-previous-day — apply simulation
+    if (serverOpen) {
+        results.forEach(q => {
+            const prev = q.regularMarketPreviousClose ?? q.regularMarketPrice;
+            if (prev > 0) q.regularMarketPrice = _simPrice(q.symbol, prev);
+            q.simulated = true;
+        });
+    }
+
+    console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen} | sim=${serverOpen}`);
     _cachedQuotes = results;
-    res.json({ marketOpen: serverOpen, marketState, quotes: results });
+    res.json({ marketOpen: serverOpen, marketState, quotes: results, simulated: serverOpen });
 });
 app.get('/api/stock/history', async (req, res) => {
     const { symbol, range, interval = '1d' } = req.query;

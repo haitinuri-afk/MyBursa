@@ -442,7 +442,7 @@ async function fetchBatchPrices(symbols) {
         const resp = await fetch(`/api/stock/batch?${params}`);
         if (!resp.ok) { console.warn(`[batch] HTTP ${resp.status}`); return null; }
         const data = await resp.json();
-        return { marketOpen: data.marketOpen ?? false, marketState: data.marketState ?? 'CLOSED', quotes: Array.isArray(data) ? data : (data.quotes ?? []) };
+        return { marketOpen: data.marketOpen ?? false, marketState: data.marketState ?? 'CLOSED', quotes: Array.isArray(data) ? data : (data.quotes ?? []), simulated: data.simulated ?? false };
     } catch(e) {
         console.warn('[batch]', e.message);
         return null;
@@ -513,7 +513,8 @@ async function refreshRealData() {
     }
 
     console.log(`[YF] Live: ${liveCount}/${symbols.length}`);
-    setDataStatus(liveCount > 0 ? 'live' : (isMarketOpen() ? 'error' : 'sim'), `${liveCount} symbols live`);
+    const isSim = quotes?.simulated ?? false;
+    setDataStatus(isSim ? 'sim' : (liveCount > 0 ? 'live' : (isMarketOpen() ? 'error' : 'sim')), isSim ? 'סימולציה תוך-יומית' : `${liveCount} symbols live`);
 
     // Update last-fetch timestamp
     if (liveCount > 0) {
