@@ -60,7 +60,6 @@ const STOCK_SYMBOLS_HE = {
     'גב ים':              'GVYM.TA',
     'שיכון ובינוי':       'SKBN.TA',
     'ריט1':               'RIT1.TA',
-    'אפי נכסים':          'AFID.TA',
     'אלרוב נדל"ן':        'ALRE.TA',
     'אלוני חץ':           'ALHE.TA',
 
@@ -144,7 +143,6 @@ const TASE125 = [
     { ticker:'GVYM.TA', nameHe:'גב ים',               nameEn:'Gav-Yam',                  sector:'נדל"ן' },
     { ticker:'SKBN.TA', nameHe:'שיכון ובינוי',        nameEn:'Shikun & Binui',           sector:'נדל"ן' },
     { ticker:'RIT1.TA', nameHe:'ריט1',                nameEn:'Reit 1',                   sector:'נדל"ן' },
-    { ticker:'AFID.TA', nameHe:'אפי נכסים',           nameEn:'Afikim Properties',        sector:'נדל"ן' },
     { ticker:'ALRE.TA', nameHe:'אלרוב נדל"ן',         nameEn:'Alrov Real Estate',        sector:'נדל"ן' },
     { ticker:'ALHE.TA', nameHe:'אלוני חץ',            nameEn:'Alony-Hetz',               sector:'נדל"ן' },
     // אנרגיה
