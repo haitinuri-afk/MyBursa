@@ -351,15 +351,15 @@ function scheduleFetch() {
 function setDataStatus(state, detail = '') {
     const el = document.getElementById('data-status');
     if (!el) return;
-    if (state === 'error' && !isMarketOpen()) state = 'sim';
+    if (state === 'error' && !isMarketOpen()) state = 'close';
     const styles = {
         live:  { text: 'LIVE',  color: '#16a34a', bg: 'rgba(29,185,84,0.15)' },
-        sim:   { text: detail || 'סגירה', color: '#5f6368', bg: '#f1f3f4' },
+        close: { text: detail || 'סגירה', color: '#5f6368', bg: '#f1f3f4' },
         error: { text: 'ERR',   color: '#dc2626', bg: 'rgba(234,67,53,0.12)' },
         fetch: { text: '...',   color: '#f0b90b', bg: 'rgba(240,185,11,0.10)' },
         wake:  { text: '⏳',    color: '#f0b90b', bg: 'rgba(240,185,11,0.10)' }
     };
-    const s = styles[state] || styles.sim;
+    const s = styles[state] || styles.close;
     el.textContent = s.text;
     el.style.color = s.color;
     el.style.background = el.classList.contains('idle-mode') ? '#0d1117' : s.bg;
@@ -516,7 +516,7 @@ async function refreshRealData() {
     const firstQuote = quoteList.find(q => q.regularMarketTime);
     const dataDate = firstQuote ? new Date(firstQuote.regularMarketTime * 1000) : new Date(Date.now() - 86400000);
     const closeDate = dataDate.toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Asia/Jerusalem' });
-    setDataStatus('sim', liveCount > 0 ? `סגירה ${closeDate}` : '');
+    setDataStatus('close', liveCount > 0 ? `סגירה ${closeDate}` : '');
 
     // Update last-fetch timestamp
     if (liveCount > 0) {

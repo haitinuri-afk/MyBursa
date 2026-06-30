@@ -643,7 +643,7 @@ app.get('/api/stock/batch', async (req, res) => {
 
     console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen}`);
     _cachedQuotes = results;
-    res.json({ marketOpen: serverOpen, marketState, quotes: results, simulated: serverOpen });
+    res.json({ marketOpen: serverOpen, marketState, quotes: results });
 });
 app.get('/api/stock/history', async (req, res) => {
     const { symbol, range, interval = '1d' } = req.query;
