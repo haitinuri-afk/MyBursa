@@ -595,10 +595,11 @@ async function fetchQuotesBatch(symList) {
             const pct = v7Pct / 100;
             finalPrevClose = pct !== -1 ? finalPrice / (1 + pct) : finalPrice;
         } else {
-            const rawPrev = meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? prevClose;
+            const rawPrev = meta.regularMarketPreviousClose ?? prevClose;
             finalPrevClose = applyDivisor(canonicalSymbol, rawPrev, currency);
         }
-        const result = { symbol: canonicalSymbol, regularMarketPrice: finalPrice, regularMarketPreviousClose: finalPrevClose, marketState: meta.marketState ?? 'CLOSED' };
+        const result = { symbol: canonicalSymbol, regularMarketPrice: finalPrice, regularMarketPreviousClose: finalPrevClose, marketState: meta.marketState ?? 'CLOSED', regularMarketTime: meta.regularMarketTime };
+
         _lastKnownPrices[sym] = result;
         return result;
     }));

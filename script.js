@@ -513,8 +513,9 @@ async function refreshRealData() {
     }
 
     console.log(`[YF] Live: ${liveCount}/${symbols.length}`);
-    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-    const closeDate = yesterday.toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Asia/Jerusalem' });
+    const firstQuote = quoteList.find(q => q.regularMarketTime);
+    const dataDate = firstQuote ? new Date(firstQuote.regularMarketTime * 1000) : new Date(Date.now() - 86400000);
+    const closeDate = dataDate.toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Asia/Jerusalem' });
     setDataStatus('sim', liveCount > 0 ? `סגירה ${closeDate}` : '');
 
     // Update last-fetch timestamp
