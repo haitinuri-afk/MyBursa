@@ -527,7 +527,7 @@ async function fetchTASEIndexChangePct(symbol) {
 }
 
 // Core quote fetching — reused by HTTP endpoint and chat fallback
-async function fetchQuotesBatch(symList) {
+async function fetchQuotesBatch(symList, closingOnly = false) {
     const todayUtcMs = new Date().setUTCHours(0, 0, 0, 0);
 
     // For Israeli indices: fetch % change from ETF via v7 (TA35.TA, TA90.TA work; TA100.TA is inactive).
@@ -568,37 +568,28 @@ async function fetchQuotesBatch(symList) {
         const currency  = meta.currency;
         const rawCloses = chartResult?.indicators?.quote?.[0]?.close ?? [];
         const timestamps = chartResult?.timestamp ?? [];
-        let latestClose = null, secondClose = null, latestDay = null;
+        let latestClose = null, secondClose = null, latestDay = null, latestTs = null;
         for (let i = timestamps.length - 1; i >= 0; i--) {
             const val = rawCloses[i];
             if (!val || val <= 0) continue;
             const dayMs = new Date(timestamps[i] * 1000).setUTCHours(0,0,0,0);
             if (dayMs >= todayUtcMs) continue;
-            if (latestClose === null) { latestClose = val; latestDay = dayMs; }
+            if (latestClose === null) { latestClose = val; latestDay = dayMs; latestTs = timestamps[i]; }
             else if (dayMs < latestDay) { secondClose = val; break; }
         }
-        const livePrice = meta.regularMarketPrice;
-        const useSecond = secondClose !== null && latestClose !== null &&
-                          Math.abs(livePrice - latestClose) / latestClose < 0.0001;
-        const chartPrevClose = useSecond ? secondClose : latestClose;
-        const prevClose = chartPrevClose ?? meta.regularMarketPreviousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
-        const finalPrice  = applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency);
-        const etfPct      = etfPctMap[sym] ?? null;
-        const v7Pct       = v7AllPctMap[canonicalSymbol] ?? v7AllPctMap[sym] ?? null;
-        let finalPrevClose;
-        if (etfPct != null) {
-            // Index: derive from ETF changePercent
-            const pct = etfPct / 100;
-            finalPrevClose = pct !== -1 ? finalPrice / (1 + pct) : finalPrice;
-        } else if (v7Pct != null) {
-            // Regular stock: use v7 changePercent to derive prevClose reliably
-            const pct = v7Pct / 100;
-            finalPrevClose = pct !== -1 ? finalPrice / (1 + pct) : finalPrice;
+        let usePrice, usePrev, dataTimestamp;
+        if (closingOnly && latestClose !== null && secondClose !== null) {
+            // Market open → show last completed close, not intraday
+            usePrice = applyDivisor(canonicalSymbol, latestClose, currency);
+            usePrev  = applyDivisor(canonicalSymbol, secondClose, currency);
+            dataTimestamp = latestTs ?? meta.regularMarketTime;
         } else {
-            const rawPrev = meta.regularMarketPreviousClose ?? prevClose;
-            finalPrevClose = applyDivisor(canonicalSymbol, rawPrev, currency);
+            usePrice = applyDivisor(canonicalSymbol, meta.regularMarketPrice, currency);
+            const rawPrev = meta.regularMarketPreviousClose ?? latestClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
+            usePrev  = applyDivisor(canonicalSymbol, rawPrev, currency);
+            dataTimestamp = meta.regularMarketTime;
         }
-        const result = { symbol: canonicalSymbol, regularMarketPrice: finalPrice, regularMarketPreviousClose: finalPrevClose, marketState: meta.marketState ?? 'CLOSED', regularMarketTime: meta.regularMarketTime };
+        const result = { symbol: canonicalSymbol, regularMarketPrice: usePrice, regularMarketPreviousClose: usePrev, marketState: meta.marketState ?? 'CLOSED', regularMarketTime: dataTimestamp };
 
         _lastKnownPrices[sym] = result;
         return result;
@@ -637,8 +628,8 @@ app.get('/api/stock/batch', async (req, res) => {
     const { symbols } = req.query;
     if (!symbols) return res.status(400).json({ error: 'symbols required' });
     const symList = symbols.split(',').map(s => s.trim()).filter(Boolean);
-    const results = await fetchQuotesBatch(symList);
     const serverOpen  = isMarketOpen();
+    const results = await fetchQuotesBatch(symList, serverOpen);
     const marketState = serverOpen ? 'REGULAR' : 'CLOSED';
 
     console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen}`);
