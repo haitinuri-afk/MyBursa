@@ -513,7 +513,8 @@ async function refreshRealData() {
     }
 
     console.log(`[YF] Live: ${liveCount}/${symbols.length}`);
-    const closeDate = new Date().toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Asia/Jerusalem' });
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+    const closeDate = yesterday.toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Asia/Jerusalem' });
     setDataStatus('sim', liveCount > 0 ? `סגירה ${closeDate}` : '');
 
     // Update last-fetch timestamp
