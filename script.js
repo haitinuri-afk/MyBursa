@@ -354,7 +354,7 @@ function setDataStatus(state, detail = '') {
     if (state === 'error' && !isMarketOpen()) state = 'sim';
     const styles = {
         live:  { text: 'LIVE',  color: '#16a34a', bg: 'rgba(29,185,84,0.15)' },
-        sim:   { text: 'SIM',   color: '#5f6368', bg: '#f1f3f4' },
+        sim:   { text: detail || 'סגירה', color: '#5f6368', bg: '#f1f3f4' },
         error: { text: 'ERR',   color: '#dc2626', bg: 'rgba(234,67,53,0.12)' },
         fetch: { text: '...',   color: '#f0b90b', bg: 'rgba(240,185,11,0.10)' },
         wake:  { text: '⏳',    color: '#f0b90b', bg: 'rgba(240,185,11,0.10)' }
@@ -442,7 +442,7 @@ async function fetchBatchPrices(symbols) {
         const resp = await fetch(`/api/stock/batch?${params}`);
         if (!resp.ok) { console.warn(`[batch] HTTP ${resp.status}`); return null; }
         const data = await resp.json();
-        return { marketOpen: data.marketOpen ?? false, marketState: data.marketState ?? 'CLOSED', quotes: Array.isArray(data) ? data : (data.quotes ?? []), simulated: data.simulated ?? false };
+        return { marketOpen: data.marketOpen ?? false, marketState: data.marketState ?? 'CLOSED', quotes: Array.isArray(data) ? data : (data.quotes ?? []) };
     } catch(e) {
         console.warn('[batch]', e.message);
         return null;
@@ -513,8 +513,8 @@ async function refreshRealData() {
     }
 
     console.log(`[YF] Live: ${liveCount}/${symbols.length}`);
-    const isSim = quotes?.simulated ?? false;
-    setDataStatus(isSim ? 'sim' : (liveCount > 0 ? 'live' : (isMarketOpen() ? 'error' : 'sim')), isSim ? 'סימולציה תוך-יומית' : `${liveCount} symbols live`);
+    const closeDate = new Date().toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Asia/Jerusalem' });
+    setDataStatus('sim', liveCount > 0 ? `סגירה ${closeDate}` : '');
 
     // Update last-fetch timestamp
     if (liveCount > 0) {

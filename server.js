@@ -632,47 +632,6 @@ async function fetchQuotesBatch(symList) {
     return results;
 }
 
-// ── Intraday Simulation ───────────────────────────────────────────────────────
-// Seeded, time-bucketed random walk: same 1-minute bucket always returns the
-// same price, so portfolio P&L doesn't jump on every refresh.
-
-function _seededRng(seed) {
-    let s = seed >>> 0;
-    return () => { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s >>> 0) / 0xffffffff; };
-}
-
-function _strHash(str) {
-    let h = 0;
-    for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) >>> 0;
-    return h;
-}
-
-function _simPrice(symbol, prevClose) {
-    const now    = new Date();
-    const dayKey = now.toISOString().slice(0, 10);
-
-    // Day-level seed → determines drift and volatility character for the whole day
-    const dayRng  = _seededRng(_strHash(symbol + dayKey));
-    const drift   = (dayRng() - 0.48) * 0.015;      // -0.75% to +0.75%
-    const vol     = 0.003 + dayRng() * 0.007;        // 0.3–1% daily vol
-
-    // Market hours IL (UTC+3): 09:00–17:30
-    const ilHour  = (now.getUTCHours() + 3) + now.getUTCMinutes() / 60;
-    const progress = Math.max(0, Math.min(1, (ilHour - 9) / 8.5));
-
-    // Minute-bucket seed → noise is stable within each 1-minute window
-    const minBucket = Math.floor(now.getTime() / 60000);
-    const minRng    = _seededRng(_strHash(symbol + dayKey + minBucket));
-
-    const target   = prevClose * (1 + drift * progress);
-    const noise    = (minRng() - 0.5) * vol * prevClose;
-    const rawPrice = target + noise;
-
-    // Clamp to ±10% (circuit breaker)
-    const price = Math.max(prevClose * 0.90, Math.min(prevClose * 1.10, rawPrice));
-    return parseFloat(price.toFixed(2));
-}
-
 app.get('/api/stock/batch', async (req, res) => {
     const { symbols } = req.query;
     if (!symbols) return res.status(400).json({ error: 'symbols required' });
@@ -681,16 +640,7 @@ app.get('/api/stock/batch', async (req, res) => {
     const serverOpen  = isMarketOpen();
     const marketState = serverOpen ? 'REGULAR' : 'CLOSED';
 
-    // During market hours, Yahoo data is end-of-previous-day — apply simulation
-    if (serverOpen) {
-        results.forEach(q => {
-            const prev = q.regularMarketPreviousClose ?? q.regularMarketPrice;
-            if (prev > 0) q.regularMarketPrice = _simPrice(q.symbol, prev);
-            q.simulated = true;
-        });
-    }
-
-    console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen} | sim=${serverOpen}`);
+    console.log(`[batch] ${results.length}/${symList.length} | open=${serverOpen}`);
     _cachedQuotes = results;
     res.json({ marketOpen: serverOpen, marketState, quotes: results, simulated: serverOpen });
 });
